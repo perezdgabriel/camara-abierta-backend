@@ -16,6 +16,13 @@ class Norma(BaseModel):
     title: str
     pdf_url: Optional[str] = None
     cve: str
+    explanation: str
+    titulo_amigable: Optional[str] = None
+    resumen_ejecutivo: Optional[str] = None
+    puntos_clave: Optional[list[str]] = None
+    beneficiarios: Optional[str] = None
+    categoria_ia: Optional[str] = None
+    importancia_ciudadana: Optional[int] = None
     created_at: Optional[datetime] = None
 
 
@@ -82,12 +89,3 @@ class ReglamentoTimeline(BaseModel):
     ultima_etapa_fecha: Optional[date] = None
     ultima_etapa_accion: Optional[str] = None
     total_etapas: int
-
-
-class NormaDestacada(BaseModel):
-    model_config = {"from_attributes": True}
-
-    id: int
-    date: date
-    explanation: str
-    norma: Norma

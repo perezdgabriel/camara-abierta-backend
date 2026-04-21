@@ -1,5 +1,6 @@
-from sqlalchemy import create_engine, Column, BigInteger, Boolean, Date, Text, ForeignKey, DateTime
+from sqlalchemy import create_engine, Column, BigInteger, Boolean, Date, Text, Integer, ForeignKey, DateTime
 from sqlalchemy.orm import sessionmaker, DeclarativeBase, relationship
+from sqlalchemy.dialects.postgresql import JSONB
 
 from config import settings
 
@@ -23,6 +24,13 @@ class NormaGeneralDB(Base):
     title = Column(Text, nullable=False)
     pdf_url = Column(Text)
     cve = Column(Text, unique=True, nullable=False)
+    explanation = Column(Text, nullable=False)
+    titulo_amigable = Column(Text)
+    resumen_ejecutivo = Column(Text)
+    puntos_clave = Column(JSONB)
+    beneficiarios = Column(Text)
+    categoria_ia = Column(Text)
+    importancia_ciudadana = Column(Integer)
     created_at = Column(Text)
 
 
@@ -60,18 +68,6 @@ class ReglamentoEtapaDB(Base):
     created_at = Column(DateTime)
 
     reglamento = relationship("ReglamentoDB", back_populates="etapas")
-
-
-class NormaDestacadaDB(Base):
-    __tablename__ = "normas_destacadas"
-
-    id = Column(BigInteger, primary_key=True)
-    norma_id = Column(BigInteger, ForeignKey("normas_generales.id", ondelete="CASCADE"), nullable=False, unique=True)
-    date = Column(Date, nullable=False)
-    explanation = Column(Text, nullable=False)
-    created_at = Column(DateTime)
-
-    norma = relationship("NormaGeneralDB")
 
 
 def get_db():

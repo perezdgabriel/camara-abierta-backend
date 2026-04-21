@@ -5,12 +5,11 @@ from fastapi import FastAPI, Query, HTTPException, Depends
 from sqlalchemy import func, desc, case
 from sqlalchemy.orm import Session, joinedload
 
-from db import get_db, NormaGeneralDB, ReglamentoDB, ReglamentoEtapaDB, NormaDestacadaDB
+from db import get_db, NormaGeneralDB, ReglamentoDB, ReglamentoEtapaDB
 from schemas import (
     Norma, NormasResponse,
     Reglamento, ReglamentoDetail, ReglamentosResponse,
-    ReglamentoStats, ReglamentoTimeline,
-    NormaDestacada,
+    ReglamentoStats, ReglamentoTimeline
 )
 
 INICIO_GOBIERNO_ACTUAL = date(2026, 3, 11)
@@ -18,7 +17,7 @@ INICIO_GOBIERNO_ACTUAL = date(2026, 3, 11)
 app = FastAPI(
     title="Diario Oficial de Chile — API",
     description="Public API to query normas generales and CGR reglamentos.",
-    version="2.0.0",
+    version="0.0.1",
 )
 
 DEFAULT_LIMIT = 50
@@ -64,19 +63,20 @@ def list_normas(
     return NormasResponse(count=total, data=rows)
 
 
-@app.get("/normas/destacadas", response_model=list[NormaDestacada], tags=["Normas"])
-def list_destacadas(
-    target_date: Optional[date] = Query(None, alias="date", description="Filter by date (YYYY-MM-DD). Defaults to most recent."),
-    limit: int = Query(3, ge=1, le=10),
+@app.get("/normas/por-importancia", response_model=list[Norma], tags=["Normas"])
+def list_destacadas_por_importancia(
+    min_score: int = Query(1, ge=1, le=10, description="Minimum importancia_ciudadana score"),
+    limit: int = Query(10, ge=1, le=50),
     db: Session = Depends(get_db),
 ):
-    """Get the AI-highlighted top norms. Defaults to the most recent date available."""
-    q = db.query(NormaDestacadaDB).options(joinedload(NormaDestacadaDB.norma))
-
-    if target_date:
-        q = q.filter(NormaDestacadaDB.date == target_date)
-
-    return q.order_by(NormaDestacadaDB.date.desc()).limit(limit).all()
+    """Get AI-highlighted norms ranked by importancia_ciudadana (highest first)."""
+    q = (
+        db.query(NormaGeneralDB)
+        .filter(NormaGeneralDB.importancia_ciudadana >= min_score)
+        .order_by(NormaGeneralDB.importancia_ciudadana.desc(), NormaGeneralDB.date.desc())
+        .limit(limit)
+    )
+    return q.all()
 
 
 @app.get("/normas/{cve}", response_model=Norma)
