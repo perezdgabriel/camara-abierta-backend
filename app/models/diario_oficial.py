@@ -1,6 +1,6 @@
 from datetime import date, datetime
 
-from sqlalchemy import BigInteger, Boolean, Date, DateTime, ForeignKey, Text
+from sqlalchemy import BigInteger, Boolean, Date, DateTime, ForeignKey, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -19,7 +19,7 @@ class NormaGeneral(SyncableMixin, Base):
     title: Mapped[str] = mapped_column(Text, nullable=False)
     pdf_url: Mapped[str | None] = mapped_column(Text)
     cve: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
-    explanation: Mapped[str] = mapped_column(Text, nullable=False)
+    explanation: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
     titulo_amigable: Mapped[str | None] = mapped_column(Text)
     resumen_ejecutivo: Mapped[str | None] = mapped_column(Text)
     puntos_clave: Mapped[list[str] | None] = mapped_column(JSONB)
@@ -30,6 +30,9 @@ class NormaGeneral(SyncableMixin, Base):
 
 class Reglamento(SyncableMixin, Base):
     __tablename__ = "reglamentos"
+    __table_args__ = (
+        UniqueConstraint("numero", "anio", "ministerio", "categoria", name="uq_reglamentos_natural_key"),
+    )
 
     numero: Mapped[str] = mapped_column(Text, nullable=False)
     anio: Mapped[str] = mapped_column(Text, nullable=False)
