@@ -2,7 +2,7 @@ from datetime import date, datetime
 
 from pydantic import Field
 
-from app.schemas.common import CountResponse, ORMModel
+from app.schemas.common import CountResponse, DeltaSyncResponse, ORMModel, SyncMeta
 
 
 class Norma(ORMModel):
@@ -22,8 +22,16 @@ class Norma(ORMModel):
     beneficiarios: str | None = None
     categoria_ia: str | None = None
     importancia_ciudadana: int | None = None
-    created_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
+    deleted_at: datetime | None = None
+    sync_version: int
 
 
 class NormasResponse(CountResponse[Norma]):
     data: list[Norma] = Field(default_factory=list)
+
+
+class NormasSyncResponse(DeltaSyncResponse[Norma]):
+    items: list[Norma] = Field(default_factory=list)
+    meta: SyncMeta = Field(default_factory=SyncMeta)

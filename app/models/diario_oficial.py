@@ -1,16 +1,16 @@
 from datetime import date, datetime
 
-from sqlalchemy import BigInteger, Boolean, Date, DateTime, ForeignKey, Integer, Text
+from sqlalchemy import BigInteger, Boolean, Date, DateTime, ForeignKey, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
+from app.models.base import SyncableMixin
 
 
-class NormaGeneral(Base):
+class NormaGeneral(SyncableMixin, Base):
     __tablename__ = "normas_generales"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     date: Mapped[date] = mapped_column(Date, nullable=False)
     edition: Mapped[str | None] = mapped_column(Text)
     branch: Mapped[str | None] = mapped_column(Text)
@@ -25,14 +25,12 @@ class NormaGeneral(Base):
     puntos_clave: Mapped[list[str] | None] = mapped_column(JSONB)
     beneficiarios: Mapped[str | None] = mapped_column(Text)
     categoria_ia: Mapped[str | None] = mapped_column(Text)
-    importancia_ciudadana: Mapped[int | None] = mapped_column(Integer)
-    created_at: Mapped[str | None] = mapped_column(Text)
+    importancia_ciudadana: Mapped[int | None] = mapped_column(BigInteger)
 
 
-class Reglamento(Base):
+class Reglamento(SyncableMixin, Base):
     __tablename__ = "reglamentos"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     numero: Mapped[str] = mapped_column(Text, nullable=False)
     anio: Mapped[str] = mapped_column(Text, nullable=False)
     ministerio: Mapped[str] = mapped_column(Text, nullable=False)
@@ -42,8 +40,6 @@ class Reglamento(Base):
     estado: Mapped[str | None] = mapped_column(Text)
     categoria: Mapped[str] = mapped_column(Text, nullable=False)
     reingresado: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
-    created_at: Mapped[datetime | None] = mapped_column(DateTime)
-    updated_at: Mapped[datetime | None] = mapped_column(DateTime)
 
     etapas: Mapped[list["ReglamentoEtapa"]] = relationship(
         back_populates="reglamento",

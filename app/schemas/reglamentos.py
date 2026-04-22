@@ -3,7 +3,7 @@ from datetime import date, datetime
 from pydantic import BaseModel
 from pydantic import Field
 
-from app.schemas.common import CountResponse, ORMModel
+from app.schemas.common import CountResponse, DeltaSyncResponse, ORMModel, SyncMeta
 
 
 class Etapa(ORMModel):
@@ -29,8 +29,10 @@ class Reglamento(ORMModel):
     estado: str | None = None
     categoria: str
     reingresado: bool = False
-    created_at: datetime | None = None
-    updated_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
+    deleted_at: datetime | None = None
+    sync_version: int
 
 
 class ReglamentoDetail(Reglamento):
@@ -39,6 +41,11 @@ class ReglamentoDetail(Reglamento):
 
 class ReglamentosResponse(CountResponse[Reglamento]):
     data: list[Reglamento] = Field(default_factory=list)
+
+
+class ReglamentosSyncResponse(DeltaSyncResponse[ReglamentoDetail]):
+    items: list[ReglamentoDetail] = Field(default_factory=list)
+    meta: SyncMeta = Field(default_factory=SyncMeta)
 
 
 class ReglamentoStats(ORMModel):

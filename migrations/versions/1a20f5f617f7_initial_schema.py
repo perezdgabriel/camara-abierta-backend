@@ -1,8 +1,8 @@
 """initial_schema
 
-Revision ID: bbee1706b4c2
+Revision ID: 1a20f5f617f7
 Revises: 
-Create Date: 2026-04-21 15:51:33.187053
+Create Date: 2026-04-21 16:09:09.298485
 """
 
 from alembic import op
@@ -11,7 +11,7 @@ from sqlalchemy.dialects import postgresql
 
 
 # revision identifiers, used by Alembic.
-revision = 'bbee1706b4c2'
+revision = '1a20f5f617f7'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -105,7 +105,6 @@ def upgrade() -> None:
     op.create_index(op.f('ix_legislative_periods_deleted_at'), 'legislative_periods', ['deleted_at'], unique=False)
     op.create_index(op.f('ix_legislative_periods_sync_version'), 'legislative_periods', ['sync_version'], unique=False)
     op.create_table('normas_generales',
-    sa.Column('id', sa.BigInteger(), nullable=False),
     sa.Column('date', sa.Date(), nullable=False),
     sa.Column('edition', sa.Text(), nullable=True),
     sa.Column('branch', sa.Text(), nullable=True),
@@ -120,11 +119,17 @@ def upgrade() -> None:
     sa.Column('puntos_clave', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
     sa.Column('beneficiarios', sa.Text(), nullable=True),
     sa.Column('categoria_ia', sa.Text(), nullable=True),
-    sa.Column('importancia_ciudadana', sa.Integer(), nullable=True),
-    sa.Column('created_at', sa.Text(), nullable=True),
+    sa.Column('importancia_ciudadana', sa.BigInteger(), nullable=True),
+    sa.Column('id', sa.BigInteger(), nullable=False),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.Column('deleted_at', sa.DateTime(timezone=True), nullable=True),
+    sa.Column('sync_version', sa.BigInteger(), server_default=sa.text("nextval('global_sync_version_seq')"), nullable=False),
     sa.PrimaryKeyConstraint('id', name=op.f('pk_normas_generales')),
     sa.UniqueConstraint('cve', name=op.f('uq_normas_generales_cve'))
     )
+    op.create_index(op.f('ix_normas_generales_deleted_at'), 'normas_generales', ['deleted_at'], unique=False)
+    op.create_index(op.f('ix_normas_generales_sync_version'), 'normas_generales', ['sync_version'], unique=False)
     op.create_table('political_parties',
     sa.Column('name', sa.String(length=200), nullable=False),
     sa.Column('abbreviation', sa.String(length=20), nullable=False),
@@ -159,7 +164,6 @@ def upgrade() -> None:
     op.create_index(op.f('ix_regions_deleted_at'), 'regions', ['deleted_at'], unique=False)
     op.create_index(op.f('ix_regions_sync_version'), 'regions', ['sync_version'], unique=False)
     op.create_table('reglamentos',
-    sa.Column('id', sa.BigInteger(), nullable=False),
     sa.Column('numero', sa.Text(), nullable=False),
     sa.Column('anio', sa.Text(), nullable=False),
     sa.Column('ministerio', sa.Text(), nullable=False),
@@ -169,10 +173,15 @@ def upgrade() -> None:
     sa.Column('estado', sa.Text(), nullable=True),
     sa.Column('categoria', sa.Text(), nullable=False),
     sa.Column('reingresado', sa.Boolean(), server_default='false', nullable=False),
-    sa.Column('created_at', sa.DateTime(), nullable=True),
-    sa.Column('updated_at', sa.DateTime(), nullable=True),
+    sa.Column('id', sa.BigInteger(), nullable=False),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.Column('deleted_at', sa.DateTime(timezone=True), nullable=True),
+    sa.Column('sync_version', sa.BigInteger(), server_default=sa.text("nextval('global_sync_version_seq')"), nullable=False),
     sa.PrimaryKeyConstraint('id', name=op.f('pk_reglamentos'))
     )
+    op.create_index(op.f('ix_reglamentos_deleted_at'), 'reglamentos', ['deleted_at'], unique=False)
+    op.create_index(op.f('ix_reglamentos_sync_version'), 'reglamentos', ['sync_version'], unique=False)
     op.create_table('topics',
     sa.Column('name', sa.String(length=100), nullable=False),
     sa.Column('slug', sa.String(length=100), nullable=False),
@@ -651,6 +660,8 @@ def downgrade() -> None:
     op.drop_index(op.f('ix_topics_sync_version'), table_name='topics')
     op.drop_index(op.f('ix_topics_deleted_at'), table_name='topics')
     op.drop_table('topics')
+    op.drop_index(op.f('ix_reglamentos_sync_version'), table_name='reglamentos')
+    op.drop_index(op.f('ix_reglamentos_deleted_at'), table_name='reglamentos')
     op.drop_table('reglamentos')
     op.drop_index(op.f('ix_regions_sync_version'), table_name='regions')
     op.drop_index(op.f('ix_regions_deleted_at'), table_name='regions')
@@ -658,6 +669,8 @@ def downgrade() -> None:
     op.drop_index(op.f('ix_political_parties_sync_version'), table_name='political_parties')
     op.drop_index(op.f('ix_political_parties_deleted_at'), table_name='political_parties')
     op.drop_table('political_parties')
+    op.drop_index(op.f('ix_normas_generales_sync_version'), table_name='normas_generales')
+    op.drop_index(op.f('ix_normas_generales_deleted_at'), table_name='normas_generales')
     op.drop_table('normas_generales')
     op.drop_index(op.f('ix_legislative_periods_sync_version'), table_name='legislative_periods')
     op.drop_index(op.f('ix_legislative_periods_deleted_at'), table_name='legislative_periods')
