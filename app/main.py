@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 
+from app.admin import setup_admin
 from app.api.router import router as api_router
 from app.core.config import settings
 
@@ -11,6 +12,7 @@ def create_app() -> FastAPI:
         version=settings.app_version,
     )
     app.include_router(api_router)
+    setup_admin(app)
     return app
 
 

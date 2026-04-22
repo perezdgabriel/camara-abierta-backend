@@ -14,6 +14,9 @@ class Settings(BaseSettings):
     api_v1_prefix: str = "/api/v1"
     database_url: str = Field(..., alias="DATABASE_URL")
     gobierno_actual_inicio: date = date(2026, 3, 11)
+    admin_secret_key: str = Field(default="change-me", alias="ADMIN_SECRET_KEY")
+    admin_username: str = Field(default="admin", alias="ADMIN_USERNAME")
+    admin_password: str = Field(default="admin", alias="ADMIN_PASSWORD")
 
     model_config = SettingsConfigDict(
         env_file=(".env", ".env.local"),

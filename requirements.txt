@@ -5,3 +5,5 @@ alembic>=1.15,<2
 psycopg2-binary>=2.9,<3
 pydantic>=2,<3
 pydantic-settings>=2,<3
+sqladmin>=0.20,<1
+itsdangerous>=2.2,<3
