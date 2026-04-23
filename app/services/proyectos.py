@@ -125,3 +125,28 @@ def bill_to_summary_extra(bill: Bill) -> dict:
         "active_urgency_type": active_urgency.urgency_type if active_urgency else None,
         "current_stage_type": current_stage.stage_type if current_stage else None,
     }
+
+
+def list_bills_by_ids(db: Session, bill_ids: list[int]) -> list[Bill]:
+    """Fetch bills by a list of IDs, preserving the given order (used after ES search)."""
+    if not bill_ids:
+        return []
+    rows = (
+        db.query(Bill)
+        .options(
+            joinedload(Bill.origin_chamber),
+            joinedload(Bill.current_chamber),
+            joinedload(Bill.current_committee),
+            selectinload(Bill.topics),
+            selectinload(Bill.urgencies).joinedload(BillUrgency.chamber),
+            selectinload(Bill.stages).options(
+                joinedload(BillStage.chamber),
+                joinedload(BillStage.committee),
+            ),
+        )
+        .filter(Bill.id.in_(bill_ids))
+        .all()
+    )
+    # Re-order to match ES ranking order
+    order = {bid: i for i, bid in enumerate(bill_ids)}
+    return sorted(rows, key=lambda b: order.get(b.id, len(bill_ids)))

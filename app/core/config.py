@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     admin_secret_key: str = Field(default="change-me", alias="ADMIN_SECRET_KEY")
     admin_username: str = Field(default="admin", alias="ADMIN_USERNAME")
     admin_password: str = Field(default="admin", alias="ADMIN_PASSWORD")
+    elasticsearch_url: str = Field(default="http://localhost:9200", alias="ELASTICSEARCH_URL")
 
     model_config = SettingsConfigDict(
         env_file=(".env", ".env.local"),

@@ -3,7 +3,7 @@ from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from app.db import get_db
+from app.core.database import get_db
 from app.schemas.proyectos import (
     BillDetail,
     BillsResponse,
@@ -12,6 +12,7 @@ from app.schemas.proyectos import (
     Stage,
     VotingResult,
 )
+from app.search import bills as es_bills
 from app.services import proyectos as svc
 
 router = APIRouter(tags=["Proyectos"])
@@ -52,6 +53,34 @@ def list_bills(
         offset=offset,
         limit=limit,
     )
+    return BillsResponse(count=total, data=[_to_summary(b) for b in bills])
+
+
+@router.get("/buscar", response_model=BillsResponse)
+def search_bills(
+    db: Session = Depends(get_db),
+    q: str = Query(..., min_length=2, description="Texto a buscar (título, número de boletín, texto completo, autores)"),
+    status: str | None = Query(None, description="Filtrar por estado"),
+    bill_type: str | None = Query(None, alias="tipo", description="Filtrar por tipo"),
+    origin: str | None = Query(None, description="Filtrar por origen"),
+    topic_id: int | None = Query(None, alias="tema_id", description="Filtrar por tema"),
+    date_from: date | None = Query(None, alias="desde", description="Fecha de ingreso desde"),
+    date_to: date | None = Query(None, alias="hasta", description="Fecha de ingreso hasta"),
+    offset: int = Query(svc.DEFAULT_OFFSET, ge=0),
+    limit: int = Query(svc.DEFAULT_LIMIT, ge=1, le=svc.MAX_LIMIT),
+):
+    total, bill_ids = es_bills.search_bills(
+        q=q,
+        status=status,
+        bill_type=bill_type,
+        origin=origin,
+        topic_id=topic_id,
+        date_from=date_from.isoformat() if date_from else None,
+        date_to=date_to.isoformat() if date_to else None,
+        offset=offset,
+        limit=limit,
+    )
+    bills = svc.list_bills_by_ids(db, bill_ids)
     return BillsResponse(count=total, data=[_to_summary(b) for b in bills])
 
 
