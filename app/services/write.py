@@ -618,7 +618,19 @@ def upsert_reglamento(db: Session, data: dict[str, Any]) -> Reglamento:
     return reglamento
 
 
-def upsert_bill(db: Session, data: dict[str, Any]) -> Bill:
+TERMINAL_STATUSES = frozenset({"published", "enacted", "rejected", "archived", "withdrawn"})
+
+
+def upsert_bill(db: Session, data: dict[str, Any]) -> tuple[Bill, dict[str, Any]]:
+    existing = db.execute(
+        select(Bill.id, Bill.status)
+        .where(Bill.bulletin_number == data["bulletin_number"])
+    ).first()
+    is_new = existing is None
+    old_status = existing.status if existing is not None else None
+    new_status = (data.get("status") or "pending")[:20]
+    already_terminal = existing is not None and existing.status in TERMINAL_STATUSES
+
     origin_chamber = _get_or_create_chamber(db, data.get("_origin_chamber_type") or data.get("origin_chamber_type"))
     entry_date_value = _parse_date(data.get("entry_date")) or date.today()
 
@@ -627,7 +639,7 @@ def upsert_bill(db: Session, data: dict[str, Any]) -> Bill:
         title=(data.get("title") or "")[:500],
         summary=(data.get("summary") or None),
         origin=(data.get("origin_type") or data.get("origin") or "deputies")[:20],
-        status=(data.get("status") or "pending")[:20],
+        status=new_status,
         entry_date=entry_date_value,
         publication_date=_parse_date(data.get("publication_date")),
         law_number=(data.get("law_number") or "")[:50] or None,
@@ -652,6 +664,18 @@ def upsert_bill(db: Session, data: dict[str, Any]) -> Bill:
             },
         ).returning(Bill.id)
     ).scalar_one()
+
+    if already_terminal:
+        db.flush()
+        bill = db.execute(select(Bill).where(Bill.id == bill_id)).scalar_one()
+        status_changed = old_status != new_status
+        return bill, {
+            "is_new": False,
+            "status_changed": status_changed,
+            "stage_changed": False,
+            "old_status": old_status,
+            "new_status": new_status,
+        }
 
     bill = db.execute(
         select(Bill)
@@ -685,7 +709,16 @@ def upsert_bill(db: Session, data: dict[str, Any]) -> Bill:
         _touch_syncable(db, bill)
 
     db.flush()
-    return bill
+
+    status_changed = (not is_new) and old_status != new_status
+
+    return bill, {
+        "is_new": is_new,
+        "status_changed": status_changed,
+        "stage_changed": stages_changed,
+        "old_status": old_status,
+        "new_status": new_status,
+    }
 
 
 def upsert_legislator(db: Session, data: dict[str, Any]) -> Legislator:

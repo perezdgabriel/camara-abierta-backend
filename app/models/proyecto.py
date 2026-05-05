@@ -25,7 +25,7 @@ class Bill(SyncableMixin, Base):
     bulletin_number: Mapped[str] = mapped_column(String(50), nullable=False, unique=True)
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     summary: Mapped[str | None] = mapped_column(Text)
-    bill_type: Mapped[str] = mapped_column(String(20), nullable=False, default="project")
+    bill_type: Mapped[str | None] = mapped_column(String(20), default="project")
     origin: Mapped[str] = mapped_column(String(20), nullable=False)
     origin_chamber_id: Mapped[int | None] = mapped_column(ForeignKey("chambers.id", ondelete="RESTRICT"))
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")

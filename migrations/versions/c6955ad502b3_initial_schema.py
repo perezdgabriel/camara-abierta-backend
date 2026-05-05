@@ -1,8 +1,8 @@
 """initial_schema
 
-Revision ID: 3887b14b69b5
+Revision ID: c6955ad502b3
 Revises: 
-Create Date: 2026-05-04 18:43:24.078149
+Create Date: 2026-05-05 15:01:37.815904
 """
 
 from alembic import op
@@ -11,7 +11,7 @@ from sqlalchemy.dialects import postgresql
 
 
 # revision identifiers, used by Alembic.
-revision = '3887b14b69b5'
+revision = 'c6955ad502b3'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -321,7 +321,7 @@ def upgrade() -> None:
     sa.Column('bulletin_number', sa.String(length=50), nullable=False),
     sa.Column('title', sa.String(length=500), nullable=False),
     sa.Column('summary', sa.Text(), nullable=True),
-    sa.Column('bill_type', sa.String(length=20), nullable=False),
+    sa.Column('bill_type', sa.String(length=20), nullable=True),
     sa.Column('origin', sa.String(length=20), nullable=False),
     sa.Column('origin_chamber_id', sa.BigInteger(), nullable=True),
     sa.Column('status', sa.String(length=20), nullable=False),
@@ -707,4 +707,5 @@ def downgrade() -> None:
     op.drop_index(op.f('ix_chambers_sync_version'), table_name='chambers')
     op.drop_index(op.f('ix_chambers_deleted_at'), table_name='chambers')
     op.drop_table('chambers')
+    op.execute('DROP SEQUENCE IF EXISTS global_sync_version_seq')
     # ### end Alembic commands ###

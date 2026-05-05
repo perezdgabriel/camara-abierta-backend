@@ -50,7 +50,7 @@ def _run_cgr_reglamentos(args: argparse.Namespace) -> dict[str, Any]:
 
 def _run_bills(args: argparse.Namespace) -> dict[str, Any]:
     run_ingest_bills = _load_attr("app.tasks.ingestors", "run_ingest_bills")
-    result = run_ingest_bills(since=args.since, bulletin=args.bulletin, dry_run=args.dry_run)
+    result = run_ingest_bills(bulletin=args.bulletin, dry_run=args.dry_run)
     return {"job": "bills", **result}
 
 
@@ -153,8 +153,7 @@ def _build_parser() -> argparse.ArgumentParser:
         parents=[dry_run_parent],
         help="Fetch and enqueue bill sync jobs.",
     )
-    bills_parser.add_argument("--since", help="Only fetch bills modified since this ISO date.")
-    bills_parser.add_argument("--bulletin", help="Fetch a single bill bulletin instead of querying by date.")
+    bills_parser.add_argument("--bulletin", help="Fetch a single bill bulletin instead of querying all years.")
     bills_parser.set_defaults(runner=_run_bills)
 
     legislators_parser = ingestor_subparsers.add_parser(

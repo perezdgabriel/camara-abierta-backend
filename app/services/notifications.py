@@ -39,6 +39,37 @@ def send_alerta_reglamento(reglamento: dict[str, Any], change_type: str) -> None
     _send_email(subject, html)
 
 
+def send_alerta_proyecto(
+    bulletin_number: str,
+    title: str,
+    change_type: str,
+    extra: dict[str, Any] | None = None,
+) -> None:
+    extra_info = extra or {}
+    labels = {
+        "new": "Nuevo proyecto de ley",
+        "status_changed": "Cambio de estado",
+        "stage_changed": "Cambio de etapa",
+    }
+    label = labels.get(change_type, change_type)
+
+    subject = f"[Proyectos de Ley] {label}: {bulletin_number}"
+    html = f"""
+    <h2>{label}</h2>
+    <p><strong>Boletin:</strong> {bulletin_number}</p>
+    <p><strong>Titulo:</strong> {title[:200]}</p>
+    """
+    if extra_info.get("old_status"):
+        html += f"<p><strong>Estado anterior:</strong> {extra_info['old_status']}</p>"
+    if extra_info.get("new_status"):
+        html += f"<p><strong>Estado nuevo:</strong> {extra_info['new_status']}</p>"
+    if extra_info.get("entry_date"):
+        html += f"<p><strong>Fecha ingreso:</strong> {extra_info['entry_date']}</p>"
+    if extra_info.get("origin"):
+        html += f"<p><strong>Origen:</strong> {extra_info['origin']}</p>"
+    _send_email(subject, html)
+
+
 def send_alerta_norma(highlight_json: dict[str, Any], titulo: str, cve: str) -> None:
     score = int(highlight_json.get("importancia_ciudadana", 0) or 0)
     if score <= 8:

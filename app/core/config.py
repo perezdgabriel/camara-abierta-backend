@@ -43,6 +43,10 @@ class Settings(BaseSettings):
         default="https://tramitacion.senado.cl/wspublico/",
         alias="INGESTOR_BASE_URL_SENADO",
     )
+    ingestor_bills_start_year: int = Field(
+        default=2026,
+        alias="INGESTOR_BILLS_START_YEAR",
+    )
 
     model_config = SettingsConfigDict(
         env_file=(".env", ".env.local"),
