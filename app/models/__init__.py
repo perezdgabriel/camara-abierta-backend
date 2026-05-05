@@ -1,5 +1,6 @@
 from app.models.core import Circumscription, Commune, District, Province, Region, Topic
 from app.models.diario_oficial import NormaGeneral, Reglamento, ReglamentoEtapa
+from app.models.ingestor_state import IngestorState
 from app.models.legislature import (
     Chamber,
     Coalition,
@@ -33,6 +34,7 @@ __all__ = [
     "CommitteeMembership",
     "Commune",
     "District",
+    "IngestorState",
     "LegislativePeriod",
     "LegislativeSession",
     "Legislator",

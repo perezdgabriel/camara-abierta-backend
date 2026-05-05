@@ -1,6 +1,6 @@
 from datetime import date, datetime
 
-from sqlalchemy import BigInteger, Boolean, Date, DateTime, ForeignKey, Text, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, Date, DateTime, ForeignKey, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -43,6 +43,7 @@ class Reglamento(SyncableMixin, Base):
     estado: Mapped[str | None] = mapped_column(Text)
     categoria: Mapped[str] = mapped_column(Text, nullable=False)
     reingresado: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    content_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
 
     etapas: Mapped[list["ReglamentoEtapa"]] = relationship(
         back_populates="reglamento",

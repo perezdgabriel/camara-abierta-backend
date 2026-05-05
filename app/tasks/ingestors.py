@@ -1,0 +1,375 @@
+import datetime
+import logging
+import time
+from typing import Any
+
+from sqlalchemy import select
+
+from app.core.celery_app import app
+from app.core.session import task_session
+from app.ingestors.clients.camara import CamaraClient
+from app.ingestors.clients.opendata_camara import OpenDataCamaraClient
+from app.ingestors.clients.senado import SenadoClient
+from app.ingestors.parsers.bills import BillParser
+from app.ingestors.parsers.committees import CommitteeParser
+from app.ingestors.parsers.legislators import LegislatorParser
+from app.ingestors.parsers.legislature import LegislatureParser
+from app.ingestors.parsers.votes import VoteParser
+from app.models.ingestor_state import IngestorState
+from app.tasks.base import DatabaseTask
+from app.tasks.bills import sync_bill
+from app.tasks.committees import sync_committee
+from app.tasks.legislators import sync_legislator
+from app.tasks.legislature import sync_period, sync_session
+from app.tasks.reference import sync_district, sync_region
+from app.tasks.voting import sync_voting_session
+
+logger = logging.getLogger(__name__)
+
+REQUEST_DELAY = 1.0
+
+
+
+def _get_state(db, entity_type: str, *, create: bool = True) -> IngestorState | None:
+	state = db.execute(
+		select(IngestorState).where(IngestorState.entity_type == entity_type)
+	).scalar_one_or_none()
+	if state is None and create:
+		state = IngestorState(entity_type=entity_type)
+		db.add(state)
+		db.flush()
+	return state
+
+
+def _build_dispatch_result(dispatched: int, errors: int, dry_run: bool, **extra: Any) -> dict[str, Any]:
+	result: dict[str, Any] = {"errors": errors, "dry_run": dry_run, **extra}
+	if dry_run:
+		result["dispatched"] = 0
+		result["would_dispatch"] = dispatched
+	else:
+		result["dispatched"] = dispatched
+	return result
+
+
+def _resolve_since_date(entity_type: str, *, fallback_days: int) -> datetime.date:
+	fallback = datetime.date.today() - datetime.timedelta(days=fallback_days)
+	with task_session() as db:
+		state = _get_state(db, entity_type, create=False)
+		if state is not None and state.last_sync_date is not None:
+			return state.last_sync_date
+	return fallback
+
+
+def _mark_synced(entity_type: str) -> None:
+	with task_session() as db:
+		state = _get_state(db, entity_type)
+		if state is not None:
+			state.last_sync_date = datetime.date.today()
+
+
+def _dispatch(task: Any, *args: Any) -> None:
+	task.delay(*args)
+
+
+def run_ingest_bills(
+	since: str | None = None,
+	bulletin: str | None = None,
+	*,
+	dry_run: bool = False,
+) -> dict[str, Any]:
+	dispatched = 0
+	errors = 0
+	since_date = datetime.date.fromisoformat(since) if since else None
+	bulletins = []
+	try:
+		with SenadoClient() as senado:
+			if bulletin:
+				bulletins = [bulletin]
+			else:
+				if since_date is None:
+					since_date = _resolve_since_date("bills", fallback_days=7)
+				bulletins = senado.get_bills_by_date(since_date)
+			for bulletin_number in bulletins:
+				try:
+					time.sleep(REQUEST_DELAY)
+					raw = senado.get_bill_by_bulletin(bulletin_number)
+					if raw is None:
+						continue
+					payload = BillParser.parse_bill(raw)
+					if not dry_run:
+						_dispatch(sync_bill, payload)
+					dispatched += 1
+				except Exception:
+					logger.exception("Failed to ingest bill bulletin=%s", bulletin_number)
+					errors += 1
+	except Exception:
+		logger.exception("Failed to fetch bill bulletins from SenadoClient since=%s", since_date)
+		errors += 1
+
+	if not dry_run:
+		_mark_synced("bills")
+
+	return _build_dispatch_result(
+		dispatched,
+		errors,
+		dry_run,
+		since=since_date.isoformat() if since_date is not None else None,
+		bulletin=bulletin,
+		bulletins=bulletins
+	)
+
+
+def run_ingest_legislators(*, dry_run: bool = False) -> dict[str, Any]:
+	dispatched = 0
+	errors = 0
+
+	try:
+		with SenadoClient() as senado:
+			for raw in senado.get_senadores_vigentes():
+				try:
+					payload = LegislatorParser.parse_senator(raw)
+					if not dry_run:
+						_dispatch(sync_legislator, payload)
+					dispatched += 1
+				except Exception:
+					logger.exception("Failed to parse senator from SenadoClient")
+					errors += 1
+	except Exception:
+		logger.exception("Failed to fetch senators from SenadoClient")
+		errors += 1
+
+	time.sleep(REQUEST_DELAY)
+
+	try:
+		with OpenDataCamaraClient() as opendata:
+			for raw in opendata.get_diputados_periodo_actual():
+				try:
+					payload = LegislatorParser.parse_opendata_deputy(raw)
+					if not dry_run:
+						_dispatch(sync_legislator, payload)
+					dispatched += 1
+				except Exception:
+					logger.exception("Failed to parse deputy from OpenDataCamaraClient")
+					errors += 1
+	except Exception:
+		logger.exception("Failed to fetch deputies from OpenDataCamaraClient")
+		errors += 1
+
+	if not dry_run:
+		_mark_synced("legislators")
+
+	return _build_dispatch_result(dispatched, errors, dry_run)
+
+
+def run_ingest_committees(*, dry_run: bool = False) -> dict[str, Any]:
+	dispatched = 0
+	errors = 0
+
+	try:
+		with SenadoClient() as senado:
+			for raw in senado.get_comisiones():
+				try:
+					payload = CommitteeParser.parse_senate_committee(raw)
+					if not dry_run:
+						_dispatch(sync_committee, payload)
+					dispatched += 1
+				except Exception:
+					logger.exception("Failed to parse senate committee")
+					errors += 1
+	except Exception:
+		logger.exception("Failed to fetch committees from SenadoClient")
+		errors += 1
+
+	time.sleep(REQUEST_DELAY)
+
+	try:
+		with OpenDataCamaraClient() as opendata:
+			for raw in opendata.get_comisiones_vigentes():
+				try:
+					time.sleep(REQUEST_DELAY)
+					comision_id = raw.get("id")
+					detail = opendata.get_comision(comision_id) if comision_id else None
+					payload = (
+						CommitteeParser.parse_opendata_committee_detail(detail)
+						if detail
+						else CommitteeParser.parse_opendata_committee(raw)
+					)
+					if not dry_run:
+						_dispatch(sync_committee, payload)
+					dispatched += 1
+				except Exception:
+					logger.exception("Failed to parse opendata committee id=%s", raw.get("id"))
+					errors += 1
+	except Exception:
+		logger.exception("Failed to fetch committees from OpenDataCamaraClient")
+		errors += 1
+
+	if not dry_run:
+		_mark_synced("committees")
+
+	return _build_dispatch_result(dispatched, errors, dry_run)
+
+
+def run_ingest_legislature(*, dry_run: bool = False) -> dict[str, Any]:
+	dispatched = 0
+	errors = 0
+
+	try:
+		with OpenDataCamaraClient() as opendata:
+			for raw in opendata.get_periodos_legislativos():
+				try:
+					parsed = LegislatureParser.parse_legislative_period(raw)
+					if parsed.get("number") and parsed.get("start_date"):
+						if not dry_run:
+							_dispatch(sync_period, parsed)
+						dispatched += 1
+				except Exception:
+					logger.exception("Failed to parse legislative period from OpenDataCamaraClient")
+					errors += 1
+			time.sleep(REQUEST_DELAY)
+			for raw in opendata.get_legislaturas():
+				try:
+					parsed = LegislatureParser.parse_legislature(raw)
+					if parsed.get("number") and parsed.get("start_date"):
+						if not dry_run:
+							_dispatch(sync_session, parsed)
+						dispatched += 1
+				except Exception:
+					logger.exception("Failed to parse legislative session from OpenDataCamaraClient")
+					errors += 1
+	except Exception:
+		logger.exception("Failed to fetch legislature data from OpenDataCamaraClient")
+		errors += 1
+
+	time.sleep(REQUEST_DELAY)
+
+	try:
+		with CamaraClient() as camara:
+			for raw in camara.get_periodos_legislativos():
+				try:
+					parsed = LegislatureParser.parse_legislative_period(raw)
+					if parsed.get("number") and parsed.get("start_date"):
+						if not dry_run:
+							_dispatch(sync_period, parsed)
+						dispatched += 1
+				except Exception:
+					logger.exception("Failed to parse legislative period from CamaraClient")
+					errors += 1
+			time.sleep(REQUEST_DELAY)
+			for raw in camara.get_legislaturas():
+				try:
+					parsed = LegislatureParser.parse_legislature(raw)
+					if parsed.get("number") and parsed.get("start_date"):
+						if not dry_run:
+							_dispatch(sync_session, parsed)
+						dispatched += 1
+				except Exception:
+					logger.exception("Failed to parse legislative session from CamaraClient")
+					errors += 1
+	except Exception:
+		logger.exception("Failed to fetch legislature data from CamaraClient")
+		errors += 1
+
+	if not dry_run:
+		_mark_synced("legislature")
+
+	return _build_dispatch_result(dispatched, errors, dry_run)
+
+
+def run_ingest_reference_data(*, dry_run: bool = False) -> dict[str, Any]:
+	dispatched = 0
+	errors = 0
+
+	try:
+		with OpenDataCamaraClient() as opendata:
+			for region in opendata.get_regiones():
+				try:
+					if region.get("number"):
+						if not dry_run:
+							_dispatch(sync_region, region)
+						dispatched += 1
+				except Exception:
+					logger.exception("Failed to parse region number=%s", region.get("number"))
+					errors += 1
+			time.sleep(REQUEST_DELAY)
+			for district in opendata.get_distritos():
+				try:
+					if district.get("number"):
+						if not dry_run:
+							_dispatch(sync_district, district)
+						dispatched += 1
+				except Exception:
+					logger.exception("Failed to parse district number=%s", district.get("number"))
+					errors += 1
+	except Exception:
+		logger.exception("Failed to fetch reference data from OpenDataCamaraClient")
+		errors += 1
+
+	if not dry_run:
+		_mark_synced("reference")
+
+	return _build_dispatch_result(dispatched, errors, dry_run)
+
+
+def run_ingest_voting_sessions(since: str | None = None, *, dry_run: bool = False) -> dict[str, Any]:
+	dispatched = 0
+	errors = 0
+	since_date = datetime.date.fromisoformat(since) if since else None
+	if since_date is None:
+		since_date = _resolve_since_date("voting", fallback_days=1)
+
+	try:
+		with SenadoClient() as senado:
+			for bulletin_number in senado.get_bills_by_date(since_date):
+				try:
+					time.sleep(REQUEST_DELAY)
+					for raw_vote in senado.get_votes_by_bulletin(bulletin_number):
+						try:
+							payload = VoteParser.parse_senate_vote(raw_vote, bulletin=bulletin_number)
+							if not dry_run:
+								_dispatch(sync_voting_session, payload, bulletin_number)
+							dispatched += 1
+						except Exception:
+							logger.exception("Failed to parse vote for bulletin=%s", bulletin_number)
+							errors += 1
+				except Exception:
+					logger.exception("Failed to fetch votes for bulletin=%s", bulletin_number)
+					errors += 1
+	except Exception:
+		logger.exception("Failed to fetch bill bulletins for voting from SenadoClient since=%s", since_date)
+		errors += 1
+
+	if not dry_run:
+		_mark_synced("voting")
+
+	return _build_dispatch_result(dispatched, errors, dry_run, since=since_date.isoformat())
+
+
+@app.task(name="app.tasks.ingestors.ingest_bills", bind=True, base=DatabaseTask)
+def ingest_bills(self, since: str | None = None, bulletin: str | None = None) -> dict:
+	return run_ingest_bills(since=since, bulletin=bulletin)
+
+
+@app.task(name="app.tasks.ingestors.ingest_legislators", bind=True, base=DatabaseTask)
+def ingest_legislators(self) -> dict:
+	return run_ingest_legislators()
+
+
+@app.task(name="app.tasks.ingestors.ingest_committees", bind=True, base=DatabaseTask)
+def ingest_committees(self) -> dict:
+	return run_ingest_committees()
+
+
+@app.task(name="app.tasks.ingestors.ingest_legislature", bind=True, base=DatabaseTask)
+def ingest_legislature(self) -> dict:
+	return run_ingest_legislature()
+
+
+@app.task(name="app.tasks.ingestors.ingest_reference_data", bind=True, base=DatabaseTask)
+def ingest_reference_data(self) -> dict:
+	return run_ingest_reference_data()
+
+
+@app.task(name="app.tasks.ingestors.ingest_voting_sessions", bind=True, base=DatabaseTask)
+def ingest_voting_sessions(self, since: str | None = None) -> dict:
+	return run_ingest_voting_sessions(since=since)
