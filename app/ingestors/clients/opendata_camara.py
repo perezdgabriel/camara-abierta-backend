@@ -218,3 +218,28 @@ class OpenDataCamaraClient(BaseCongresoClient):
         ]
         logger.info("Fetched %d districts (opendata)", len(distritos))
         return distritos
+
+    def _parse_proyecto_ley(self, proyecto: ET.Element) -> dict:
+        return {
+            "id": self._int_val(proyecto, "Id"),
+            "bulletin_number": self._txt(proyecto, "NumeroBoletin"),
+            "title": self._txt(proyecto, "Nombre"),
+            "entry_date": self._parse_dt(self._txt(proyecto, "FechaIngreso")),
+            "initiative_type": self._txt(proyecto, "TipoIniciativa"),
+            "initiative_type_code": self._attr(proyecto, "TipoIniciativa", "Valor"),
+            "origin_chamber": self._txt(proyecto, "CamaraOrigen"),
+            "origin_chamber_code": self._attr(proyecto, "CamaraOrigen", "Valor"),
+            "admissible": self._txt(proyecto, "Admisible") == "true",
+        }
+
+    def get_mensajes_x_anno(self, anno: int) -> list[dict]:
+        root = self._get_xml("WSLegislativo.asmx/retornarMensajesXAnno", params={"prmAnno": str(anno)})
+        results = [self._parse_proyecto_ley(proy) for proy in self._iter(root, "ProyectoLey")]
+        logger.info("Fetched %d mensajes for year %d (opendata)", len(results), anno)
+        return results
+
+    def get_mociones_x_anno(self, anno: int) -> list[dict]:
+        root = self._get_xml("WSLegislativo.asmx/retornarMocionesXAnno", params={"prmAnno": str(anno)})
+        results = [self._parse_proyecto_ley(proy) for proy in self._iter(root, "ProyectoLey")]
+        logger.info("Fetched %d mociones for year %d (opendata)", len(results), anno)
+        return results
