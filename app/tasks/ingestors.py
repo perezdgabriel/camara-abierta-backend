@@ -1,3 +1,4 @@
+import asyncio
 import datetime
 import logging
 import time
@@ -11,6 +12,7 @@ from app.core.session import task_session
 from app.ingestors.clients.camara import CamaraClient
 from app.ingestors.clients.opendata_camara import OpenDataCamaraClient
 from app.ingestors.clients.senado import SenadoClient
+from app.ingestors.clients.senado_async import fetch_bills_parallel
 from app.ingestors.parsers.bills import BillParser
 from app.ingestors.parsers.committees import CommitteeParser
 from app.ingestors.parsers.legislators import LegislatorParser
@@ -109,11 +111,10 @@ def run_ingest_bills(
                         logger.exception("Failed to fetch mociones for year %d", year)
                         errors += 1
 
-        with SenadoClient() as senado:
-            for bulletin_number in bulletins:
+        if bulletins:
+            results = asyncio.run(fetch_bills_parallel(bulletins))
+            for bulletin_number, raw in results:
                 try:
-                    time.sleep(REQUEST_DELAY)
-                    raw = senado.get_bill_by_bulletin(bulletin_number)
                     if raw is None:
                         continue
                     payload = BillParser.parse_bill(raw)

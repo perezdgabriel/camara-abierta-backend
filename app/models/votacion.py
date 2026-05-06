@@ -36,6 +36,10 @@ class VotingSession(SyncableMixin, Base):
     bill_stage: Mapped[BillStage | None] = relationship(back_populates="voting_sessions")
     votes: Mapped[list["Vote"]] = relationship(back_populates="voting_session")
 
+    def __str__(self) -> str:
+        subject = self.subject if len(self.subject) <= 80 else f"{self.subject[:77]}..."
+        return f"{self.voting_date.date().isoformat()} - {subject}"
+
 
 class Vote(SyncableMixin, Base):
     __tablename__ = "votes"
@@ -49,6 +53,9 @@ class Vote(SyncableMixin, Base):
 
     voting_session: Mapped[VotingSession] = relationship(back_populates="votes")
     legislator: Mapped[Legislator] = relationship(back_populates="votes")
+
+    def __str__(self) -> str:
+        return f"{self.vote} - legislador {self.legislator_id}"
 
 
 class LegislatorVotingStats(SyncableMixin, Base):
@@ -65,3 +72,6 @@ class LegislatorVotingStats(SyncableMixin, Base):
     stats_updated_at: Mapped[datetime] = mapped_column(nullable=False)
 
     legislator: Mapped[Legislator] = relationship(back_populates="voting_stats")
+
+    def __str__(self) -> str:
+        return f"Stats legislador {self.legislator_id}"

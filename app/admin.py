@@ -2,6 +2,8 @@
 
 from sqladmin import Admin, ModelView
 from sqladmin.authentication import AuthenticationBackend
+from sqladmin.helpers import get_object_identifier, slugify_class_name
+from sqlalchemy.exc import NoInspectionAvailable
 from starlette.requests import Request
 
 from app.core.config import settings
@@ -221,6 +223,7 @@ class BillAdmin(ModelView, model=Bill):
     name_plural = "Proyectos de Ley"
     icon = "fa-solid fa-scale-balanced"
     category = "Legislación"
+    details_template = "sqladmin/bill_details.html"
 
     column_list = [
         Bill.id,
@@ -412,6 +415,27 @@ def setup_admin(app) -> Admin:
         authentication_backend=auth,
         title="Cámara Abierta — Admin",
     )
+
+    def admin_details_url(request: Request, obj: object) -> str | None:
+        if obj is None:
+            return None
+
+        try:
+            identifier = get_object_identifier(obj)
+        except NoInspectionAvailable:
+            return None
+
+        if identifier is None:
+            return None
+
+        identity = slugify_class_name(obj.__class__.__name__)
+        for view in admin.views:
+            if isinstance(view, ModelView) and view.identity == identity:
+                return str(view._build_url_for("admin:details", request, obj))
+        return None
+
+    admin.templates.env.globals["admin_details_url"] = admin_details_url
+
     for view in _ALL_VIEWS:
         admin.add_view(view)
     return admin

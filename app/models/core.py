@@ -27,6 +27,9 @@ class Topic(SyncableMixin, Base):
     children: Mapped[list[Topic]] = relationship(back_populates="parent")
     bills: Mapped[list["Bill"]] = relationship(secondary="bill_topics", back_populates="topics")
 
+    def __str__(self) -> str:
+        return self.name
+
 
 class Region(SyncableMixin, Base):
     __tablename__ = "regions"
@@ -43,6 +46,9 @@ class Region(SyncableMixin, Base):
         back_populates="regions",
     )
 
+    def __str__(self) -> str:
+        return f"Region {self.number} - {self.name}"
+
 
 class District(SyncableMixin, Base):
     __tablename__ = "districts"
@@ -55,6 +61,9 @@ class District(SyncableMixin, Base):
     communes: Mapped[list["Commune"]] = relationship(back_populates="district")
     legislators: Mapped[list["Legislator"]] = relationship(back_populates="district")
 
+    def __str__(self) -> str:
+        return f"Distrito {self.number} - {self.name}"
+
 
 class Province(SyncableMixin, Base):
     __tablename__ = "provinces"
@@ -65,6 +74,9 @@ class Province(SyncableMixin, Base):
 
     region: Mapped[Region] = relationship(back_populates="provinces")
     communes: Mapped[list["Commune"]] = relationship(back_populates="province")
+
+    def __str__(self) -> str:
+        return f"Provincia {self.number} - {self.name}"
 
 
 class Commune(SyncableMixin, Base):
@@ -80,6 +92,9 @@ class Commune(SyncableMixin, Base):
     region: Mapped[Region] = relationship(back_populates="communes")
     district: Mapped[District | None] = relationship(back_populates="communes")
 
+    def __str__(self) -> str:
+        return self.name
+
 
 class Circumscription(SyncableMixin, Base):
     __tablename__ = "circumscriptions"
@@ -92,3 +107,6 @@ class Circumscription(SyncableMixin, Base):
         back_populates="circumscriptions",
     )
     legislators: Mapped[list["Legislator"]] = relationship(back_populates="circumscription")
+
+    def __str__(self) -> str:
+        return f"Circunscripcion {self.number} - {self.name}"

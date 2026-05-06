@@ -1,0 +1,66 @@
+{% extends "sqladmin/details.html" %}
+
+{% macro render_scrollable_list(items) %}
+<div class="border rounded p-2 bg-light" style="max-height: 16rem; overflow-y: auto; white-space: normal; min-width: 24rem;">
+  {% if items %}
+    {% for item in items %}
+    <div{% if not loop.last %} class="border-bottom py-1"{% else %} class="py-1"{% endif %}>
+      {% if item.url %}
+      <a href="{{ item.url }}"{% if item.external %} target="_blank" rel="noopener noreferrer"{% endif %}>{{ item.label }}</a>
+      {% else %}
+      {{ item.label }}
+      {% endif %}
+    </div>
+    {% endfor %}
+  {% else %}
+  <div class="text-muted">Sin elementos</div>
+  {% endif %}
+</div>
+{% endmacro %}
+
+{% block details_table %}
+<div class="table-responsive">
+  <table class="table card-table table-vcenter table-hover table-bordered">
+    <thead>
+      <tr>
+        <th class="w-1">Column</th>
+        <th class="w-1">Value</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for name in model_view._details_prop_names %}
+      {% set label = model_view._column_labels.get(name, name) %}
+      <tr>
+        <td>{{ label }}</td>
+        {% set value, formatted_value = model_view.get_detail_value(model, name) %}
+        {% if is_list(value) %}
+        <td style="white-space: normal;">
+          {% if name in model_view._relation_names %}
+          {% set items = [] %}
+          {% for elem, formatted_elem in zip(value, formatted_value) %}
+          {% if name == 'documents' %}
+          {% set _ = items.append({'label': formatted_elem, 'url': elem.document_url, 'external': elem.document_url is not none}) %}
+          {% else %}
+          {% set _ = items.append({'label': formatted_elem, 'url': model_view._build_url_for('admin:details', request, elem), 'external': False}) %}
+          {% endif %}
+          {% endfor %}
+          {{ render_scrollable_list(items) }}
+          {% else %}
+          {% set items = [] %}
+          {% for item in formatted_value %}
+          {% set _ = items.append({'label': item, 'url': None, 'external': False}) %}
+          {% endfor %}
+          {{ render_scrollable_list(items) }}
+          {% endif %}
+        </td>
+        {% elif name in model_view._relation_names %}
+        <td><a href="{{ model_view._url_for_details_with_prop(request, model, name) }}">{{ formatted_value }}</a></td>
+        {% else %}
+        <td style="white-space: normal;">{{ formatted_value }}</td>
+        {% endif %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

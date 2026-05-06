@@ -1,0 +1,110 @@
+{% extends "sqladmin/layout.html" %}
+
+{% macro render_relation_links(field, request) %}
+{% if field.data %}
+  {% if is_list(field.data) %}
+  <div class="form-text mt-2">
+    {% for related in field.data %}
+    {% set detail_url = admin_details_url(request, related) %}
+    {% if detail_url %}
+    <div><a href="{{ detail_url }}">Ver detalle de {{ related }}</a></div>
+    {% endif %}
+    {% endfor %}
+  </div>
+  {% else %}
+  {% set detail_url = admin_details_url(request, field.data) %}
+  {% if detail_url %}
+  <div class="form-text mt-2"><a href="{{ detail_url }}">Ver detalle de {{ field.data }}</a></div>
+  {% endif %}
+  {% endif %}
+{% endif %}
+{% endmacro %}
+
+{% macro render_field(field, ajax_lookup_url="", request=None) %}
+<div class="mb-3 form-group row">
+  {{ field.label(
+    class_="form-label col-sm-2 col-form-label" + (' required-label' if field.flags.required else ''),
+    **({'title': "This is a required field"} if field.flags.required else {})
+  ) }}
+  <div class="col-sm-10">
+    {% if ajax_lookup_url and field.loader is defined %}
+      {% set extra = {"data_url": ajax_lookup_url} %}
+    {% else %}
+      {% set extra = {} %}
+    {% endif %}
+    {% if field.errors %}
+    {{ field(class_="form-control is-invalid", **extra) }}
+    {% else %}
+    {{ field(**extra) }}
+    {% endif %}
+    {% for error in field.errors %}
+    <div class="invalid-feedback">{{ error }}</div>
+    {% endfor %}
+    {% if field.description %}
+    <small class="text-muted">{{ field.description }}</small>
+    {% endif %}
+    {{ render_relation_links(field, request) }}
+  </div>
+</div>
+{% endmacro %}
+
+{% macro render_form_fields(form, ajax_lookup_url="", request=None) %}
+{% if form.hidden_tag is defined %}
+{{ form.hidden_tag() }}
+{% else %}
+{% for f in form if f.widget.input_type == 'hidden' %}
+{{ f }}
+{% endfor %}
+{% endif %}
+
+{% for f in form if f.widget.input_type != 'hidden' %}
+{{ render_field(f, ajax_lookup_url=ajax_lookup_url, request=request) }}
+{% endfor %}
+{% endmacro %}
+
+{% block content %}
+<div class="col-12">
+  <div class="card">
+    <div class="card-header">
+      <h3 class="card-title">Edit {{ model_view.name }}</h3>
+    </div>
+    <div class="card-body border-bottom py-3">
+      {% block edit_form %}
+      <form action="{{ model_view._build_url_for('admin:edit', request, obj) }}" method="POST"
+        enctype="multipart/form-data">
+        <div class="row">
+          {% if error %}
+          <div class="alert alert-danger" role="alert">{{ error }}</div>
+          {% endif %}
+        </div>
+        <fieldset class="form-fieldset">
+          {{ render_form_fields(form, ajax_lookup_url=url_for('admin:ajax_lookup', identity=model_view.identity), request=request) }}
+        </fieldset>
+        <div class="row">
+          <div class="col-md-2">
+            <a href="{{ url_for('admin:list', identity=model_view.identity) }}" class="btn">
+              Cancel
+            </a>
+          </div>
+          <div class="col-md-6">
+            <div class="btn-group flex-wrap" data-toggle="buttons">
+              {% block submit_buttons_bottom  %}
+                <input type="submit" name="save" value="Save" class="btn">
+                <input type="submit" name="save" value="Save and continue editing" class="btn">
+                {% if model_view.can_create %}
+                {% if model_view.save_as %}
+                <input type="submit" name="save" value="Save as new" class="btn">
+                {% else %}
+                <input type="submit" name="save" value="Save and add another" class="btn">
+                {% endif %}
+                {% endif %}
+              {% endblock %}
+            </div>
+          </div>
+        </div>
+      </form>
+      {% endblock %}
+    </div>
+  </div>
+</div>
+{% endblock %}

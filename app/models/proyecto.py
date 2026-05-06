@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import Boolean, Column, Date, DateTime, ForeignKey, String, Table, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -9,6 +10,9 @@ from app.core.database import Base
 from app.models.base import SyncableMixin
 from app.models.core import Topic
 from app.models.legislature import Chamber, Committee, Legislator
+
+if TYPE_CHECKING:
+    from app.models.votacion import VotingSession
 
 bill_topics = Table(
     "bill_topics",
@@ -38,7 +42,6 @@ class Bill(SyncableMixin, Base):
     full_text: Mapped[str | None] = mapped_column(Text)
     ai_summary: Mapped[str | None] = mapped_column(Text)
     ai_summary_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-
     origin_chamber: Mapped[Chamber | None] = relationship(back_populates="originated_bills", foreign_keys=[origin_chamber_id])
     current_chamber: Mapped[Chamber | None] = relationship(back_populates="current_bills", foreign_keys=[current_chamber_id])
     current_committee: Mapped[Committee | None] = relationship(back_populates="current_bills")
@@ -49,6 +52,10 @@ class Bill(SyncableMixin, Base):
     documents: Mapped[list["BillDocument"]] = relationship(back_populates="bill")
     events: Mapped[list["BillEvent"]] = relationship(back_populates="bill")
     voting_sessions: Mapped[list["VotingSession"]] = relationship(back_populates="bill")
+
+    def __str__(self) -> str:
+        title = self.title if len(self.title) <= 80 else f"{self.title[:77]}..."
+        return f"Boletin {self.bulletin_number} - {title}"
 
 
 class BillAuthorship(SyncableMixin, Base):
@@ -63,6 +70,9 @@ class BillAuthorship(SyncableMixin, Base):
 
     bill: Mapped[Bill] = relationship(back_populates="authorships")
     legislator: Mapped[Legislator] = relationship(back_populates="authored_bills")
+
+    def __str__(self) -> str:
+        return f"{self.author_type} - legislador {self.legislator_id}"
 
 
 class BillStage(SyncableMixin, Base):
@@ -85,6 +95,11 @@ class BillStage(SyncableMixin, Base):
     events: Mapped[list["BillEvent"]] = relationship(back_populates="bill_stage")
     voting_sessions: Mapped[list["VotingSession"]] = relationship(back_populates="bill_stage")
 
+    def __str__(self) -> str:
+        stage_type = self.description or "Tramite"
+        date_label = self.start_date.isoformat() if self.start_date else "sin fecha"
+        return f"{stage_type} - {date_label}"
+
 
 class BillUrgency(SyncableMixin, Base):
     __tablename__ = "bill_urgencies"
@@ -99,6 +114,9 @@ class BillUrgency(SyncableMixin, Base):
 
     bill: Mapped[Bill] = relationship(back_populates="urgencies")
     chamber: Mapped[Chamber] = relationship()
+
+    def __str__(self) -> str:
+        return f"{self.urgency_type} - {self.entry_date.isoformat()}"
 
 
 class BillDocument(SyncableMixin, Base):
@@ -115,6 +133,9 @@ class BillDocument(SyncableMixin, Base):
     bill: Mapped[Bill] = relationship(back_populates="documents")
     bill_stage: Mapped[BillStage | None] = relationship(back_populates="documents")
 
+    def __str__(self) -> str:
+        return self.title
+
 
 class BillEvent(SyncableMixin, Base):
     __tablename__ = "bill_events"
@@ -129,3 +150,6 @@ class BillEvent(SyncableMixin, Base):
     bill: Mapped[Bill] = relationship(back_populates="events")
     bill_stage: Mapped[BillStage | None] = relationship(back_populates="events")
     chamber: Mapped[Chamber | None] = relationship()
+
+    def __str__(self) -> str:
+        return f"{self.event_date.isoformat()} - {self.title}"

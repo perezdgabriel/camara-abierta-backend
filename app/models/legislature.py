@@ -25,6 +25,11 @@ class PoliticalParty(SyncableMixin, Base):
     legislators: Mapped[list["Legislator"]] = relationship(back_populates="party")
     coalitions: Mapped[list["CoalitionMembership"]] = relationship(back_populates="party")
 
+    def __str__(self) -> str:
+        if self.abbreviation and self.abbreviation != self.name:
+            return f"{self.name} ({self.abbreviation})"
+        return self.name
+
 
 class Coalition(SyncableMixin, Base):
     __tablename__ = "coalitions"
@@ -35,6 +40,11 @@ class Coalition(SyncableMixin, Base):
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
     memberships: Mapped[list["CoalitionMembership"]] = relationship(back_populates="coalition")
+
+    def __str__(self) -> str:
+        if self.abbreviation and self.abbreviation != self.name:
+            return f"{self.name} ({self.abbreviation})"
+        return self.name
 
 
 class CoalitionMembership(SyncableMixin, Base):
@@ -63,6 +73,9 @@ class LegislativePeriod(SyncableMixin, Base):
     sessions: Mapped[list["LegislativeSession"]] = relationship(back_populates="period")
     terms: Mapped[list["LegislatorTerm"]] = relationship(back_populates="period")
 
+    def __str__(self) -> str:
+        return f"Periodo {self.number}"
+
 
 class Chamber(SyncableMixin, Base):
     __tablename__ = "chambers"
@@ -77,6 +90,9 @@ class Chamber(SyncableMixin, Base):
     committees: Mapped[list["Committee"]] = relationship(back_populates="chamber")
     originated_bills: Mapped[list["Bill"]] = relationship(back_populates="origin_chamber", foreign_keys="Bill.origin_chamber_id")
     current_bills: Mapped[list["Bill"]] = relationship(back_populates="current_chamber", foreign_keys="Bill.current_chamber_id")
+
+    def __str__(self) -> str:
+        return self.name
 
 
 class Legislator(SyncableMixin, Base):
@@ -113,6 +129,9 @@ class Legislator(SyncableMixin, Base):
     votes: Mapped[list["Vote"]] = relationship(back_populates="legislator")
     voting_stats: Mapped["LegislatorVotingStats"] = relationship(back_populates="legislator", uselist=False)
 
+    def __str__(self) -> str:
+        return self.full_name
+
 
 class LegislatorTerm(SyncableMixin, Base):
     __tablename__ = "legislator_terms"
@@ -144,6 +163,9 @@ class Committee(SyncableMixin, Base):
     memberships: Mapped[list["CommitteeMembership"]] = relationship(back_populates="committee")
     current_bills: Mapped[list["Bill"]] = relationship(back_populates="current_committee")
 
+    def __str__(self) -> str:
+        return self.name
+
 
 class CommitteeMembership(SyncableMixin, Base):
     __tablename__ = "committee_memberships"
@@ -172,3 +194,6 @@ class LegislativeSession(SyncableMixin, Base):
     period: Mapped[LegislativePeriod] = relationship(back_populates="sessions")
     chamber: Mapped[Chamber] = relationship(back_populates="sessions")
     voting_sessions: Mapped[list["VotingSession"]] = relationship(back_populates="session")
+
+    def __str__(self) -> str:
+        return f"Sesion {self.number} ({self.session_type})"
