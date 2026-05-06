@@ -59,6 +59,10 @@ class SenadoClient(BaseCongresoClient):
     def get_bill_by_bulletin(self, bulletin: str) -> dict | None:
         boletin_num = bulletin.split("-")[0]
         root = self._get_xml("tramitacion.php", params={"boletin": boletin_num})
+        return SenadoClient._parse_bill_xml(root, bulletin)
+
+    @staticmethod
+    def _parse_bill_xml(root: ET.Element, bulletin: str) -> dict | None:
         proyecto = root.find(".//proyecto")
         if proyecto is None:
             logger.warning("No project found for bulletin %s", bulletin)
@@ -66,26 +70,26 @@ class SenadoClient(BaseCongresoClient):
 
         desc = proyecto.find("descripcion")
         bill = {
-            "bulletin": self._text(desc, "boletin"),
-            "title": self._text(desc, "titulo"),
-            "entry_date": self._parse_date_dmy(self._text(desc, "fecha_ingreso")),
-            "initiative": self._text(desc, "iniciativa"),
-            "origin_chamber": self._text(desc, "camara_origen"),
-            "current_urgency": self._text(desc, "urgencia_actual"),
-            "stage": self._text(desc, "etapa"),
-            "substage": self._text(desc, "subetapa"),
-            "law_number": self._text(desc, "leynro"),
-            "publication_date": self._parse_date_dmy(self._text(desc, "diariooficial")),
-            "status": self._text(desc, "estado"),
-            "message_url": self._text(desc, "link_mensaje_mocion"),
+            "bulletin": BaseCongresoClient._text(desc, "boletin"),
+            "title": BaseCongresoClient._text(desc, "titulo"),
+            "entry_date": SenadoClient._parse_date_dmy(BaseCongresoClient._text(desc, "fecha_ingreso")),
+            "initiative": BaseCongresoClient._text(desc, "iniciativa"),
+            "origin_chamber": BaseCongresoClient._text(desc, "camara_origen"),
+            "current_urgency": BaseCongresoClient._text(desc, "urgencia_actual"),
+            "stage": BaseCongresoClient._text(desc, "etapa"),
+            "substage": BaseCongresoClient._text(desc, "subetapa"),
+            "law_number": BaseCongresoClient._text(desc, "leynro"),
+            "publication_date": SenadoClient._parse_date_dmy(BaseCongresoClient._text(desc, "diariooficial")),
+            "status": BaseCongresoClient._text(desc, "estado"),
+            "message_url": BaseCongresoClient._text(desc, "link_mensaje_mocion"),
         }
-        bill["authors"] = self._parse_authors(proyecto)
-        bill["tramitaciones"] = self._parse_tramitaciones(proyecto)
-        bill["votaciones"] = self._parse_votaciones(proyecto)
-        bill["informes"] = self._parse_informes(proyecto)
-        bill["comparados"] = self._parse_comparados(proyecto)
-        bill["oficios"] = self._parse_oficios(proyecto)
-        bill["materias"] = [self._text(m, "DESCRIPCION") for m in proyecto.iter("materia")]
+        bill["authors"] = SenadoClient._parse_authors(proyecto)
+        bill["tramitaciones"] = SenadoClient._parse_tramitaciones(proyecto)
+        bill["votaciones"] = SenadoClient._parse_votaciones(proyecto)
+        bill["informes"] = SenadoClient._parse_informes(proyecto)
+        bill["comparados"] = SenadoClient._parse_comparados(proyecto)
+        bill["oficios"] = SenadoClient._parse_oficios(proyecto)
+        bill["materias"] = [BaseCongresoClient._text(m, "DESCRIPCION") for m in proyecto.iter("materia")]
         return bill
 
     def get_bills_by_date(self, since: datetime.date) -> list[str]:
@@ -104,40 +108,43 @@ class SenadoClient(BaseCongresoClient):
     def get_votes_by_bulletin(self, bulletin: str) -> list[dict]:
         boletin_num = bulletin.split("-")[0]
         root = self._get_xml("votaciones.php", params={"boletin": boletin_num})
-        return self._parse_votaciones_from_root(root)
+        return SenadoClient._parse_votaciones_from_root(root)
 
-    def _parse_authors(self, proyecto: ET.Element) -> list[dict]:
-        return [{"legislator": self._text(auth, "PARLAMENTARIO")} for auth in proyecto.iter("autor")]
+    @staticmethod
+    def _parse_authors(proyecto: ET.Element) -> list[dict]:
+        return [{"legislator": BaseCongresoClient._text(auth, "PARLAMENTARIO")} for auth in proyecto.iter("autor")]
 
-    def _parse_tramitaciones(self, proyecto: ET.Element) -> list[dict]:
+    @staticmethod
+    def _parse_tramitaciones(proyecto: ET.Element) -> list[dict]:
         return [
             {
-                "session": self._text(tram, "SESION"),
-                "date": self._parse_date_dmy(self._text(tram, "FECHA")),
-                "description": self._text(tram, "DESCRIPCIONTRAMITE"),
-                "stage": self._text(tram, "ETAPDESCRIPCION"),
-                "chamber": self._text(tram, "CAMARATRAMITE"),
+                "session": BaseCongresoClient._text(tram, "SESION"),
+                "date": SenadoClient._parse_date_dmy(BaseCongresoClient._text(tram, "FECHA")),
+                "description": BaseCongresoClient._text(tram, "DESCRIPCIONTRAMITE"),
+                "stage": BaseCongresoClient._text(tram, "ETAPDESCRIPCION"),
+                "chamber": BaseCongresoClient._text(tram, "CAMARATRAMITE"),
             }
             for tram in proyecto.iter("tramite")
         ]
 
-    def _parse_votaciones(self, proyecto: ET.Element) -> list[dict]:
+    @staticmethod
+    def _parse_votaciones(proyecto: ET.Element) -> list[dict]:
         return [
             {
-                "session": self._text(vot, "SESION"),
-                "date": self._parse_date_dmy(self._text(vot, "FECHA")),
-                "subject": self._text(vot, "TEMA"),
-                "votes_for": self._int(vot, "SI"),
-                "votes_against": self._int(vot, "NO"),
-                "abstentions": self._int(vot, "ABSTENCION"),
-                "paired": self._int(vot, "PAREO"),
-                "quorum": self._text(vot, "QUORUM"),
-                "voting_type": self._text(vot, "TIPOVOTACION"),
-                "stage": self._text(vot, "ETAPA"),
+                "session": BaseCongresoClient._text(vot, "SESION"),
+                "date": SenadoClient._parse_date_dmy(BaseCongresoClient._text(vot, "FECHA")),
+                "subject": BaseCongresoClient._text(vot, "TEMA"),
+                "votes_for": SenadoClient._int(vot, "SI"),
+                "votes_against": SenadoClient._int(vot, "NO"),
+                "abstentions": SenadoClient._int(vot, "ABSTENCION"),
+                "paired": SenadoClient._int(vot, "PAREO"),
+                "quorum": BaseCongresoClient._text(vot, "QUORUM"),
+                "voting_type": BaseCongresoClient._text(vot, "TIPOVOTACION"),
+                "stage": BaseCongresoClient._text(vot, "ETAPA"),
                 "detail": [
                     {
-                        "legislator_name": self._text(v, "PARLAMENTARIO"),
-                        "vote": self._text(v, "SELECCION"),
+                        "legislator_name": BaseCongresoClient._text(v, "PARLAMENTARIO"),
+                        "vote": BaseCongresoClient._text(v, "SELECCION"),
                     }
                     for detalle in [vot.find("DETALLE_VOTACION")]
                     if detalle is not None
@@ -147,23 +154,24 @@ class SenadoClient(BaseCongresoClient):
             for vot in proyecto.iter("votacion")
         ]
 
-    def _parse_votaciones_from_root(self, root: ET.Element) -> list[dict]:
+    @staticmethod
+    def _parse_votaciones_from_root(root: ET.Element) -> list[dict]:
         return [
             {
-                "session": self._text(vot, "SESION"),
-                "date": self._parse_date_dmy(self._text(vot, "FECHA")),
-                "subject": self._text(vot, "TEMA"),
-                "votes_for": self._int(vot, "SI"),
-                "votes_against": self._int(vot, "NO"),
-                "abstentions": self._int(vot, "ABSTENCION"),
-                "paired": self._int(vot, "PAREO"),
-                "quorum": self._text(vot, "QUORUM"),
-                "voting_type": self._text(vot, "TIPOVOTACION"),
-                "stage": self._text(vot, "ETAPA"),
+                "session": BaseCongresoClient._text(vot, "SESION"),
+                "date": SenadoClient._parse_date_dmy(BaseCongresoClient._text(vot, "FECHA")),
+                "subject": BaseCongresoClient._text(vot, "TEMA"),
+                "votes_for": SenadoClient._int(vot, "SI"),
+                "votes_against": SenadoClient._int(vot, "NO"),
+                "abstentions": SenadoClient._int(vot, "ABSTENCION"),
+                "paired": SenadoClient._int(vot, "PAREO"),
+                "quorum": BaseCongresoClient._text(vot, "QUORUM"),
+                "voting_type": BaseCongresoClient._text(vot, "TIPOVOTACION"),
+                "stage": BaseCongresoClient._text(vot, "ETAPA"),
                 "detail": [
                     {
-                        "legislator_name": self._text(v, "PARLAMENTARIO"),
-                        "vote": self._text(v, "SELECCION"),
+                        "legislator_name": BaseCongresoClient._text(v, "PARLAMENTARIO"),
+                        "vote": BaseCongresoClient._text(v, "SELECCION"),
                     }
                     for detalle in [vot.find("DETALLE_VOTACION")]
                     if detalle is not None
@@ -173,34 +181,37 @@ class SenadoClient(BaseCongresoClient):
             for vot in root.iter("votacion")
         ]
 
-    def _parse_informes(self, proyecto: ET.Element) -> list[dict]:
+    @staticmethod
+    def _parse_informes(proyecto: ET.Element) -> list[dict]:
         return [
             {
-                "date": self._parse_date_dmy(self._text(inf, "FECHAINFORME")),
-                "procedure": self._text(inf, "TRAMITE"),
-                "stage": self._text(inf, "ETAPA"),
-                "url": self._text(inf, "LINK_INFORME"),
+                "date": SenadoClient._parse_date_dmy(BaseCongresoClient._text(inf, "FECHAINFORME")),
+                "procedure": BaseCongresoClient._text(inf, "TRAMITE"),
+                "stage": BaseCongresoClient._text(inf, "ETAPA"),
+                "url": BaseCongresoClient._text(inf, "LINK_INFORME"),
             }
             for inf in proyecto.iter("informe")
         ]
 
-    def _parse_comparados(self, proyecto: ET.Element) -> list[dict]:
+    @staticmethod
+    def _parse_comparados(proyecto: ET.Element) -> list[dict]:
         return [
-            {"text": self._text(comp, "COMPARADO"), "url": self._text(comp, "LINK_COMPARADO")}
+            {"text": BaseCongresoClient._text(comp, "COMPARADO"), "url": BaseCongresoClient._text(comp, "LINK_COMPARADO")}
             for comp in proyecto.iter("comparado")
         ]
 
-    def _parse_oficios(self, proyecto: ET.Element) -> list[dict]:
+    @staticmethod
+    def _parse_oficios(proyecto: ET.Element) -> list[dict]:
         return [
             {
-                "number": self._text(ofi, "NUMERO"),
-                "date": self._parse_date_dmy(self._text(ofi, "FECHA")),
-                "procedure": self._text(ofi, "TRAMITE"),
-                "stage": self._text(ofi, "ETAPA"),
-                "type": self._text(ofi, "TIPO"),
-                "chamber": self._text(ofi, "CAMARA"),
-                "description": self._text(ofi, "DESCRIPCION"),
-                "url": self._text(ofi, "LINK_OFICIO"),
+                "number": BaseCongresoClient._text(ofi, "NUMERO"),
+                "date": SenadoClient._parse_date_dmy(BaseCongresoClient._text(ofi, "FECHA")),
+                "procedure": BaseCongresoClient._text(ofi, "TRAMITE"),
+                "stage": BaseCongresoClient._text(ofi, "ETAPA"),
+                "type": BaseCongresoClient._text(ofi, "TIPO"),
+                "chamber": BaseCongresoClient._text(ofi, "CAMARA"),
+                "description": BaseCongresoClient._text(ofi, "DESCRIPCION"),
+                "url": BaseCongresoClient._text(ofi, "LINK_OFICIO"),
             }
             for ofi in proyecto.iter("oficio")
         ]
