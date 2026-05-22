@@ -58,11 +58,15 @@ def resolve_database_url(database_url: str | None) -> str:
 def load_target_url(database_url: str) -> URL:
     target_url = make_url(database_url)
     if target_url.get_backend_name() != "postgresql":
-        raise SystemExit("This script currently supports PostgreSQL DATABASE_URL values only.")
+        raise SystemExit(
+            "This script currently supports PostgreSQL DATABASE_URL values only."
+        )
     if not target_url.database:
         raise SystemExit("DATABASE_URL must include a database name.")
     if target_url.database in SYSTEM_DATABASES:
-        raise SystemExit(f"Refusing to recreate reserved PostgreSQL database '{target_url.database}'.")
+        raise SystemExit(
+            f"Refusing to recreate reserved PostgreSQL database '{target_url.database}'."
+        )
     return target_url
 
 
@@ -82,7 +86,9 @@ def confirm_reset(target_url: URL, assume_yes: bool) -> None:
         return
 
     if not sys.stdin.isatty():
-        raise SystemExit("Refusing to recreate the database in non-interactive mode without --yes.")
+        raise SystemExit(
+            "Refusing to recreate the database in non-interactive mode without --yes."
+        )
 
     response = input(
         "This will:\n"
@@ -97,7 +103,9 @@ def confirm_reset(target_url: URL, assume_yes: bool) -> None:
 
 def recreate_database(target_url: URL) -> None:
     admin_url = build_admin_url(target_url)
-    admin_engine = create_engine(admin_url, isolation_level="AUTOCOMMIT", pool_pre_ping=True)
+    admin_engine = create_engine(
+        admin_url, isolation_level="AUTOCOMMIT", pool_pre_ping=True
+    )
     database_name = target_url.database
     if database_name is None:
         raise SystemExit("DATABASE_URL must include a database name.")

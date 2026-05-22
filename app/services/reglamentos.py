@@ -164,10 +164,7 @@ def reglamentos_stats_por_categoria(db: Session) -> list[dict[str, int | str]]:
         .order_by(desc("count"))
         .all()
     )
-    return [
-        {"categoria": categoria, "count": count}
-        for categoria, count in rows
-    ]
+    return [{"categoria": categoria, "count": count} for categoria, count in rows]
 
 
 def reglamentos_tiempo_tramitacion(

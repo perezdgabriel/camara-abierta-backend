@@ -44,7 +44,7 @@ class OpenDataCamaraClient(BaseCongresoClient):
         value = self._txt(el, tag)
         try:
             return int(value)
-        except (ValueError, TypeError):
+        except ValueError, TypeError:
             return 0
 
     def _parse_dt(self, value: str) -> str | None:
@@ -69,8 +69,12 @@ class OpenDataCamaraClient(BaseCongresoClient):
                 "start_date": self._parse_dt(self._txt(mil, "FechaInicio")),
                 "end_date": self._parse_dt(self._txt(mil, "FechaTermino")),
                 "party_id": self._txt(partido, "Id") if partido is not None else "",
-                "party_name": self._txt(partido, "Nombre") if partido is not None else "",
-                "party_alias": self._txt(partido, "Alias") if partido is not None else "",
+                "party_name": self._txt(partido, "Nombre")
+                if partido is not None
+                else "",
+                "party_alias": self._txt(partido, "Alias")
+                if partido is not None
+                else "",
             }
             for mil in self._iter(dip, "Militancia")
             for partido in [self._find(mil, "Partido")]
@@ -108,7 +112,10 @@ class OpenDataCamaraClient(BaseCongresoClient):
         return comisiones
 
     def get_comision(self, comision_id: int) -> dict[str, Any] | None:
-        root = self._get_xml("WSComision.asmx/retornarComision", params={"prmComisionID": str(comision_id)})
+        root = self._get_xml(
+            "WSComision.asmx/retornarComision",
+            params={"prmComisionID": str(comision_id)},
+        )
         com = root
         if com.tag not in (f"{NS_BRACE}Comision", "Comision"):
             found = self._find(root, "Comision")
@@ -121,8 +128,12 @@ class OpenDataCamaraClient(BaseCongresoClient):
                 "end_date": self._parse_dt(self._txt(di, "FechaTermino")),
                 "diputado_id": self._int_val(dip, "Id") if dip is not None else 0,
                 "first_name": self._txt(dip, "Nombre") if dip is not None else "",
-                "last_name_father": self._txt(dip, "ApellidoPaterno") if dip is not None else "",
-                "last_name_mother": self._txt(dip, "ApellidoMaterno") if dip is not None else "",
+                "last_name_father": self._txt(dip, "ApellidoPaterno")
+                if dip is not None
+                else "",
+                "last_name_mother": self._txt(dip, "ApellidoMaterno")
+                if dip is not None
+                else "",
             }
             for di in self._iter(com, "DiputadoIntegrante")
             for dip in [self._find(di, "Diputado")]
@@ -142,8 +153,12 @@ class OpenDataCamaraClient(BaseCongresoClient):
             "phone": self._txt(com, "Telefono"),
             "president": {
                 "id": self._int_val(presidente, "Id") if presidente is not None else 0,
-                "first_name": self._txt(presidente, "Nombre") if presidente is not None else "",
-                "last_name_father": self._txt(presidente, "ApellidoPaterno") if presidente is not None else "",
+                "first_name": self._txt(presidente, "Nombre")
+                if presidente is not None
+                else "",
+                "last_name_father": self._txt(presidente, "ApellidoPaterno")
+                if presidente is not None
+                else "",
             },
             "members": integrantes,
         }
@@ -198,7 +213,10 @@ class OpenDataCamaraClient(BaseCongresoClient):
                         "number": self._int_val(prov, "Numero"),
                         "name": self._txt(prov, "Nombre"),
                         "communes": [
-                            {"number": self._int_val(com, "Numero"), "name": self._txt(com, "Nombre")}
+                            {
+                                "number": self._int_val(com, "Numero"),
+                                "name": self._txt(com, "Nombre"),
+                            }
                             for com in self._iter(prov, "Comuna")
                         ],
                     }
@@ -216,7 +234,10 @@ class OpenDataCamaraClient(BaseCongresoClient):
             {
                 "number": self._int_val(dist, "Numero"),
                 "communes": [
-                    {"number": self._int_val(com, "Numero"), "name": self._txt(com, "Nombre")}
+                    {
+                        "number": self._int_val(com, "Numero"),
+                        "name": self._txt(com, "Nombre"),
+                    }
                     for com in self._iter(dist, "Comuna")
                 ],
             }
@@ -239,13 +260,21 @@ class OpenDataCamaraClient(BaseCongresoClient):
         }
 
     def get_mensajes_x_anno(self, anno: int) -> list[dict]:
-        root = self._get_xml("WSLegislativo.asmx/retornarMensajesXAnno", params={"prmAnno": str(anno)})
-        results = [self._parse_proyecto_ley(proy) for proy in self._iter(root, "ProyectoLey")]
+        root = self._get_xml(
+            "WSLegislativo.asmx/retornarMensajesXAnno", params={"prmAnno": str(anno)}
+        )
+        results = [
+            self._parse_proyecto_ley(proy) for proy in self._iter(root, "ProyectoLey")
+        ]
         logger.info("Fetched %d mensajes for year %d (opendata)", len(results), anno)
         return results
 
     def get_mociones_x_anno(self, anno: int) -> list[dict]:
-        root = self._get_xml("WSLegislativo.asmx/retornarMocionesXAnno", params={"prmAnno": str(anno)})
-        results = [self._parse_proyecto_ley(proy) for proy in self._iter(root, "ProyectoLey")]
+        root = self._get_xml(
+            "WSLegislativo.asmx/retornarMocionesXAnno", params={"prmAnno": str(anno)}
+        )
+        results = [
+            self._parse_proyecto_ley(proy) for proy in self._iter(root, "ProyectoLey")
+        ]
         logger.info("Fetched %d mociones for year %d (opendata)", len(results), anno)
         return results

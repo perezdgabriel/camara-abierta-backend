@@ -15,9 +15,13 @@ class CamaraClient(BaseCongresoClient):
 
     def get_diputados_vigentes(self) -> list[dict]:
         root = self._get_xml("getDiputados_Vigentes")
-        deputies = [self._parse_diputado(dip) for dip in root.iter(f"{NS_BRACE}Diputado")]
+        deputies = [
+            self._parse_diputado(dip) for dip in root.iter(f"{NS_BRACE}Diputado")
+        ]
         if not deputies:
-            deputies = [self._parse_diputado(dip, ns="") for dip in root.iter("Diputado")]
+            deputies = [
+                self._parse_diputado(dip, ns="") for dip in root.iter("Diputado")
+            ]
         logger.info("Fetched %d deputies", len(deputies))
         return deputies
 
@@ -54,7 +58,9 @@ class CamaraClient(BaseCongresoClient):
             "first_name": self._ns_text(dip, "Nombre", ns),
             "last_name_father": self._ns_text(dip, "Apellido_Paterno", ns),
             "last_name_mother": self._ns_text(dip, "Apellido_Materno", ns),
-            "birth_date": self._parse_date_iso(self._ns_text(dip, "Fecha_Nacimiento", ns)),
+            "birth_date": self._parse_date_iso(
+                self._ns_text(dip, "Fecha_Nacimiento", ns)
+            ),
             "gender_code": gender_code,
             "party": party,
             "district": district,
@@ -91,13 +97,16 @@ class CamaraClient(BaseCongresoClient):
 
     def get_votaciones_boletin(self, bulletin: str) -> list[dict]:
         boletin_num = bulletin.split("-")[0]
-        root = self._get_xml("getVotaciones_Boletin", params={"prmBoletin": boletin_num})
+        root = self._get_xml(
+            "getVotaciones_Boletin", params={"prmBoletin": boletin_num}
+        )
         ns = NS_BRACE
         votes = [
             {
                 "id": self._ns_text(vot, "ID", ns),
                 "date": self._parse_date_iso(self._ns_text(vot, "Fecha", ns)),
-                "subject": self._ns_text(vot, "Descripcion", ns) or self._ns_text(vot, "Materia", ns),
+                "subject": self._ns_text(vot, "Descripcion", ns)
+                or self._ns_text(vot, "Materia", ns),
                 "result": self._ns_text(vot, "Resultado", ns),
                 "total_for": self._ns_int(vot, "TotalAfirmativos", ns),
                 "total_against": self._ns_int(vot, "TotalNegativos", ns),
@@ -116,8 +125,12 @@ class CamaraClient(BaseCongresoClient):
                 "id": self._ns_text(leg, "ID", ns),
                 "number": self._ns_int(leg, "Numero", ns),
                 "type": self._ns_text(leg, "Tipo", ns),
-                "start_date": self._parse_date_iso(self._ns_text(leg, "FechaInicio", ns)),
-                "end_date": self._parse_date_iso(self._ns_text(leg, "FechaTermino", ns)),
+                "start_date": self._parse_date_iso(
+                    self._ns_text(leg, "FechaInicio", ns)
+                ),
+                "end_date": self._parse_date_iso(
+                    self._ns_text(leg, "FechaTermino", ns)
+                ),
             }
             for leg in root.iter(f"{NS_BRACE}Legislatura")
         ]
@@ -129,8 +142,12 @@ class CamaraClient(BaseCongresoClient):
             {
                 "id": self._ns_text(per, "ID", ns),
                 "name": self._ns_text(per, "Nombre", ns),
-                "start_date": self._parse_date_iso(self._ns_text(per, "FechaInicio", ns)),
-                "end_date": self._parse_date_iso(self._ns_text(per, "FechaTermino", ns)),
+                "start_date": self._parse_date_iso(
+                    self._ns_text(per, "FechaInicio", ns)
+                ),
+                "end_date": self._parse_date_iso(
+                    self._ns_text(per, "FechaTermino", ns)
+                ),
             }
             for per in root.iter(f"{NS_BRACE}PeriodoLegislativo")
         ]
@@ -144,7 +161,9 @@ class CamaraClient(BaseCongresoClient):
                 "number": self._ns_int(ses, "Numero", ns),
                 "type": self._ns_text(ses, "Tipo", ns),
                 "date": self._parse_date_iso(self._ns_text(ses, "FechaInicio", ns)),
-                "end_date": self._parse_date_iso(self._ns_text(ses, "FechaTermino", ns)),
+                "end_date": self._parse_date_iso(
+                    self._ns_text(ses, "FechaTermino", ns)
+                ),
             }
             for ses in root.iter(f"{NS_BRACE}Sesion")
         ]

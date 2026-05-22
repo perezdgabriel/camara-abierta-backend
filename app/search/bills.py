@@ -83,6 +83,7 @@ MAPPING: dict[str, Any] = {
 
 # ── Index management ──────────────────────────────────────────────────────────
 
+
 def ensure_index() -> None:
     """Create the bills index with mapping if it does not exist."""
     es = get_es_client()
@@ -95,11 +96,14 @@ def ensure_index() -> None:
 
 # ── Document builder ──────────────────────────────────────────────────────────
 
+
 def build_document(bill: Bill) -> dict[str, Any]:
     """Build an ES document from a fully-loaded Bill ORM object."""
     active_urgency = next((u for u in (bill.urgencies or []) if u.is_active), None)
     current_stage = next((s for s in (bill.stages or []) if s.is_current), None)
-    author_names = [a.legislator.full_name for a in (bill.authorships or []) if a.legislator]
+    author_names = [
+        a.legislator.full_name for a in (bill.authorships or []) if a.legislator
+    ]
 
     return {
         "id": bill.id,
@@ -123,6 +127,7 @@ def build_document(bill: Bill) -> dict[str, Any]:
 
 # ── Indexing ──────────────────────────────────────────────────────────────────
 
+
 def index_bill(bill: Bill) -> None:
     """Index or update a single bill document."""
     es = get_es_client()
@@ -137,6 +142,7 @@ def delete_bill(bill_id: int) -> None:
 
 
 # ── Search ────────────────────────────────────────────────────────────────────
+
 
 def search_bills(
     *,
@@ -161,21 +167,23 @@ def search_bills(
     filter_clauses: list[dict] = []
 
     if q:
-        must.append({
-            "multi_match": {
-                "query": q,
-                "fields": [
-                    "title^3",
-                    "bulletin_number^2",
-                    "summary",
-                    "full_text",
-                    "author_names",
-                ],
-                "type": "best_fields",
-                "fuzziness": "AUTO",
-                "minimum_should_match": "75%",
+        must.append(
+            {
+                "multi_match": {
+                    "query": q,
+                    "fields": [
+                        "title^3",
+                        "bulletin_number^2",
+                        "summary",
+                        "full_text",
+                        "author_names",
+                    ],
+                    "type": "best_fields",
+                    "fuzziness": "AUTO",
+                    "minimum_should_match": "75%",
+                }
             }
-        })
+        )
 
     if status:
         filter_clauses.append({"term": {"status": status}})

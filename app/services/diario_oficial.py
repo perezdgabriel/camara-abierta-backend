@@ -102,6 +102,5 @@ def stats_by_ministry(
         .all()
     )
     return [
-        {"ministry": ministry or "Unknown", "count": count}
-        for ministry, count in rows
+        {"ministry": ministry or "Unknown", "count": count} for ministry, count in rows
     ]

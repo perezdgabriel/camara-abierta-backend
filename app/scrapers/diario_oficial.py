@@ -80,7 +80,9 @@ SCRAPE_JS = r"""
 
 async def scrape_date(eng: ScraperEngine, date_str: str) -> dict[str, Any] | None:
     url = f"{BASE_URL}/index.php?date={date_str}"
-    loaded = await eng.goto_with_retry(url, wait_for="section.norma_general, p.nofound, nav.menu")
+    loaded = await eng.goto_with_retry(
+        url, wait_for="section.norma_general, p.nofound, nav.menu"
+    )
     if not loaded:
         return None
     data = await eng.page.evaluate(SCRAPE_JS)
@@ -95,13 +97,17 @@ def process_local_date(date_str: str) -> dict[str, Any] | None:
     return json.loads(file_path.read_text(encoding="utf-8"))
 
 
-async def _run_scrape(target_date: date, engine: str, headed: bool) -> dict[str, Any] | None:
+async def _run_scrape(
+    target_date: date, engine: str, headed: bool
+) -> dict[str, Any] | None:
     async with ScraperEngine(engine=engine, headed=headed) as eng:
         await eng.warm_up(HOME_URL)
         return await scrape_date(eng, format_date(target_date))
 
 
-def _build_dispatch_result(target_date: date, found: int, dispatched: int, dry_run: bool) -> dict[str, Any]:
+def _build_dispatch_result(
+    target_date: date, found: int, dispatched: int, dry_run: bool
+) -> dict[str, Any]:
     result: dict[str, Any] = {
         "date": target_date.isoformat(),
         "dry_run": dry_run,
@@ -124,7 +130,9 @@ def run_scrape(
 ) -> dict[str, Any]:
     data = asyncio.run(_run_scrape(target_date, engine, headed))
     if not data or data.get("empty"):
-        return _build_dispatch_result(target_date, found=0, dispatched=0, dry_run=dry_run)
+        return _build_dispatch_result(
+            target_date, found=0, dispatched=0, dry_run=dry_run
+        )
 
     from app.tasks.normas import process_norma
 

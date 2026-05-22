@@ -43,5 +43,7 @@ class SyncVersionMixin:
     )
 
 
-class SyncableMixin(BigIntPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, SyncVersionMixin):
+class SyncableMixin(
+    BigIntPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, SyncVersionMixin
+):
     pass

@@ -12,7 +12,7 @@ class LegislatureParser:
         number = None
         try:
             number = int(raw.get("id", 0))
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             pass
         return {
             "_external_id": str(raw.get("id", "")),

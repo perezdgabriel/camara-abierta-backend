@@ -73,14 +73,18 @@ class SenadoClient(BaseCongresoClient):
         bill: dict[str, Any] = {
             "bulletin": BaseCongresoClient._text(desc, "boletin"),
             "title": BaseCongresoClient._text(desc, "titulo"),
-            "entry_date": SenadoClient._parse_date_dmy(BaseCongresoClient._text(desc, "fecha_ingreso")),
+            "entry_date": SenadoClient._parse_date_dmy(
+                BaseCongresoClient._text(desc, "fecha_ingreso")
+            ),
             "initiative": BaseCongresoClient._text(desc, "iniciativa"),
             "origin_chamber": BaseCongresoClient._text(desc, "camara_origen"),
             "current_urgency": BaseCongresoClient._text(desc, "urgencia_actual"),
             "stage": BaseCongresoClient._text(desc, "etapa"),
             "substage": BaseCongresoClient._text(desc, "subetapa"),
             "law_number": BaseCongresoClient._text(desc, "leynro"),
-            "publication_date": SenadoClient._parse_date_dmy(BaseCongresoClient._text(desc, "diariooficial")),
+            "publication_date": SenadoClient._parse_date_dmy(
+                BaseCongresoClient._text(desc, "diariooficial")
+            ),
             "status": BaseCongresoClient._text(desc, "estado"),
             "message_url": BaseCongresoClient._text(desc, "link_mensaje_mocion"),
         }
@@ -90,7 +94,9 @@ class SenadoClient(BaseCongresoClient):
         bill["informes"] = SenadoClient._parse_informes(proyecto)
         bill["comparados"] = SenadoClient._parse_comparados(proyecto)
         bill["oficios"] = SenadoClient._parse_oficios(proyecto)
-        bill["materias"] = [BaseCongresoClient._text(m, "DESCRIPCION") for m in proyecto.iter("materia")]
+        bill["materias"] = [
+            BaseCongresoClient._text(m, "DESCRIPCION") for m in proyecto.iter("materia")
+        ]
         return bill
 
     def get_bills_by_date(self, since: datetime.date) -> list[str]:
@@ -113,14 +119,19 @@ class SenadoClient(BaseCongresoClient):
 
     @staticmethod
     def _parse_authors(proyecto: ET.Element) -> list[dict[str, Any]]:
-        return [{"legislator": BaseCongresoClient._text(auth, "PARLAMENTARIO")} for auth in proyecto.iter("autor")]
+        return [
+            {"legislator": BaseCongresoClient._text(auth, "PARLAMENTARIO")}
+            for auth in proyecto.iter("autor")
+        ]
 
     @staticmethod
     def _parse_tramitaciones(proyecto: ET.Element) -> list[dict[str, Any]]:
         return [
             {
                 "session": BaseCongresoClient._text(tram, "SESION"),
-                "date": SenadoClient._parse_date_dmy(BaseCongresoClient._text(tram, "FECHA")),
+                "date": SenadoClient._parse_date_dmy(
+                    BaseCongresoClient._text(tram, "FECHA")
+                ),
                 "description": BaseCongresoClient._text(tram, "DESCRIPCIONTRAMITE"),
                 "stage": BaseCongresoClient._text(tram, "ETAPDESCRIPCION"),
                 "chamber": BaseCongresoClient._text(tram, "CAMARATRAMITE"),
@@ -133,7 +144,9 @@ class SenadoClient(BaseCongresoClient):
         return [
             {
                 "session": BaseCongresoClient._text(vot, "SESION"),
-                "date": SenadoClient._parse_date_dmy(BaseCongresoClient._text(vot, "FECHA")),
+                "date": SenadoClient._parse_date_dmy(
+                    BaseCongresoClient._text(vot, "FECHA")
+                ),
                 "subject": BaseCongresoClient._text(vot, "TEMA"),
                 "votes_for": SenadoClient._int(vot, "SI"),
                 "votes_against": SenadoClient._int(vot, "NO"),
@@ -160,7 +173,9 @@ class SenadoClient(BaseCongresoClient):
         return [
             {
                 "session": BaseCongresoClient._text(vot, "SESION"),
-                "date": SenadoClient._parse_date_dmy(BaseCongresoClient._text(vot, "FECHA")),
+                "date": SenadoClient._parse_date_dmy(
+                    BaseCongresoClient._text(vot, "FECHA")
+                ),
                 "subject": BaseCongresoClient._text(vot, "TEMA"),
                 "votes_for": SenadoClient._int(vot, "SI"),
                 "votes_against": SenadoClient._int(vot, "NO"),
@@ -186,7 +201,9 @@ class SenadoClient(BaseCongresoClient):
     def _parse_informes(proyecto: ET.Element) -> list[dict[str, Any]]:
         return [
             {
-                "date": SenadoClient._parse_date_dmy(BaseCongresoClient._text(inf, "FECHAINFORME")),
+                "date": SenadoClient._parse_date_dmy(
+                    BaseCongresoClient._text(inf, "FECHAINFORME")
+                ),
                 "procedure": BaseCongresoClient._text(inf, "TRAMITE"),
                 "stage": BaseCongresoClient._text(inf, "ETAPA"),
                 "url": BaseCongresoClient._text(inf, "LINK_INFORME"),
@@ -197,7 +214,10 @@ class SenadoClient(BaseCongresoClient):
     @staticmethod
     def _parse_comparados(proyecto: ET.Element) -> list[dict[str, Any]]:
         return [
-            {"text": BaseCongresoClient._text(comp, "COMPARADO"), "url": BaseCongresoClient._text(comp, "LINK_COMPARADO")}
+            {
+                "text": BaseCongresoClient._text(comp, "COMPARADO"),
+                "url": BaseCongresoClient._text(comp, "LINK_COMPARADO"),
+            }
             for comp in proyecto.iter("comparado")
         ]
 
@@ -206,7 +226,9 @@ class SenadoClient(BaseCongresoClient):
         return [
             {
                 "number": BaseCongresoClient._text(ofi, "NUMERO"),
-                "date": SenadoClient._parse_date_dmy(BaseCongresoClient._text(ofi, "FECHA")),
+                "date": SenadoClient._parse_date_dmy(
+                    BaseCongresoClient._text(ofi, "FECHA")
+                ),
                 "procedure": BaseCongresoClient._text(ofi, "TRAMITE"),
                 "stage": BaseCongresoClient._text(ofi, "ETAPA"),
                 "type": BaseCongresoClient._text(ofi, "TIPO"),

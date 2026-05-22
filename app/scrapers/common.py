@@ -204,10 +204,14 @@ class ScraperEngine:
         except Exception:
             pass
         await jitter_sleep(2.0, 4.0)
-        await self.page.evaluate("window.scrollBy(0, Math.floor(Math.random() * 300 + 100))")
+        await self.page.evaluate(
+            "window.scrollBy(0, Math.floor(Math.random() * 300 + 100))"
+        )
         await jitter_sleep(0.5, 1.5)
 
-    async def goto_with_retry(self, url: str, *, wait_for: str | None = None, retries: int = 3) -> bool:
+    async def goto_with_retry(
+        self, url: str, *, wait_for: str | None = None, retries: int = 3
+    ) -> bool:
         for attempt in range(1, retries + 1):
             try:
                 await self.page.goto(url, wait_until="domcontentloaded", timeout=60_000)

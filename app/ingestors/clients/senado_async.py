@@ -27,7 +27,9 @@ async def fetch_bills_parallel(
 
     semaphore = asyncio.Semaphore(max_concurrency)
 
-    async def fetch_one(bulletin: str, client: Any) -> tuple[str, dict[str, Any] | None]:
+    async def fetch_one(
+        bulletin: str, client: Any
+    ) -> tuple[str, dict[str, Any] | None]:
         async with semaphore:
             return await _afetch_and_parse(client, bulletin)
 
@@ -45,7 +47,11 @@ async def fetch_bills_parallel(
         tasks = [fetch_one(bn, client) for bn in bulletins]
         results = await asyncio.gather(*tasks)
 
-    logger.info("Parallel-fetched %d bills (%d succeeded)", len(bulletins), sum(1 for _, r in results if r is not None))
+    logger.info(
+        "Parallel-fetched %d bills (%d succeeded)",
+        len(bulletins),
+        sum(1 for _, r in results if r is not None),
+    )
     return list(results)
 
 
@@ -58,7 +64,9 @@ async def _afetch_and_parse(
     try:
         response = await client.get(url, params={"boletin": boletin_num})
         if response.status_code != 200:
-            logger.warning("HTTP %d fetching bulletin %s", response.status_code, bulletin)
+            logger.warning(
+                "HTTP %d fetching bulletin %s", response.status_code, bulletin
+            )
             return bulletin, None
 
         root = fromstring(response.content)

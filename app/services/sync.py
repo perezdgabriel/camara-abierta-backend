@@ -79,7 +79,7 @@ def delta_sync_reglamentos(
                 etapa,
                 "gobierno_actual",
                 etapa.fecha is not None
-                and etapa.fecha >= settings.gobierno_actual_inicio
+                and etapa.fecha >= settings.gobierno_actual_inicio,
             )
 
     current_version = batch[-1].sync_version if batch else since_version

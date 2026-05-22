@@ -2,7 +2,13 @@ import logging
 from xml.etree import ElementTree as ET
 
 from defusedxml.ElementTree import fromstring  # type: ignore[import-untyped]
-from tenacity import RetryCallState, retry, retry_if_exception_type, stop_after_attempt, wait_exponential
+from tenacity import (
+    RetryCallState,
+    retry,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +78,9 @@ class BaseCongresoClient:
         self.close()
 
     @retry(
-        retry=retry_if_exception_type((_httpx().TransportError, _httpx().TimeoutException)),
+        retry=retry_if_exception_type(
+            (_httpx().TransportError, _httpx().TimeoutException)
+        ),
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=2, min=2, max=30),
         before_sleep=_log_retry,
