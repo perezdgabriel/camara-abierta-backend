@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.models.enums import BillOrigin, BillStatus, BillType
 from app.schemas.proyectos import (
     BillDetail,
     BillsResponse,
@@ -12,10 +13,9 @@ from app.schemas.proyectos import (
     Stage,
     VotingResult,
 )
-from app.search import bills as es_bills
 from app.services import proyectos as svc
 
-router = APIRouter(tags=["Proyectos"])
+router = APIRouter(tags=["Bills"])
 
 
 def _to_summary(bill) -> BillSummary:
@@ -31,13 +31,21 @@ def _to_detail(bill) -> BillDetail:
 @router.get("", response_model=BillsResponse)
 def list_bills(
     db: Session = Depends(get_db),
-    status: str | None = Query(None, description="Estado del proyecto (pending, in_progress, approved, rejected, archived)"),
-    bill_type: str | None = Query(None, alias="tipo", description="Tipo de proyecto"),
-    origin: str | None = Query(None, description="Origen: mensaje | mocion"),
+    status: BillStatus | None = Query(None, description="Estado canónico del proyecto"),
+    bill_type: BillType | None = Query(
+        None, alias="tipo", description="Tipo de proyecto"
+    ),
+    origin: BillOrigin | None = Query(None, description="Origen canónico del proyecto"),
     topic_id: int | None = Query(None, alias="tema_id", description="Filtrar por tema"),
-    date_from: date | None = Query(None, alias="desde", description="Fecha de ingreso desde (YYYY-MM-DD)"),
-    date_to: date | None = Query(None, alias="hasta", description="Fecha de ingreso hasta (YYYY-MM-DD)"),
-    law_number: str | None = Query(None, alias="ley", description="Número de ley (solo leyes aprobadas)"),
+    date_from: date | None = Query(
+        None, alias="desde", description="Fecha de ingreso desde (YYYY-MM-DD)"
+    ),
+    date_to: date | None = Query(
+        None, alias="hasta", description="Fecha de ingreso hasta (YYYY-MM-DD)"
+    ),
+    law_number: str | None = Query(
+        None, alias="ley", description="Número de ley (solo leyes aprobadas)"
+    ),
     offset: int = Query(svc.DEFAULT_OFFSET, ge=0),
     limit: int = Query(svc.DEFAULT_LIMIT, ge=1, le=svc.MAX_LIMIT),
 ):
@@ -53,34 +61,6 @@ def list_bills(
         offset=offset,
         limit=limit,
     )
-    return BillsResponse(count=total, data=[_to_summary(b) for b in bills])
-
-
-@router.get("/buscar", response_model=BillsResponse)
-def search_bills(
-    db: Session = Depends(get_db),
-    q: str = Query(..., min_length=2, description="Texto a buscar (título, número de boletín, texto completo, autores)"),
-    status: str | None = Query(None, description="Filtrar por estado"),
-    bill_type: str | None = Query(None, alias="tipo", description="Filtrar por tipo"),
-    origin: str | None = Query(None, description="Filtrar por origen"),
-    topic_id: int | None = Query(None, alias="tema_id", description="Filtrar por tema"),
-    date_from: date | None = Query(None, alias="desde", description="Fecha de ingreso desde"),
-    date_to: date | None = Query(None, alias="hasta", description="Fecha de ingreso hasta"),
-    offset: int = Query(svc.DEFAULT_OFFSET, ge=0),
-    limit: int = Query(svc.DEFAULT_LIMIT, ge=1, le=svc.MAX_LIMIT),
-):
-    total, bill_ids = es_bills.search_bills(
-        q=q,
-        status=status,
-        bill_type=bill_type,
-        origin=origin,
-        topic_id=topic_id,
-        date_from=date_from.isoformat() if date_from else None,
-        date_to=date_to.isoformat() if date_to else None,
-        offset=offset,
-        limit=limit,
-    )
-    bills = svc.list_bills_by_ids(db, bill_ids)
     return BillsResponse(count=total, data=[_to_summary(b) for b in bills])
 
 
@@ -115,5 +95,7 @@ def get_bill_documents(bill_id: int, db: Session = Depends(get_db)):
     bill = svc.get_bill(db, bill_id)
     if bill is None:
         raise HTTPException(status_code=404, detail="Proyecto no encontrado")
-    docs = sorted(bill.documents, key=lambda d: (d.document_date or date.min), reverse=True)
+    docs = sorted(
+        bill.documents, key=lambda d: d.document_date or date.min, reverse=True
+    )
     return [Document.model_validate(d) for d in docs]

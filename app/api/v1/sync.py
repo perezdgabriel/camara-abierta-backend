@@ -2,8 +2,8 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.schemas.diario_oficial import NormasSyncResponse
-from app.schemas.reglamentos import ReglamentosSyncResponse
+from app.schemas.diario_oficial import Norma, NormasSyncResponse
+from app.schemas.reglamentos import ReglamentoDetail, ReglamentosSyncResponse
 from app.services import sync as sync_service
 
 router = APIRouter(tags=["Sync"])
@@ -11,7 +11,9 @@ router = APIRouter(tags=["Sync"])
 
 @router.get("/normas", response_model=NormasSyncResponse)
 def sync_normas(
-    since_version: int = Query(0, ge=0, description="Último sync_version conocido por el cliente"),
+    since_version: int = Query(
+        0, ge=0, description="Último sync_version conocido por el cliente"
+    ),
     limit: int = Query(sync_service.DEFAULT_LIMIT, ge=1, le=sync_service.MAX_LIMIT),
     db: Session = Depends(get_db),
 ):
@@ -29,12 +31,18 @@ def sync_normas(
         since_version=since_version,
         limit=limit,
     )
-    return NormasSyncResponse(items=items, deleted_ids=deleted_ids, meta=meta)
+    return NormasSyncResponse(
+        items=[Norma.model_validate(item) for item in items],
+        deleted_ids=deleted_ids,
+        meta=meta,
+    )
 
 
 @router.get("/reglamentos", response_model=ReglamentosSyncResponse)
 def sync_reglamentos(
-    since_version: int = Query(0, ge=0, description="Último sync_version conocido por el cliente"),
+    since_version: int = Query(
+        0, ge=0, description="Último sync_version conocido por el cliente"
+    ),
     limit: int = Query(sync_service.DEFAULT_LIMIT, ge=1, le=sync_service.MAX_LIMIT),
     db: Session = Depends(get_db),
 ):
@@ -49,5 +57,8 @@ def sync_reglamentos(
         since_version=since_version,
         limit=limit,
     )
-    return ReglamentosSyncResponse(items=items, deleted_ids=deleted_ids, meta=meta)
-
+    return ReglamentosSyncResponse(
+        items=[ReglamentoDetail.model_validate(item) for item in items],
+        deleted_ids=deleted_ids,
+        meta=meta,
+    )

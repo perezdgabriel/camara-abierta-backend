@@ -3,8 +3,16 @@ from datetime import date
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload, selectinload
 
+from app.models.enums import BillOrigin, BillStatus, BillType
 from app.models.legislature import Legislator
-from app.models.proyecto import Bill, BillAuthorship, BillEvent, BillStage, BillUrgency, bill_topics
+from app.models.proyecto import (
+    Bill,
+    BillAuthorship,
+    BillEvent,
+    BillStage,
+    BillUrgency,
+    bill_topics,
+)
 from app.models.votacion import VotingSession
 
 DEFAULT_OFFSET = 0
@@ -15,9 +23,9 @@ MAX_LIMIT = 200
 def list_bills(
     db: Session,
     *,
-    status: str | None,
-    bill_type: str | None,
-    origin: str | None,
+    status: BillStatus | None,
+    bill_type: BillType | None,
+    origin: BillOrigin | None,
     topic_id: int | None,
     date_from: date | None,
     date_to: date | None,
@@ -25,19 +33,16 @@ def list_bills(
     offset: int,
     limit: int,
 ) -> tuple[int, list[Bill]]:
-    query = (
-        db.query(Bill)
-        .options(
-            joinedload(Bill.origin_chamber),
-            joinedload(Bill.current_chamber),
-            joinedload(Bill.current_committee),
-            selectinload(Bill.topics),
-            selectinload(Bill.urgencies).joinedload(BillUrgency.chamber),
-            selectinload(Bill.stages).options(
-                joinedload(BillStage.chamber),
-                joinedload(BillStage.committee),
-            ),
-        )
+    query = db.query(Bill).options(
+        joinedload(Bill.origin_chamber),
+        joinedload(Bill.current_chamber),
+        joinedload(Bill.current_committee),
+        selectinload(Bill.topics),
+        selectinload(Bill.urgencies).joinedload(BillUrgency.chamber),
+        selectinload(Bill.stages).options(
+            joinedload(BillStage.chamber),
+            joinedload(BillStage.committee),
+        ),
     )
     count_query = db.query(func.count(Bill.id.distinct()))
 
@@ -54,9 +59,9 @@ def list_bills(
         query = query.join(bill_topics, Bill.id == bill_topics.c.bill_id).filter(
             bill_topics.c.topic_id == topic_id
         )
-        count_query = count_query.join(bill_topics, Bill.id == bill_topics.c.bill_id).filter(
-            bill_topics.c.topic_id == topic_id
-        )
+        count_query = count_query.join(
+            bill_topics, Bill.id == bill_topics.c.bill_id
+        ).filter(bill_topics.c.topic_id == topic_id)
     if date_from:
         query = query.filter(Bill.entry_date >= date_from)
         count_query = count_query.filter(Bill.entry_date >= date_from)
@@ -69,8 +74,7 @@ def list_bills(
 
     total = count_query.scalar() or 0
     rows = (
-        query
-        .order_by(Bill.entry_date.desc(), Bill.id.desc())
+        query.order_by(Bill.entry_date.desc(), Bill.id.desc())
         .offset(offset)
         .limit(limit)
         .all()
@@ -86,9 +90,7 @@ def _full_options():
         joinedload(Bill.current_committee),
         selectinload(Bill.topics),
         selectinload(Bill.authorships).options(
-            joinedload(BillAuthorship.legislator).options(
-                joinedload(Legislator.party)
-            )
+            joinedload(BillAuthorship.legislator).options(joinedload(Legislator.party))
         ),
         selectinload(Bill.stages).options(
             joinedload(BillStage.chamber),
@@ -102,12 +104,7 @@ def _full_options():
 
 
 def get_bill(db: Session, bill_id: int) -> Bill | None:
-    return (
-        db.query(Bill)
-        .options(*_full_options())
-        .filter(Bill.id == bill_id)
-        .first()
-    )
+    return db.query(Bill).options(*_full_options()).filter(Bill.id == bill_id).first()
 
 
 def get_bill_by_bulletin(db: Session, bulletin_number: str) -> Bill | None:

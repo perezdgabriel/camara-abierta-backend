@@ -2,10 +2,22 @@ from datetime import date, datetime
 
 from pydantic import Field
 
+from app.models.enums import (
+    BillOrigin,
+    BillStatus,
+    BillType,
+    ChamberType,
+    StageType,
+    UrgencyType,
+    VotingType,
+)
+from app.models.enums import (
+    VotingResult as VotingResultEnum,
+)
 from app.schemas.common import CountResponse, ORMModel
 
-
 # ── Nested read-only objects ──────────────────────────────────────────
+
 
 class TopicBrief(ORMModel):
     id: int
@@ -16,7 +28,7 @@ class TopicBrief(ORMModel):
 
 class ChamberBrief(ORMModel):
     id: int
-    chamber_type: str
+    chamber_type: ChamberType
     name: str
 
 
@@ -35,7 +47,7 @@ class PartyBrief(ORMModel):
 class LegislatorBrief(ORMModel):
     id: int
     full_name: str
-    chamber_type: str
+    chamber_type: ChamberType
     photo_thumbnail_url: str | None = None
     party: PartyBrief | None = None
 
@@ -48,7 +60,7 @@ class Author(ORMModel):
 
 class Stage(ORMModel):
     id: int
-    stage_type: str
+    stage_type: StageType
     chamber: ChamberBrief | None = None
     committee: CommitteeBrief | None = None
     start_date: date
@@ -79,7 +91,7 @@ class Event(ORMModel):
 
 class Urgency(ORMModel):
     id: int
-    urgency_type: str
+    urgency_type: UrgencyType
     chamber: ChamberBrief
     entry_date: date
     withdrawal_date: date | None = None
@@ -92,9 +104,9 @@ class VotingResult(ORMModel):
     bcn_id: str | None = None
     chamber: ChamberBrief
     voting_date: datetime
-    voting_type: str
+    voting_type: VotingType
     subject: str
-    result: str | None = None
+    result: VotingResultEnum | None = None
     votes_for: int
     votes_against: int
     abstentions: int
@@ -104,14 +116,16 @@ class VotingResult(ORMModel):
 
 # ── List / summary schema ─────────────────────────────────────────────
 
+
 class BillSummary(ORMModel):
     """Compact bill for list views — no nested lifecycle data."""
+
     id: int
     bulletin_number: str
     title: str
-    bill_type: str
-    origin: str
-    status: str
+    bill_type: BillType
+    origin: BillOrigin
+    status: BillStatus
     entry_date: date
     publication_date: date | None = None
     law_number: str | None = None
@@ -120,8 +134,8 @@ class BillSummary(ORMModel):
     current_committee: CommitteeBrief | None = None
     topics: list[TopicBrief] = Field(default_factory=list)
     # Denormalised convenience fields populated by the service layer
-    active_urgency_type: str | None = None
-    current_stage_type: str | None = None
+    active_urgency_type: UrgencyType | None = None
+    current_stage_type: StageType | None = None
     created_at: datetime
     updated_at: datetime
     sync_version: int
@@ -129,8 +143,10 @@ class BillSummary(ORMModel):
 
 # ── Detail schema ─────────────────────────────────────────────────────
 
+
 class BillDetail(BillSummary):
     """Full bill lifecycle: stages, events, documents, votes, authors."""
+
     summary: str | None = None
     ai_summary: str | None = None
     full_text_url: str | None = None
@@ -143,6 +159,7 @@ class BillDetail(BillSummary):
 
 
 # ── Response envelopes ────────────────────────────────────────────────
+
 
 class BillsResponse(CountResponse[BillSummary]):
     data: list[BillSummary] = Field(default_factory=list)
