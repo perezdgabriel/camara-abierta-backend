@@ -96,7 +96,7 @@ class BillStage(SyncableMixin, Base):
     voting_sessions: Mapped[list["VotingSession"]] = relationship(back_populates="bill_stage")
 
     def __str__(self) -> str:
-        stage_type = self.description or "Tramite"
+        stage_type = self.stage_type or "Tramite"
         date_label = self.start_date.isoformat() if self.start_date else "sin fecha"
         return f"{stage_type} - {date_label}"
 

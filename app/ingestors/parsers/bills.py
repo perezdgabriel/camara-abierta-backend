@@ -31,19 +31,19 @@ CHAMBER_MAP = {
 }
 
 STAGE_TYPE_MAP = {
-    "Primer tramite constitucional": "first_floor",
-    "Primer trámite constitucional": "first_floor",
-    "Segundo tramite constitucional": "second_floor",
-    "Segundo trámite constitucional": "second_floor",
-    "Tercer tramite constitucional": "third_floor",
-    "Tercer trámite constitucional": "third_floor",
-    "Comision Mixta": "mixed_committee",
-    "Comisión Mixta": "mixed_committee",
-    "Tribunal Constitucional": "constitutional_court",
-    "Promulgacion": "promulgation",
-    "Promulgación": "promulgation",
-    "Publicacion": "publication",
-    "Publicación": "publication",
+    "Primer tramite constitucional": "Primer trámite constitucional",
+    "Primer trámite constitucional": "Primer trámite constitucional",
+    "Segundo tramite constitucional": "Segundo trámite constitucional",
+    "Segundo trámite constitucional": "Segundo trámite constitucional",
+    "Tercer tramite constitucional": "Tercer trámite constitucional",
+    "Tercer trámite constitucional": "Tercer trámite constitucional",
+    "Comision Mixta": "Comisión Mixta",
+    "Comisión Mixta": "Comisión Mixta",
+    "Tribunal Constitucional": "Tribunal Constitucional",
+    "Promulgacion": "Promulgación",
+    "Promulgación": "Promulgación",
+    "Publicacion": "Publicación",
+    "Publicación": "Publicación",
 }
 
 URGENCY_MAP = {
