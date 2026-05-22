@@ -1,6 +1,38 @@
-# Diario Oficial de Chile — API
+# Camara Abierta
 
-Backend principal para una plataforma de seguimiento legislativo, Diario Oficial y reglamentos CGR. Construido sobre FastAPI, SQLAlchemy 2, Alembic y Celery, con una arquitectura modular organizada por dominio.
+Backend principal para una plataforma de transparencia legislativa enfocada en proyectos de ley, legisladores, votaciones, Diario Oficial y reglamentos CGR. Construido sobre FastAPI, SQLAlchemy 2, Alembic y Celery, con una arquitectura modular organizada por dominio.
+
+## Alcance v0.1
+
+La version actual prioriza cinco superficies de producto:
+
+- Seguimiento de proyectos de ley (`/api/v1/bills`)
+- Directorio de legisladores (`/api/v1/legislators`)
+- Sesiones de votacion (`/api/v1/voting-sessions`)
+- Diario Oficial (`/api/v1/diario-oficial`)
+- Reglamentos CGR (`/api/v1/reglamentos`)
+
+La busqueda con Elasticsearch y el sync orientado a clientes se mantienen en codigo, pero no forman parte de los flujos principales de v0.1.
+
+## Endpoints principales
+
+```text
+GET /api/v1/bills
+GET /api/v1/bills/{id}
+GET /api/v1/bills/{id}/etapas
+GET /api/v1/bills/{id}/votaciones
+GET /api/v1/bills/{id}/documentos
+
+GET /api/v1/legislators
+GET /api/v1/legislators/{id}
+
+GET /api/v1/voting-sessions
+GET /api/v1/voting-sessions/{id}
+
+GET /api/v1/diario-oficial/normas
+GET /api/v1/reglamentos
+GET /api/v1/health
+```
 
 Este repositorio ahora concentra la API, los scrapers de Diario Oficial y CGR, los ingestors legislativos y los workers asincronicos. Redis actua como broker/result backend de Celery; PostgreSQL es la fuente de verdad; Elasticsearch mantiene la indexacion full text de proyectos de ley.
 
@@ -49,8 +81,7 @@ migrations/
 # ELASTICSEARCH_URL=http://localhost:9200
 
 # Instalar dependencias
-python -m venv venv && source venv/bin/activate
-pip install -r requirements.txt
+uv sync
 
 # API
 uvicorn app.main:app --reload
@@ -144,9 +175,31 @@ Parámetros de filtro para `/normas`: `date_from`, `date_to`, `ministry`, `branc
 | `GET`  | `/api/v1/reglamentos/stats/tiempo-tramitacion` | Tiempo promedio de tramitación       |
 | `GET`  | `/api/v1/reglamentos/stats/mas-etapas`         | Reglamentos con más etapas           |
 
-### Proyectos de ley y Sync
+### Proyectos de ley
 
-En desarrollo — retornan HTTP 501 temporalmente.
+| Método | Ruta                              | Descripción                            |
+| ------ | --------------------------------- | -------------------------------------- |
+| `GET`  | `/api/v1/bills`                   | Lista proyectos de ley con filtros     |
+| `GET`  | `/api/v1/bills/{id}`              | Detalle de un proyecto                 |
+| `GET`  | `/api/v1/bills/{id}/etapas`       | Etapas del proyecto                    |
+| `GET`  | `/api/v1/bills/{id}/votaciones`   | Votaciones asociadas al proyecto       |
+| `GET`  | `/api/v1/bills/{id}/documentos`   | Documentos asociados al proyecto       |
+
+### Legisladores y votaciones
+
+| Método | Ruta                              | Descripción                            |
+| ------ | --------------------------------- | -------------------------------------- |
+| `GET`  | `/api/v1/legislators`             | Lista legisladores con filtros         |
+| `GET`  | `/api/v1/legislators/{id}`        | Detalle de legislador                  |
+| `GET`  | `/api/v1/voting-sessions`         | Lista sesiones de votación             |
+| `GET`  | `/api/v1/voting-sessions/{id}`    | Detalle de sesión con votos            |
+
+### Sync
+
+| Método | Ruta                              | Descripción                            |
+| ------ | --------------------------------- | -------------------------------------- |
+| `GET`  | `/api/v1/sync/normas`             | Delta sync de normas                   |
+| `GET`  | `/api/v1/sync/reglamentos`        | Delta sync de reglamentos              |
 
 ## Variables de entorno
 
