@@ -1,0 +1,61 @@
+# Cámara Abierta
+
+A broad legislative transparency platform for Chile. It tracks bills, legislators, voting sessions, and committees through the Chilean Congress, and also monitors the Diario Oficial and CGR regulations.
+
+## Language
+
+**Cámara Abierta**:
+The platform itself. Not "Diario Oficial API" (that's a legacy label in the settings).
+_Avoid_: Diario Oficial API
+
+**Domain language**:
+All model class names, table names, and internal identifiers use English. Spanish is used only in user-facing content (API responses, UI text). Legacy Spanish names in the codebase (e.g. `NormaGeneral`, `Reglamento`) are candidates for renaming.
+
+**Enums**:
+All categorical string fields use formal Python enums. Current vocabulary:
+- `BillStatus`: pending, approved, rejected, archived, withdrawn, unconstitutional, enacted, published
+- `BillOrigin`: executive, deputies
+- `BillType`: project (default)
+- `StageType`: first_constitutional_tramite, second_constitutional_tramite, third_constitutional_tramite, mixed_commission, constitutional_tribunal, promulgation, publication
+- `UrgencyType`: simple, sum, immediate
+- `VotingType`: general, particular, single, other
+- `VoteChoice`: for, against, abstain, paired, absent
+- `VotingResult`: approved, rejected, tie
+- `ChamberType`: deputies, senate
+- `CommitteeType`: permanent, special, investigative, mixed
+
+**Bill lifecycle**:
+`Bill.status` is the source of truth from the upstream Congress API, not derived from stages. `BillStage` records are the detailed legislative history. The `is_current` flag on `BillStage` tracks where the bill currently is in the process.
+
+**Data collector**:
+A component that fetches external data and writes it to the database. Current implementations: `scrapers/` (browser-driven via Playwright) and `ingestors/` (API clients via httpx). The split is an implementation detail — both produce structured data for the write service.
+_Avoid_: scraper, ingestor (when referring to the concept; fine as directory names)
+
+**Sync**:
+A client-side delta sync protocol. Mobile/SPA clients poll for entity changes since their last known `sync_version`. `ClientSyncState` tracks per-device progress. `ChangeLog` records mutations. `SyncableMixin` stamps each entity with a global version sequence.
+_Avoid_: delta sync, incremental sync (prefer just "sync")
+
+**Subdomains**:
+Three independent data domains share the platform:
+1. **Legislative** — Bills, Legislators, Voting, Committees, Political Parties
+2. **Diario Oficial** — Normas Generales (daily government gazette)
+3. **CGR Reglamentos** — Regulatory decrees from the Contraloría General
+No cross-domain references exist between them.
+
+**AI enrichment**:
+A core feature. Legislative language and official gazette content are simplified for the general public. Bills get `ai_summary`. Normas get executive summaries, key points, beneficiaries, and citizen importance ratings. LLM providers (Gemini, OpenWebUI/Ollama) are interchangeable — the strategy is to minimize cost.
+
+**Geography**:
+Chile's administrative and electoral geography: `Region`, `Province`, `Commune` (administrative), `District` (Chamber of Deputies), `Circumscription` (Senate). Users find their representatives by selecting their commune, which maps to a district and circumscription.
+
+**Search**:
+Elasticsearch indexes bills for full-text search across titles, summaries, and full text. Other domains (normas, reglamentos) use filtered DB queries.
+
+**Notifications**:
+A core feature (not yet implemented). Users will subscribe to bills, representatives, topics, etc. and receive updates. Currently only internal email alerts exist via Resend.
+
+**Admin panel**:
+Internal tool (`sqladmin`) for manual data management. Used to update reference data or fix records when data collectors can't capture them.
+
+**Topics**:
+Hierarchical tags for bills (e.g. "Education" → "Higher Education"). Pre-defined reference data, but new topics can appear when fetching bills from upstream APIs. Also creatable via the admin panel.
