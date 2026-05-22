@@ -40,9 +40,10 @@ python -m app.cli scrapers diario-oficial --target-date 2026-05-04 --dry-run
 ### Quality checks (always run after changes)
 
 ```bash
-ruff check
-mypy app/
-pytest
+uv run ruff format
+uv run ruff check
+uv run mypy app/
+uv run pytest
 ```
 
 ### Database reset (pre-release only)
