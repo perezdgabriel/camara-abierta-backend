@@ -59,9 +59,39 @@ class OpenDataCamaraClient(BaseCongresoClient):
 
     def get_diputados_periodo_actual(self) -> list[dict[str, Any]]:
         root = self._get_xml("WSDiputado.asmx/retornarDiputadosPeriodoActual")
-        results = [self._parse_diputado(dip) for dip in self._iter(root, "Diputado")]
+        periodos = list(self._iter(root, "DiputadoPeriodo"))
+        if periodos:
+            results = [self._parse_diputado_periodo(periodo) for periodo in periodos]
+        else:
+            results = [
+                self._parse_diputado(dip) for dip in self._iter(root, "Diputado")
+            ]
         logger.info("Fetched %d deputies (current period, opendata)", len(results))
         return results
+
+    def _parse_diputado_periodo(self, periodo: ET.Element) -> dict[str, Any]:
+        diputado = self._find(periodo, "Diputado")
+        distrito = self._find(periodo, "Distrito")
+        payload = self._parse_diputado(diputado) if diputado is not None else {}
+        payload.update(
+            {
+                "period_start_date": self._parse_dt(self._txt(periodo, "FechaInicio")),
+                "period_end_date": self._parse_dt(self._txt(periodo, "FechaTermino")),
+                "district_number": self._int_val(distrito, "Numero")
+                if distrito is not None
+                else 0,
+                "district_communes": [
+                    {
+                        "number": self._int_val(comuna, "Numero"),
+                        "name": self._txt(comuna, "Nombre"),
+                    }
+                    for comuna in self._iter(distrito, "Comuna")
+                ]
+                if distrito is not None
+                else [],
+            }
+        )
+        return payload
 
     def _parse_diputado(self, dip: ET.Element) -> dict[str, Any]:
         militancias = [

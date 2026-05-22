@@ -61,6 +61,7 @@ class LegislatorParser:
             "birth_date": raw.get("birth_date"),
             "gender": raw.get("gender_code") or raw.get("gender") or "",
             "_party_name": current_party.strip(),
+            "_district_number": raw.get("district_number") or None,
             "_militancias": militancias,
         }
 

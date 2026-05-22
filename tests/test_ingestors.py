@@ -193,3 +193,131 @@ def test_run_ingest_bills_falls_back_to_full_scan_when_state_lookup_fails(monkey
     assert result["mode"] == "full_scan"
     assert result["since"] is None
     assert result["would_dispatch"] == 1
+
+
+def test_run_ingest_legislators_dispatches_both_sources_with_geography(monkeypatch):
+    dispatched: list[tuple[object, dict]] = []
+
+    class FakeSenadoClient:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def get_senadores_vigentes(self) -> list[dict]:
+            return [
+                {
+                    "parlid": "42",
+                    "first_name": "Ada",
+                    "last_name_father": "Demo",
+                    "last_name_mother": "Senadora",
+                    "party": "Partido Demo",
+                    "circumscription": "Circunscripción Senatorial 7",
+                    "region": "Valparaiso",
+                    "email": "ada@example.com",
+                    "phone": "+56 2 1234 5678",
+                }
+            ]
+
+    class FakeOpenDataCamaraClient:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def get_diputados_periodo_actual(self) -> list[dict]:
+            return [
+                {
+                    "id": 1254,
+                    "first_name": "Ignacio",
+                    "second_name": "",
+                    "last_name_father": "Urcullú",
+                    "last_name_mother": "Clèment-Lund",
+                    "birth_date": "1976-03-07",
+                    "gender": "Masculino",
+                    "gender_code": "1",
+                    "district_number": 8,
+                    "militancias": [
+                        {
+                            "start_date": "2026-03-11",
+                            "end_date": "2030-03-10",
+                            "party_name": "Partido Republicano",
+                            "party_alias": "PREP",
+                        }
+                    ],
+                }
+            ]
+
+    monkeypatch.setattr(ingestor_tasks, "SenadoClient", FakeSenadoClient)
+    monkeypatch.setattr(
+        ingestor_tasks, "OpenDataCamaraClient", FakeOpenDataCamaraClient
+    )
+    monkeypatch.setattr(
+        ingestor_tasks,
+        "_dispatch",
+        lambda task, payload: dispatched.append((task, payload)),
+    )
+    monkeypatch.setattr(ingestor_tasks, "_mark_synced", lambda entity_type: None)
+    monkeypatch.setattr(ingestor_tasks.time, "sleep", lambda _: None)
+
+    result = ingestor_tasks.run_ingest_legislators(dry_run=False)
+
+    assert result == {"errors": 0, "dry_run": False, "dispatched": 2}
+    assert dispatched[0][1]["bcn_id"] == "senado:42"
+    assert dispatched[0][1]["_party_name"] == "Partido Demo"
+    assert dispatched[0][1]["_circumscription_number"] == 7
+    assert dispatched[1][1]["bcn_id"] == "camara:1254"
+    assert dispatched[1][1]["_party_name"] == "Partido Republicano"
+    assert dispatched[1][1]["_district_number"] == 8
+
+
+def test_run_ingest_reference_data_dispatches_regions_and_districts(monkeypatch):
+    dispatched: list[tuple[object, dict]] = []
+
+    class FakeOpenDataCamaraClient:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def get_regiones(self) -> list[dict]:
+            return [{"number": 13, "name": "Metropolitana", "provinces": []}]
+
+        def get_distritos(self) -> list[dict]:
+            return [
+                {
+                    "number": 8,
+                    "communes": [{"number": 13101, "name": "Santiago"}],
+                }
+            ]
+
+    monkeypatch.setattr(
+        ingestor_tasks, "OpenDataCamaraClient", FakeOpenDataCamaraClient
+    )
+    monkeypatch.setattr(
+        ingestor_tasks,
+        "_dispatch",
+        lambda task, payload: dispatched.append((task, payload)),
+    )
+    monkeypatch.setattr(ingestor_tasks, "_mark_synced", lambda entity_type: None)
+    monkeypatch.setattr(ingestor_tasks.time, "sleep", lambda _: None)
+
+    result = ingestor_tasks.run_ingest_reference_data(dry_run=False)
+
+    assert result == {"errors": 0, "dry_run": False, "dispatched": 2}
+    assert dispatched == [
+        (
+            ingestor_tasks.sync_region,
+            {"number": 13, "name": "Metropolitana", "provinces": []},
+        ),
+        (
+            ingestor_tasks.sync_district,
+            {
+                "number": 8,
+                "communes": [{"number": 13101, "name": "Santiago"}],
+            },
+        ),
+    ]

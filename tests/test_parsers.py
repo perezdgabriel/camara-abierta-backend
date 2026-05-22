@@ -1,7 +1,9 @@
 from xml.etree import ElementTree as ET
 
+from app.ingestors.clients.opendata_camara import OpenDataCamaraClient
 from app.ingestors.clients.senado import SenadoClient
 from app.ingestors.parsers.bills import BillParser
+from app.ingestors.parsers.legislators import LegislatorParser
 from app.ingestors.parsers.votes import VoteParser
 from app.models.enums import (
     BillOrigin,
@@ -194,3 +196,107 @@ def test_senado_bill_xml_maps_through_bill_and_vote_parsers():
     assert vote_payload["voting_type"] is VotingType.GENERAL
     assert vote_payload["result"] is VotingResult.APPROVED
     assert vote_payload["individual_votes"][0]["vote"] is VoteChoice.FOR
+
+
+def test_opendata_diputado_periodo_parser_preserves_wrapper_metadata():
+    periodo = ET.fromstring(
+        """
+        <DiputadoPeriodo
+            xmlns="http://opendata.camara.cl/camaradiputados/v1"
+            xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        >
+            <FechaInicio>2026-03-11T00:00:00</FechaInicio>
+            <FechaTermino xsi:nil="true" />
+            <Diputado>
+                <Id>1254</Id>
+                <Nombre>Ignacio</Nombre>
+                <Nombre2 />
+                <ApellidoPaterno>Urcullú</ApellidoPaterno>
+                <ApellidoMaterno>Clèment-Lund</ApellidoMaterno>
+                <FechaNacimiento>1976-03-07T00:00:00</FechaNacimiento>
+                <Sexo Valor="1">Masculino</Sexo>
+                <Militancias>
+                    <Militancia>
+                        <FechaInicio>2026-03-11T00:00:00</FechaInicio>
+                        <FechaTermino>2030-03-10T23:59:59</FechaTermino>
+                        <Partido>
+                            <Id>PREP</Id>
+                            <Nombre>Partido Republicano</Nombre>
+                            <Alias>PREP</Alias>
+                        </Partido>
+                    </Militancia>
+                </Militancias>
+            </Diputado>
+            <Distrito>
+                <Numero>8</Numero>
+                <Comunas>
+                    <Comuna>
+                        <Numero>13101</Numero>
+                        <Nombre>Santiago</Nombre>
+                    </Comuna>
+                </Comunas>
+            </Distrito>
+        </DiputadoPeriodo>
+        """
+    )
+
+    client = OpenDataCamaraClient()
+
+    raw = client._parse_diputado_periodo(periodo)
+
+    assert raw["id"] == 1254
+    assert raw["period_start_date"] == "2026-03-11"
+    assert raw["period_end_date"] is None
+    assert raw["district_number"] == 8
+    assert raw["district_communes"] == [{"number": 13101, "name": "Santiago"}]
+
+
+def test_legislator_parser_maps_opendata_deputy_party_and_district_number():
+    payload = LegislatorParser.parse_opendata_deputy(
+        {
+            "id": 1254,
+            "first_name": "Ignacio",
+            "second_name": "",
+            "last_name_father": "Urcullú",
+            "last_name_mother": "Clèment-Lund",
+            "birth_date": "1976-03-07",
+            "gender": "Masculino",
+            "gender_code": "1",
+            "district_number": 8,
+            "militancias": [
+                {
+                    "start_date": "2026-03-11",
+                    "end_date": "2030-03-10",
+                    "party_name": "Partido Republicano",
+                    "party_alias": "PREP",
+                }
+            ],
+        }
+    )
+
+    assert payload["bcn_id"] == "camara:1254"
+    assert payload["chamber_type"] is ChamberType.DEPUTIES
+    assert payload["full_name"] == "Ignacio Urcullú Clèment-Lund"
+    assert payload["_party_name"] == "Partido Republicano"
+    assert payload["_district_number"] == 8
+
+
+def test_legislator_parser_maps_senator_party_and_circumscription_number():
+    payload = LegislatorParser.parse_senator(
+        {
+            "parlid": "42",
+            "first_name": "Ada",
+            "last_name_father": "Demo",
+            "last_name_mother": "Senadora",
+            "party": "Partido Demo",
+            "circumscription": "Circunscripción Senatorial 7",
+            "region": "Valparaiso",
+            "email": "ada@example.com",
+            "phone": "+56 2 1234 5678",
+        }
+    )
+
+    assert payload["bcn_id"] == "senado:42"
+    assert payload["chamber_type"] is ChamberType.SENATE
+    assert payload["_party_name"] == "Partido Demo"
+    assert payload["_circumscription_number"] == 7
