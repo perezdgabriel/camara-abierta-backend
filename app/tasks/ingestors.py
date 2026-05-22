@@ -54,12 +54,22 @@ def _build_dispatch_result(dispatched: int, errors: int, dry_run: bool, **extra:
 	return result
 
 
+def _get_last_sync_date(entity_type: str) -> datetime.date | None:
+	try:
+		with task_session() as db:
+			state = _get_state(db, entity_type, create=False)
+			if state is not None:
+				return state.last_sync_date
+	except Exception:
+		logger.warning("Failed to load ingestor state for %s", entity_type, exc_info=True)
+	return None
+
+
 def _resolve_since_date(entity_type: str, *, fallback_days: int) -> datetime.date:
 	fallback = datetime.date.today() - datetime.timedelta(days=fallback_days)
-	with task_session() as db:
-		state = _get_state(db, entity_type, create=False)
-		if state is not None and state.last_sync_date is not None:
-			return state.last_sync_date
+	last_sync_date = _get_last_sync_date(entity_type)
+	if last_sync_date is not None:
+		return last_sync_date
 	return fallback
 
 
@@ -75,63 +85,88 @@ def _dispatch(task: Any, *args: Any) -> None:
 
 
 def run_ingest_bills(
-    bulletin: str | None = None,
-    *,
-    dry_run: bool = False,
+	bulletin: str | None = None,
+	since: str | None = None,
+	*,
+	dry_run: bool = False,
 ) -> dict[str, Any]:
-    dispatched = 0
-    errors = 0
-    bulletins: list[str] = []
+	dispatched = 0
+	errors = 0
+	bulletins: list[str] = []
+	since_date: datetime.date | None = None
+	mode = "single_bulletin" if bulletin else "full_scan"
 
-    try:
-        if bulletin:
-            bulletins = [bulletin]
-        else:
-            start_year = settings.ingestor_bills_start_year
-            current_year = datetime.date.today().year
-            with OpenDataCamaraClient() as opendata:
-                seen: set[str] = set()
-                for year in range(start_year, current_year + 1):
-                    try:
-                        for proyecto in opendata.get_mensajes_x_anno(year):
-                            bn = proyecto["bulletin_number"]
-                            if bn and bn not in seen:
-                                seen.add(bn)
-                                bulletins.append(bn)
-                    except Exception:
-                        logger.exception("Failed to fetch mensajes for year %d", year)
-                        errors += 1
-                    try:
-                        for proyecto in opendata.get_mociones_x_anno(year):
-                            bn = proyecto["bulletin_number"]
-                            if bn and bn not in seen:
-                                seen.add(bn)
-                                bulletins.append(bn)
-                    except Exception:
-                        logger.exception("Failed to fetch mociones for year %d", year)
-                        errors += 1
+	try:
+		if since:
+			since_date = datetime.date.fromisoformat(since)
 
-        if bulletins:
-            results = asyncio.run(fetch_bills_parallel(bulletins))
-            for bulletin_number, raw in results:
-                try:
-                    if raw is None:
-                        continue
-                    payload = BillParser.parse_bill(raw)
-                    if not dry_run:
-                        _dispatch(sync_bill, payload)
-                    dispatched += 1
-                except Exception:
-                    logger.exception("Failed to ingest bill bulletin=%s", bulletin_number)
-                    errors += 1
-    except Exception:
-        logger.exception("Failed to fetch bills")
-        errors += 1
+		if bulletin:
+			bulletins = [bulletin]
+		else:
+			if since_date is None:
+				since_date = _get_last_sync_date("bills")
 
-    if not dry_run:
-        _mark_synced("bills")
+			seen: set[str] = set()
+			if since_date is not None:
+				mode = "incremental"
+				with SenadoClient() as senado:
+					for bulletin_number in senado.get_bills_by_date(since_date):
+						if bulletin_number and bulletin_number not in seen:
+							seen.add(bulletin_number)
+							bulletins.append(bulletin_number)
+			else:
+				start_year = settings.ingestor_bills_start_year
+				current_year = datetime.date.today().year
+				with OpenDataCamaraClient() as opendata:
+					for year in range(start_year, current_year + 1):
+						try:
+							for proyecto in opendata.get_mensajes_x_anno(year):
+								bn = proyecto["bulletin_number"]
+								if bn and bn not in seen:
+									seen.add(bn)
+									bulletins.append(bn)
+						except Exception:
+							logger.exception("Failed to fetch mensajes for year %d", year)
+							errors += 1
+						try:
+							for proyecto in opendata.get_mociones_x_anno(year):
+								bn = proyecto["bulletin_number"]
+								if bn and bn not in seen:
+									seen.add(bn)
+									bulletins.append(bn)
+						except Exception:
+							logger.exception("Failed to fetch mociones for year %d", year)
+							errors += 1
 
-    return _build_dispatch_result(dispatched, errors, dry_run, bulletin=bulletin)
+		if bulletins:
+			results = asyncio.run(fetch_bills_parallel(bulletins))
+			for bulletin_number, raw in results:
+				try:
+					if raw is None:
+						continue
+					payload = BillParser.parse_bill(raw)
+					if not dry_run:
+						_dispatch(sync_bill, payload)
+					dispatched += 1
+				except Exception:
+					logger.exception("Failed to ingest bill bulletin=%s", bulletin_number)
+					errors += 1
+	except Exception:
+		logger.exception("Failed to fetch bills")
+		errors += 1
+
+	if not dry_run:
+		_mark_synced("bills")
+
+	return _build_dispatch_result(
+		dispatched,
+		errors,
+		dry_run,
+		bulletin=bulletin,
+		since=since_date.isoformat() if since_date else None,
+		mode=mode,
+		candidates=len(bulletins),
+	)
 
 
 def run_ingest_legislators(*, dry_run: bool = False) -> dict[str, Any]:
@@ -361,8 +396,8 @@ def run_ingest_voting_sessions(since: str | None = None, *, dry_run: bool = Fals
 
 
 @app.task(name="app.tasks.ingestors.ingest_bills", bind=True, base=DatabaseTask)
-def ingest_bills(self, bulletin: str | None = None) -> dict:
-    return run_ingest_bills(bulletin=bulletin)
+def ingest_bills(self, bulletin: str | None = None, since: str | None = None) -> dict:
+	return run_ingest_bills(bulletin=bulletin, since=since)
 
 
 @app.task(name="app.tasks.ingestors.ingest_legislators", bind=True, base=DatabaseTask)
