@@ -101,4 +101,7 @@ def stats_by_ministry(
         .order_by(func.count(OfficialGazetteNorm.id).desc())
         .all()
     )
-    return [{"ministry": row.ministry or "Unknown", "count": row.count} for row in rows]
+    return [
+        {"ministry": ministry or "Unknown", "count": count}
+        for ministry, count in rows
+    ]

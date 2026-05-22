@@ -1,8 +1,9 @@
 import asyncio
 import logging
+from typing import Any
 from xml.etree import ElementTree as ET
 
-from defusedxml.ElementTree import fromstring
+from defusedxml.ElementTree import fromstring  # type: ignore[import-untyped]
 
 from app.core.config import settings
 from app.ingestors.clients.senado import SenadoClient
@@ -16,7 +17,7 @@ MAX_CONCURRENCY = 10
 async def fetch_bills_parallel(
     bulletins: list[str],
     max_concurrency: int = MAX_CONCURRENCY,
-) -> list[tuple[str, dict | None]]:
+) -> list[tuple[str, dict[str, Any] | None]]:
     """Fetch full bill details for multiple bulletins in parallel via asyncio.
 
     Returns a list of (bulletin, bill_dict_or_None) in the same order as input.
@@ -26,7 +27,7 @@ async def fetch_bills_parallel(
 
     semaphore = asyncio.Semaphore(max_concurrency)
 
-    async def fetch_one(bulletin: str, client) -> tuple[str, dict | None]:
+    async def fetch_one(bulletin: str, client: Any) -> tuple[str, dict[str, Any] | None]:
         async with semaphore:
             return await _afetch_and_parse(client, bulletin)
 
@@ -48,7 +49,9 @@ async def fetch_bills_parallel(
     return list(results)
 
 
-async def _afetch_and_parse(client, bulletin: str) -> tuple[str, dict | None]:
+async def _afetch_and_parse(
+    client: Any, bulletin: str
+) -> tuple[str, dict[str, Any] | None]:
     boletin_num = bulletin.split("-")[0]
     url = f"{BASE_URL}tramitacion.php"
 

@@ -133,7 +133,7 @@ def index_bill(bill: Bill) -> None:
 def delete_bill(bill_id: int) -> None:
     """Remove a bill document from the index."""
     es = get_es_client()
-    es.delete(index=INDEX_NAME, id=str(bill_id), ignore=[404])
+    es.options(ignore_status=404).delete(index=INDEX_NAME, id=str(bill_id))
 
 
 # ── Search ────────────────────────────────────────────────────────────────────

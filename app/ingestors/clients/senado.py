@@ -1,5 +1,6 @@
 import datetime
 import logging
+from typing import Any
 from xml.etree import ElementTree as ET
 
 from app.core.config import settings
@@ -11,7 +12,7 @@ logger = logging.getLogger(__name__)
 class SenadoClient(BaseCongresoClient):
     BASE_URL = settings.ingestor_base_url_senado
 
-    def get_senadores_vigentes(self) -> list[dict]:
+    def get_senadores_vigentes(self) -> list[dict[str, Any]]:
         root = self._get_xml("senadores_vigentes.php")
         senators = [
             {
@@ -30,7 +31,7 @@ class SenadoClient(BaseCongresoClient):
         logger.info("Fetched %d senators", len(senators))
         return senators
 
-    def get_comisiones(self) -> list[dict]:
+    def get_comisiones(self) -> list[dict[str, Any]]:
         root = self._get_xml("comisiones.php")
         committees = [
             {
@@ -56,20 +57,20 @@ class SenadoClient(BaseCongresoClient):
         logger.info("Fetched %d senate committees", len(committees))
         return committees
 
-    def get_bill_by_bulletin(self, bulletin: str) -> dict | None:
+    def get_bill_by_bulletin(self, bulletin: str) -> dict[str, Any] | None:
         boletin_num = bulletin.split("-")[0]
         root = self._get_xml("tramitacion.php", params={"boletin": boletin_num})
         return SenadoClient._parse_bill_xml(root, bulletin)
 
     @staticmethod
-    def _parse_bill_xml(root: ET.Element, bulletin: str) -> dict | None:
+    def _parse_bill_xml(root: ET.Element, bulletin: str) -> dict[str, Any] | None:
         proyecto = root.find(".//proyecto")
         if proyecto is None:
             logger.warning("No project found for bulletin %s", bulletin)
             return None
 
         desc = proyecto.find("descripcion")
-        bill = {
+        bill: dict[str, Any] = {
             "bulletin": BaseCongresoClient._text(desc, "boletin"),
             "title": BaseCongresoClient._text(desc, "titulo"),
             "entry_date": SenadoClient._parse_date_dmy(BaseCongresoClient._text(desc, "fecha_ingreso")),
@@ -105,17 +106,17 @@ class SenadoClient(BaseCongresoClient):
         logger.info("Found %d bills modified since %s", len(bulletins), fecha)
         return bulletins
 
-    def get_votes_by_bulletin(self, bulletin: str) -> list[dict]:
+    def get_votes_by_bulletin(self, bulletin: str) -> list[dict[str, Any]]:
         boletin_num = bulletin.split("-")[0]
         root = self._get_xml("votaciones.php", params={"boletin": boletin_num})
         return SenadoClient._parse_votaciones_from_root(root)
 
     @staticmethod
-    def _parse_authors(proyecto: ET.Element) -> list[dict]:
+    def _parse_authors(proyecto: ET.Element) -> list[dict[str, Any]]:
         return [{"legislator": BaseCongresoClient._text(auth, "PARLAMENTARIO")} for auth in proyecto.iter("autor")]
 
     @staticmethod
-    def _parse_tramitaciones(proyecto: ET.Element) -> list[dict]:
+    def _parse_tramitaciones(proyecto: ET.Element) -> list[dict[str, Any]]:
         return [
             {
                 "session": BaseCongresoClient._text(tram, "SESION"),
@@ -128,7 +129,7 @@ class SenadoClient(BaseCongresoClient):
         ]
 
     @staticmethod
-    def _parse_votaciones(proyecto: ET.Element) -> list[dict]:
+    def _parse_votaciones(proyecto: ET.Element) -> list[dict[str, Any]]:
         return [
             {
                 "session": BaseCongresoClient._text(vot, "SESION"),
@@ -155,7 +156,7 @@ class SenadoClient(BaseCongresoClient):
         ]
 
     @staticmethod
-    def _parse_votaciones_from_root(root: ET.Element) -> list[dict]:
+    def _parse_votaciones_from_root(root: ET.Element) -> list[dict[str, Any]]:
         return [
             {
                 "session": BaseCongresoClient._text(vot, "SESION"),
@@ -182,7 +183,7 @@ class SenadoClient(BaseCongresoClient):
         ]
 
     @staticmethod
-    def _parse_informes(proyecto: ET.Element) -> list[dict]:
+    def _parse_informes(proyecto: ET.Element) -> list[dict[str, Any]]:
         return [
             {
                 "date": SenadoClient._parse_date_dmy(BaseCongresoClient._text(inf, "FECHAINFORME")),
@@ -194,14 +195,14 @@ class SenadoClient(BaseCongresoClient):
         ]
 
     @staticmethod
-    def _parse_comparados(proyecto: ET.Element) -> list[dict]:
+    def _parse_comparados(proyecto: ET.Element) -> list[dict[str, Any]]:
         return [
             {"text": BaseCongresoClient._text(comp, "COMPARADO"), "url": BaseCongresoClient._text(comp, "LINK_COMPARADO")}
             for comp in proyecto.iter("comparado")
         ]
 
     @staticmethod
-    def _parse_oficios(proyecto: ET.Element) -> list[dict]:
+    def _parse_oficios(proyecto: ET.Element) -> list[dict[str, Any]]:
         return [
             {
                 "number": BaseCongresoClient._text(ofi, "NUMERO"),

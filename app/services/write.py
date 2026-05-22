@@ -260,9 +260,9 @@ def _reconcile_authorships(
 
     current_by_legislator = {auth.legislator_id: auth for auth in bill.authorships}
     changed = False
-    for legislator_id, authorship in list(current_by_legislator.items()):
+    for legislator_id, existing_authorship in list(current_by_legislator.items()):
         if legislator_id not in desired_legislator_ids:
-            db.delete(authorship)
+            db.delete(existing_authorship)
             changed = True
 
     for legislator_id in desired_legislator_ids:
@@ -477,9 +477,9 @@ def _reconcile_terms(
         (term.start_date, term.chamber_id): term for term in legislator.terms
     }
     changed = False
-    for key, term in list(current_by_key.items()):
+    for key, existing_term in list(current_by_key.items()):
         if key not in desired:
-            db.delete(term)
+            db.delete(existing_term)
             changed = True
 
     for key, payload in desired.items():
@@ -536,9 +536,9 @@ def _reconcile_committee_memberships(
     }
     changed = False
 
-    for key, membership in list(current_by_key.items()):
+    for key, existing_membership in list(current_by_key.items()):
         if key not in desired:
-            db.delete(membership)
+            db.delete(existing_membership)
             changed = True
 
     for key, payload in desired.items():
@@ -586,9 +586,9 @@ def _reconcile_votes(
     current_by_legislator = {vote.legislator_id: vote for vote in voting_session.votes}
     changed = False
 
-    for legislator_id, vote in list(current_by_legislator.items()):
+    for legislator_id, existing_vote in list(current_by_legislator.items()):
         if legislator_id not in desired:
-            db.delete(vote)
+            db.delete(existing_vote)
             changed = True
 
     for legislator_id, vote_value in desired.items():
@@ -651,7 +651,10 @@ def upsert_norma(
             },
         ).returning(OfficialGazetteNorm.id)
     ).scalar_one()
-    return db.get(OfficialGazetteNorm, norma_id)
+    norma = db.get(OfficialGazetteNorm, norma_id)
+    if norma is None:
+        raise RuntimeError(f"Failed to load official gazette norm id={norma_id}")
+    return norma
 
 
 def compute_reglamento_fingerprint(data: dict[str, Any]) -> str:
@@ -1090,7 +1093,10 @@ def upsert_period(db: Session, data: dict[str, Any]) -> LegislativePeriod:
             },
         ).returning(LegislativePeriod.id)
     ).scalar_one()
-    return db.get(LegislativePeriod, period_id)
+    period = db.get(LegislativePeriod, period_id)
+    if period is None:
+        raise RuntimeError(f"Failed to load legislative period id={period_id}")
+    return period
 
 
 def upsert_session(db: Session, data: dict[str, Any]) -> LegislativeSession:
@@ -1165,6 +1171,8 @@ def upsert_region(db: Session, data: dict[str, Any]) -> Region:
         ).returning(Region.id)
     ).scalar_one()
     region = db.get(Region, region_id)
+    if region is None:
+        raise RuntimeError(f"Failed to load region id={region_id}")
     changed = False
 
     for province_payload in data.get("provinces") or []:
@@ -1253,6 +1261,8 @@ def upsert_district(db: Session, data: dict[str, Any]) -> District:
         ).returning(District.id)
     ).scalar_one()
     district = db.get(District, district_id)
+    if district is None:
+        raise RuntimeError(f"Failed to load district id={district_id}")
     linked = False
     for commune_payload in data.get("communes") or []:
         commune_number = commune_payload.get("number")

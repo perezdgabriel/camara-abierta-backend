@@ -1,4 +1,4 @@
-from celery.schedules import crontab
+from celery.schedules import crontab  # type: ignore[import-untyped]
 
 from app.core.celery_app import app
 

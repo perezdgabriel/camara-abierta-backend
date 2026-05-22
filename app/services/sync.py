@@ -75,7 +75,9 @@ def delta_sync_reglamentos(
     # Annotate gobierno_actual on each etapa (not a DB column, computed at read time)
     for reg in active:
         for etapa in reg.etapas:
-            etapa.gobierno_actual = (
+            setattr(
+                etapa,
+                "gobierno_actual",
                 etapa.fecha is not None
                 and etapa.fecha >= settings.gobierno_actual_inicio
             )

@@ -85,8 +85,8 @@ def test_vote_parser_maps_votes_and_result_to_canonical_enums():
 
 
 def test_senado_bill_xml_maps_through_bill_and_vote_parsers():
-        root = ET.fromstring(
-                """
+    root = ET.fromstring(
+        """
                 <root>
                     <proyecto>
                         <descripcion>
@@ -157,37 +157,40 @@ def test_senado_bill_xml_maps_through_bill_and_vote_parsers():
                     </proyecto>
                 </root>
                 """
-        )
+    )
 
-        raw = SenadoClient._parse_bill_xml(root, "555-06")
+    raw = SenadoClient._parse_bill_xml(root, "555-06")
 
-        assert raw is not None
-        assert raw["bulletin"] == "555-06"
-        assert raw["entry_date"] == "2026-05-10"
-        assert raw["publication_date"] == "2026-05-20"
-        assert len(raw["tramitaciones"]) == 1
-        assert len(raw["votaciones"]) == 1
+    assert raw is not None
+    assert raw["bulletin"] == "555-06"
+    assert raw["entry_date"] == "2026-05-10"
+    assert raw["publication_date"] == "2026-05-20"
+    assert len(raw["tramitaciones"]) == 1
+    assert len(raw["votaciones"]) == 1
 
-        bill_payload = BillParser.parse_bill(raw)
+    bill_payload = BillParser.parse_bill(raw)
 
-        assert bill_payload["bulletin_number"] == "555-06"
-        assert bill_payload["title"] == "Proyecto desde Senado"
-        assert bill_payload["origin_type"] is BillOrigin.EXECUTIVE
-        assert bill_payload["_origin_chamber_type"] is ChamberType.SENATE
-        assert bill_payload["status"] is BillStatus.PUBLISHED
-        assert bill_payload["_current_urgency_type"] is UrgencyType.IMMEDIATE
-        assert bill_payload["authors"] == [{"name": "Ada Demo"}]
-        assert bill_payload["topics"] == ["Transparencia"]
-        assert bill_payload["stages"][0]["stage_type"] is StageType.FIRST_CONSTITUTIONAL_TRAMITE
-        assert bill_payload["stages"][0]["_chamber_type"] is ChamberType.SENATE
-        assert len(bill_payload["documents"]) == 3
+    assert bill_payload["bulletin_number"] == "555-06"
+    assert bill_payload["title"] == "Proyecto desde Senado"
+    assert bill_payload["origin_type"] is BillOrigin.EXECUTIVE
+    assert bill_payload["_origin_chamber_type"] is ChamberType.SENATE
+    assert bill_payload["status"] is BillStatus.PUBLISHED
+    assert bill_payload["_current_urgency_type"] is UrgencyType.IMMEDIATE
+    assert bill_payload["authors"] == [{"name": "Ada Demo"}]
+    assert bill_payload["topics"] == ["Transparencia"]
+    assert (
+        bill_payload["stages"][0]["stage_type"]
+        is StageType.FIRST_CONSTITUTIONAL_TRAMITE
+    )
+    assert bill_payload["stages"][0]["_chamber_type"] is ChamberType.SENATE
+    assert len(bill_payload["documents"]) == 3
 
-        vote_payload = VoteParser.parse_senate_vote(
-                bill_payload["_votaciones"][0],
-                bulletin=bill_payload["bulletin_number"],
-        )
+    vote_payload = VoteParser.parse_senate_vote(
+        bill_payload["_votaciones"][0],
+        bulletin=bill_payload["bulletin_number"],
+    )
 
-        assert vote_payload["bcn_id"] == "senado:vot:555-06:42"
-        assert vote_payload["voting_type"] is VotingType.GENERAL
-        assert vote_payload["result"] is VotingResult.APPROVED
-        assert vote_payload["individual_votes"][0]["vote"] is VoteChoice.FOR
+    assert vote_payload["bcn_id"] == "senado:vot:555-06:42"
+    assert vote_payload["voting_type"] is VotingType.GENERAL
+    assert vote_payload["result"] is VotingResult.APPROVED
+    assert vote_payload["individual_votes"][0]["vote"] is VoteChoice.FOR

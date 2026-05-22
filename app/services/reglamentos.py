@@ -148,7 +148,10 @@ def reglamentos_stats_por_ministerio(
         query = query.filter(Regulation.categoria == categoria)
 
     rows = query.group_by(Regulation.ministerio).order_by(desc("count")).all()
-    return [ReglamentoStats(ministerio=row.ministerio, count=row.count) for row in rows]
+    return [
+        ReglamentoStats(ministerio=ministerio, count=count)
+        for ministerio, count in rows
+    ]
 
 
 def reglamentos_stats_por_categoria(db: Session) -> list[dict[str, int | str]]:
@@ -161,7 +164,10 @@ def reglamentos_stats_por_categoria(db: Session) -> list[dict[str, int | str]]:
         .order_by(desc("count"))
         .all()
     )
-    return [{"categoria": row.categoria, "count": row.count} for row in rows]
+    return [
+        {"categoria": categoria, "count": count}
+        for categoria, count in rows
+    ]
 
 
 def reglamentos_tiempo_tramitacion(
@@ -258,7 +264,9 @@ def get_reglamento(db: Session, reglamento_id: int) -> Regulation | None:
         return None
 
     for etapa in row.etapas:
-        etapa.gobierno_actual = (
-            etapa.fecha is not None and etapa.fecha >= settings.gobierno_actual_inicio
+        setattr(
+            etapa,
+            "gobierno_actual",
+            etapa.fecha is not None and etapa.fecha >= settings.gobierno_actual_inicio,
         )
     return row

@@ -77,13 +77,17 @@ def _run_legislature(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def _run_reference_data(args: argparse.Namespace) -> dict[str, Any]:
-    run_ingest_reference_data = _load_attr("app.tasks.ingestors", "run_ingest_reference_data")
+    run_ingest_reference_data = _load_attr(
+        "app.tasks.ingestors", "run_ingest_reference_data"
+    )
     result = run_ingest_reference_data(dry_run=args.dry_run)
     return {"job": "reference-data", **result}
 
 
 def _run_voting_sessions(args: argparse.Namespace) -> dict[str, Any]:
-    run_ingest_voting_sessions = _load_attr("app.tasks.ingestors", "run_ingest_voting_sessions")
+    run_ingest_voting_sessions = _load_attr(
+        "app.tasks.ingestors", "run_ingest_voting_sessions"
+    )
     result = run_ingest_voting_sessions(since=args.since, dry_run=args.dry_run)
     return {"job": "voting-sessions", **result}
 
@@ -103,7 +107,9 @@ def _build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command")
     subparsers.required = True
 
-    list_parser = subparsers.add_parser("list", help="List available scrapers and ingestors.")
+    list_parser = subparsers.add_parser(
+        "list", help="List available scrapers and ingestors."
+    )
     list_parser.set_defaults(runner=_list_jobs)
 
     dry_run_parent = argparse.ArgumentParser(add_help=False)
@@ -157,7 +163,9 @@ def _build_parser() -> argparse.ArgumentParser:
         parents=[dry_run_parent],
         help="Fetch and enqueue bill sync jobs.",
     )
-    bills_parser.add_argument("--bulletin", help="Fetch a single bill bulletin instead of querying all years.")
+    bills_parser.add_argument(
+        "--bulletin", help="Fetch a single bill bulletin instead of querying all years."
+    )
     bills_parser.add_argument(
         "--since",
         help="Only fetch bill bulletins modified since this ISO date.",
@@ -197,7 +205,9 @@ def _build_parser() -> argparse.ArgumentParser:
         parents=[dry_run_parent],
         help="Fetch and enqueue voting session sync jobs.",
     )
-    voting_parser.add_argument("--since", help="Only fetch voting sessions since this ISO date.")
+    voting_parser.add_argument(
+        "--since", help="Only fetch voting sessions since this ISO date."
+    )
     voting_parser.set_defaults(runner=_run_voting_sessions)
 
     return parser

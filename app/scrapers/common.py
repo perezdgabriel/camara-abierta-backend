@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import random
-from typing import Any
+from typing import Any, cast
 
 try:
     from playwright_stealth import stealth_async  # type: ignore
@@ -25,7 +25,7 @@ try:
 except ImportError:
     HAS_PATCHRIGHT = False
 
-from playwright.async_api import BrowserContext, Page, async_playwright
+from playwright.async_api import BrowserContext, Page, ViewportSize, async_playwright
 
 USER_AGENTS = [
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -96,7 +96,7 @@ async def apply_stealth(page: Page) -> None:
 async def launch_playwright(headed: bool = False) -> tuple[Any, BrowserContext, Page]:
     pw = await async_playwright().start()
     user_agent = random.choice(USER_AGENTS)
-    viewport = random.choice(VIEWPORTS)
+    viewport = cast(ViewportSize, random.choice(VIEWPORTS))
     browser = await pw.chromium.launch(
         headless=not headed,
         args=[
@@ -133,7 +133,7 @@ async def launch_patchright(headed: bool = False) -> tuple[Any, BrowserContext, 
         raise RuntimeError("patchright is not installed")
     pw = await patchright_api.async_playwright().start()
     user_agent = random.choice(USER_AGENTS)
-    viewport = random.choice(VIEWPORTS)
+    viewport = cast(ViewportSize, random.choice(VIEWPORTS))
     browser = await pw.chromium.launch(headless=not headed)
     context = await browser.new_context(
         user_agent=user_agent,
@@ -160,8 +160,9 @@ async def launch_camoufox(headed: bool = False) -> tuple[Any, None, Page]:
         geoip=True,
         fonts=["Arial", "Helvetica Neue"],
     )
-    browser = await fox.__aenter__()
-    context = browser.contexts[0] if browser.contexts else await browser.new_context()
+    browser: Any = await fox.__aenter__()
+    contexts = getattr(browser, "contexts", [])
+    context = contexts[0] if contexts else await browser.new_context()
     page = await context.new_page()
     return fox, None, page
 
@@ -172,9 +173,9 @@ class ScraperEngine:
             raise ValueError(f"Unknown engine: {engine!r}")
         self.engine = engine
         self.headed = headed
-        self._pw = None
-        self._fox = None
-        self._context = None
+        self._pw: Any | None = None
+        self._fox: Any | None = None
+        self._context: BrowserContext | None = None
         self.page: Page
 
     async def __aenter__(self) -> "ScraperEngine":

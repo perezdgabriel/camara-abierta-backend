@@ -1,4 +1,5 @@
 import logging
+from typing import Any
 from xml.etree import ElementTree as ET
 
 from app.core.config import settings
@@ -56,13 +57,13 @@ class OpenDataCamaraClient(BaseCongresoClient):
             return match.group(1)
         return None
 
-    def get_diputados_periodo_actual(self) -> list[dict]:
+    def get_diputados_periodo_actual(self) -> list[dict[str, Any]]:
         root = self._get_xml("WSDiputado.asmx/retornarDiputadosPeriodoActual")
         results = [self._parse_diputado(dip) for dip in self._iter(root, "Diputado")]
         logger.info("Fetched %d deputies (current period, opendata)", len(results))
         return results
 
-    def _parse_diputado(self, dip: ET.Element) -> dict:
+    def _parse_diputado(self, dip: ET.Element) -> dict[str, Any]:
         militancias = [
             {
                 "start_date": self._parse_dt(self._txt(mil, "FechaInicio")),
@@ -86,7 +87,7 @@ class OpenDataCamaraClient(BaseCongresoClient):
             "militancias": militancias,
         }
 
-    def get_comisiones_vigentes(self) -> list[dict]:
+    def get_comisiones_vigentes(self) -> list[dict[str, Any]]:
         root = self._get_xml("WSComision.asmx/retornarComisionesVigentes")
         comisiones = [
             {
@@ -106,7 +107,7 @@ class OpenDataCamaraClient(BaseCongresoClient):
         logger.info("Fetched %d committees (opendata)", len(comisiones))
         return comisiones
 
-    def get_comision(self, comision_id: int) -> dict | None:
+    def get_comision(self, comision_id: int) -> dict[str, Any] | None:
         root = self._get_xml("WSComision.asmx/retornarComision", params={"prmComisionID": str(comision_id)})
         com = root
         if com.tag not in (f"{NS_BRACE}Comision", "Comision"):
@@ -151,11 +152,16 @@ class OpenDataCamaraClient(BaseCongresoClient):
         root = self._get_xml("WSLegislativo.asmx/retornarLegislaturaActual")
         return self._parse_legislatura(root)
 
-    def get_legislaturas(self) -> list[dict]:
+    def get_legislaturas(self) -> list[dict[str, Any]]:
         root = self._get_xml("WSLegislativo.asmx/retornarLegislaturas")
-        return [self._parse_legislatura(leg) for leg in self._iter(root, "Legislatura") if self._parse_legislatura(leg)]
+        legislaturas: list[dict[str, Any]] = []
+        for leg in self._iter(root, "Legislatura"):
+            parsed = self._parse_legislatura(leg)
+            if parsed is not None:
+                legislaturas.append(parsed)
+        return legislaturas
 
-    def get_periodos_legislativos(self) -> list[dict]:
+    def get_periodos_legislativos(self) -> list[dict[str, Any]]:
         root = self._get_xml("WSLegislativo.asmx/retornarPeriodosLegislativos")
         return [
             {
@@ -167,7 +173,7 @@ class OpenDataCamaraClient(BaseCongresoClient):
             for per in self._iter(root, "PeriodoLegislativo")
         ]
 
-    def _parse_legislatura(self, el: ET.Element) -> dict | None:
+    def _parse_legislatura(self, el: ET.Element) -> dict[str, Any] | None:
         id_val = self._int_val(el, "Id")
         if not id_val and el.tag not in (f"{NS_BRACE}Legislatura", "Legislatura"):
             return None
@@ -180,7 +186,7 @@ class OpenDataCamaraClient(BaseCongresoClient):
             "type_code": self._attr(el, "Tipo"),
         }
 
-    def get_regiones(self) -> list[dict]:
+    def get_regiones(self) -> list[dict[str, Any]]:
         root = self._get_xml("WSComun.asmx/retornarRegiones")
         regiones = [
             {
@@ -204,7 +210,7 @@ class OpenDataCamaraClient(BaseCongresoClient):
         logger.info("Fetched %d regions (opendata)", len(regiones))
         return regiones
 
-    def get_distritos(self) -> list[dict]:
+    def get_distritos(self) -> list[dict[str, Any]]:
         root = self._get_xml("WSComun.asmx/retornarDistritos")
         distritos = [
             {

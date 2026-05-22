@@ -38,7 +38,9 @@ def test_run_ingest_bills_uses_senado_incremental_mode_for_explicit_since(monkey
         ]
 
     monkeypatch.setattr(ingestor_tasks, "SenadoClient", FakeSenadoClient)
-    monkeypatch.setattr(ingestor_tasks, "fetch_bills_parallel", fake_fetch_bills_parallel)
+    monkeypatch.setattr(
+        ingestor_tasks, "fetch_bills_parallel", fake_fetch_bills_parallel
+    )
     monkeypatch.setattr(
         ingestor_tasks.BillParser,
         "parse_bill",
@@ -81,10 +83,13 @@ def test_run_ingest_bills_uses_ingestor_state_for_incremental_mode(monkeypatch):
         )(),
     )
     monkeypatch.setattr(ingestor_tasks, "SenadoClient", FakeSenadoClient)
+
     async def fake_fetch_bills_parallel(bulletins: list[str]):
         return []
 
-    monkeypatch.setattr(ingestor_tasks, "fetch_bills_parallel", fake_fetch_bills_parallel)
+    monkeypatch.setattr(
+        ingestor_tasks, "fetch_bills_parallel", fake_fetch_bills_parallel
+    )
 
     result = ingestor_tasks.run_ingest_bills(dry_run=True)
 
@@ -122,8 +127,12 @@ def test_run_ingest_bills_falls_back_to_full_scan_without_state(monkeypatch):
         "_get_state",
         lambda db, entity_type, create=False: None,
     )
-    monkeypatch.setattr(ingestor_tasks, "OpenDataCamaraClient", FakeOpenDataCamaraClient)
-    monkeypatch.setattr(ingestor_tasks, "fetch_bills_parallel", fake_fetch_bills_parallel)
+    monkeypatch.setattr(
+        ingestor_tasks, "OpenDataCamaraClient", FakeOpenDataCamaraClient
+    )
+    monkeypatch.setattr(
+        ingestor_tasks, "fetch_bills_parallel", fake_fetch_bills_parallel
+    )
     monkeypatch.setattr(
         ingestor_tasks.BillParser,
         "parse_bill",
@@ -165,8 +174,12 @@ def test_run_ingest_bills_falls_back_to_full_scan_when_state_lookup_fails(monkey
         return [(bulletin, {"bulletin": bulletin}) for bulletin in bulletins]
 
     monkeypatch.setattr(ingestor_tasks, "task_session", BrokenTaskSession())
-    monkeypatch.setattr(ingestor_tasks, "OpenDataCamaraClient", FakeOpenDataCamaraClient)
-    monkeypatch.setattr(ingestor_tasks, "fetch_bills_parallel", fake_fetch_bills_parallel)
+    monkeypatch.setattr(
+        ingestor_tasks, "OpenDataCamaraClient", FakeOpenDataCamaraClient
+    )
+    monkeypatch.setattr(
+        ingestor_tasks, "fetch_bills_parallel", fake_fetch_bills_parallel
+    )
     monkeypatch.setattr(
         ingestor_tasks.BillParser,
         "parse_bill",
