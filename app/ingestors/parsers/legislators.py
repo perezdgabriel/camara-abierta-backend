@@ -1,5 +1,7 @@
 import re
 
+from app.models.enums import ChamberType
+
 
 class LegislatorParser:
     @staticmethod
@@ -13,7 +15,7 @@ class LegislatorParser:
             "first_name": first_name,
             "last_name": f"{last_name_father} {last_name_mother}".strip(),
             "full_name": full_name,
-            "chamber_type": "senator",
+            "chamber_type": ChamberType.SENATE,
             "is_active": True,
             "email": (raw.get("email") or "").strip(),
             "phone": (raw.get("phone") or "").strip(),
@@ -29,22 +31,32 @@ class LegislatorParser:
         second_name = (raw.get("second_name") or "").strip().title()
         last_name_father = (raw.get("last_name_father") or "").strip().title()
         last_name_mother = (raw.get("last_name_mother") or "").strip().title()
-        name_parts = [part for part in [first_name, second_name, last_name_father, last_name_mother] if part]
+        name_parts = [
+            part
+            for part in [first_name, second_name, last_name_father, last_name_mother]
+            if part
+        ]
         full_name = " ".join(name_parts)
 
         militancias = raw.get("militancias", [])
         current_party = ""
         if militancias:
-            active = [militancia for militancia in militancias if not militancia.get("end_date")]
+            active = [
+                militancia
+                for militancia in militancias
+                if not militancia.get("end_date")
+            ]
             source = active[-1] if active else militancias[-1]
-            current_party = source.get("party_name", "") or source.get("party_alias", "")
+            current_party = source.get("party_name", "") or source.get(
+                "party_alias", ""
+            )
 
         return {
             "bcn_id": f"camara:{raw.get('id', '')}",
             "first_name": first_name,
             "last_name": f"{last_name_father} {last_name_mother}".strip(),
             "full_name": full_name,
-            "chamber_type": "deputy",
+            "chamber_type": ChamberType.DEPUTIES,
             "is_active": True,
             "birth_date": raw.get("birth_date"),
             "gender": raw.get("gender_code") or raw.get("gender") or "",

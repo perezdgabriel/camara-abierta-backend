@@ -6,7 +6,7 @@ from typing import Any
 from sqlalchemy import select
 
 from app.core.session import task_session
-from app.models.diario_oficial import Reglamento
+from app.models.diario_oficial import Regulation
 from app.scrapers.common import ScraperEngine, jitter_sleep
 from app.services.write import compute_reglamento_fingerprint
 
@@ -148,7 +148,9 @@ async def _collect(engine: str, headed: bool) -> dict[str, list[dict[str, Any]]]
     return all_results
 
 
-def _build_dispatch_result(total: int, dispatched: int, dry_run: bool) -> dict[str, int | bool]:
+def _build_dispatch_result(
+    total: int, dispatched: int, dry_run: bool
+) -> dict[str, int | bool]:
     result: dict[str, int | bool] = {"dry_run": dry_run, "total": total}
     if dry_run:
         result["dispatched"] = 0
@@ -158,7 +160,9 @@ def _build_dispatch_result(total: int, dispatched: int, dry_run: bool) -> dict[s
     return result
 
 
-def run_scrape(*, engine: str = "playwright", headed: bool = False, dry_run: bool = False) -> dict[str, int | bool]:
+def run_scrape(
+    *, engine: str = "playwright", headed: bool = False, dry_run: bool = False
+) -> dict[str, int | bool]:
     all_results = asyncio.run(_collect(engine, headed))
 
     if "retirados" in all_results:
@@ -167,7 +171,11 @@ def run_scrape(*, engine: str = "playwright", headed: bool = False, dry_run: boo
             retiro_fecha = None
             for etapa in reglamento.get("etapas", []):
                 fecha = _parse_date(etapa.get("fecha", ""))
-                if "retiro" in (etapa.get("accion") or "").lower() and fecha and fecha >= FECHA_CAMBIO_GOBIERNO:
+                if (
+                    "retiro" in (etapa.get("accion") or "").lower()
+                    and fecha
+                    and fecha >= FECHA_CAMBIO_GOBIERNO
+                ):
                     retiro_fecha = fecha
             if retiro_fecha:
                 filtered.append({**reglamento, "fecha_retiro": retiro_fecha})
@@ -188,14 +196,17 @@ def run_scrape(*, engine: str = "playwright", headed: bool = False, dry_run: boo
                 payload = {**reglamento, "categoria": category}
                 fingerprint = compute_reglamento_fingerprint(payload)
                 existing = db.execute(
-                    select(Reglamento).where(Reglamento.numero == payload["numero"])
-                    .where(Reglamento.anio == payload["anio"])
-                    .where(Reglamento.ministerio == payload["ministerio"])
-                    .where(Reglamento.categoria == category)
+                    select(Regulation)
+                    .where(Regulation.numero == payload["numero"])
+                    .where(Regulation.anio == payload["anio"])
+                    .where(Regulation.ministerio == payload["ministerio"])
+                    .where(Regulation.categoria == category)
                 ).scalar_one_or_none()
                 if existing is not None and existing.content_fingerprint == fingerprint:
                     continue
                 if not dry_run:
-                    sync_reglamento.delay({**payload, "content_fingerprint": fingerprint})
+                    sync_reglamento.delay(
+                        {**payload, "content_fingerprint": fingerprint}
+                    )
                 dispatched += 1
     return _build_dispatch_result(total=total, dispatched=dispatched, dry_run=dry_run)

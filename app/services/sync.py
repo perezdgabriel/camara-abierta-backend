@@ -1,7 +1,7 @@
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.config import settings
-from app.models.diario_oficial import NormaGeneral, Reglamento
+from app.models.diario_oficial import OfficialGazetteNorm, Regulation
 from app.schemas.common import SyncMeta
 
 DEFAULT_LIMIT = 500
@@ -12,7 +12,7 @@ def delta_sync_normas(
     db: Session,
     since_version: int,
     limit: int,
-) -> tuple[list[NormaGeneral], list[int], SyncMeta]:
+) -> tuple[list[OfficialGazetteNorm], list[int], SyncMeta]:
     """
     Returns (active_items, deleted_ids, meta).
 
@@ -21,9 +21,9 @@ def delta_sync_normas(
     their id to deleted_ids.
     """
     batch_plus = (
-        db.query(NormaGeneral)
-        .filter(NormaGeneral.sync_version > since_version)
-        .order_by(NormaGeneral.sync_version.asc())
+        db.query(OfficialGazetteNorm)
+        .filter(OfficialGazetteNorm.sync_version > since_version)
+        .order_by(OfficialGazetteNorm.sync_version.asc())
         .limit(limit + 1)
         .all()
     )
@@ -35,10 +35,14 @@ def delta_sync_normas(
     deleted_ids = [r.id for r in batch if r.deleted_at is not None]
     current_version = batch[-1].sync_version if batch else since_version
 
-    return items, deleted_ids, SyncMeta(
-        current_version=current_version,
-        has_more=has_more,
-        count=len(items),
+    return (
+        items,
+        deleted_ids,
+        SyncMeta(
+            current_version=current_version,
+            has_more=has_more,
+            count=len(items),
+        ),
     )
 
 
@@ -46,7 +50,7 @@ def delta_sync_reglamentos(
     db: Session,
     since_version: int,
     limit: int,
-) -> tuple[list[Reglamento], list[int], SyncMeta]:
+) -> tuple[list[Regulation], list[int], SyncMeta]:
     """
     Returns (active_items, deleted_ids, meta).
 
@@ -54,10 +58,10 @@ def delta_sync_reglamentos(
     gobierno_actual computed per etapa.
     """
     batch_plus = (
-        db.query(Reglamento)
-        .options(joinedload(Reglamento.etapas))
-        .filter(Reglamento.sync_version > since_version)
-        .order_by(Reglamento.sync_version.asc())
+        db.query(Regulation)
+        .options(joinedload(Regulation.etapas))
+        .filter(Regulation.sync_version > since_version)
+        .order_by(Regulation.sync_version.asc())
         .limit(limit + 1)
         .all()
     )
@@ -78,8 +82,12 @@ def delta_sync_reglamentos(
 
     current_version = batch[-1].sync_version if batch else since_version
 
-    return active, deleted_ids, SyncMeta(
-        current_version=current_version,
-        has_more=has_more,
-        count=len(active),
+    return (
+        active,
+        deleted_ids,
+        SyncMeta(
+            current_version=current_version,
+            has_more=has_more,
+            count=len(active),
+        ),
     )

@@ -1,47 +1,49 @@
+from app.models.enums import ChamberType, VoteChoice, VotingResult, VotingType
+
 SENADO_VOTE_MAP = {
-    "Si": "for",
-    "Sí": "for",
-    "No": "against",
-    "Abstencion": "abstain",
-    "Abstención": "abstain",
-    "Pareo": "paired",
+    "Si": VoteChoice.FOR,
+    "Sí": VoteChoice.FOR,
+    "No": VoteChoice.AGAINST,
+    "Abstencion": VoteChoice.ABSTAIN,
+    "Abstención": VoteChoice.ABSTAIN,
+    "Pareo": VoteChoice.PAIRED,
 }
 
 VOTING_TYPE_MAP = {
-    "Discusion general": "general",
-    "Discusión general": "general",
-    "Discusion en general": "general",
-    "Discusión en general": "general",
-    "Discusion particular": "particular",
-    "Discusión particular": "particular",
-    "Discusion en particular": "particular",
-    "Discusión en particular": "particular",
-    "Discusion unica": "single",
-    "Discusión única": "single",
-    "Votacion unica": "single",
-    "Votación única": "single",
+    "Discusion general": VotingType.GENERAL,
+    "Discusión general": VotingType.GENERAL,
+    "Discusion en general": VotingType.GENERAL,
+    "Discusión en general": VotingType.GENERAL,
+    "Discusion particular": VotingType.PARTICULAR,
+    "Discusión particular": VotingType.PARTICULAR,
+    "Discusion en particular": VotingType.PARTICULAR,
+    "Discusión en particular": VotingType.PARTICULAR,
+    "Discusion unica": VotingType.SINGLE,
+    "Discusión única": VotingType.SINGLE,
+    "Votacion unica": VotingType.SINGLE,
+    "Votación única": VotingType.SINGLE,
 }
 
 
 class VoteParser:
     @staticmethod
     def parse_senate_vote(raw: dict, bulletin: str = "") -> dict:
-        voting_type = VOTING_TYPE_MAP.get(raw.get("voting_type", ""), "other")
+        voting_type = VOTING_TYPE_MAP.get(raw.get("voting_type", ""), VotingType.OTHER)
         session_ref = raw.get("session", "")
         ext_id = f"senado:vot:{bulletin}:{session_ref}"
         votes_for = int(raw.get("votes_for", 0) or 0)
         votes_against = int(raw.get("votes_against", 0) or 0)
         if votes_for > votes_against:
-            result = "approved"
+            result = VotingResult.APPROVED
         elif votes_against > votes_for:
-            result = "rejected"
+            result = VotingResult.REJECTED
         elif votes_for == votes_against and votes_for > 0:
-            result = "tie"
+            result = VotingResult.TIE
         else:
-            result = ""
+            result = None
         return {
             "bcn_id": ext_id,
-            "_chamber_type": "senate",
+            "_chamber_type": ChamberType.SENATE,
             "voting_type": voting_type,
             "subject": raw.get("subject", ""),
             "voting_date": raw.get("date"),
@@ -54,7 +56,9 @@ class VoteParser:
             "individual_votes": [
                 {
                     "_legislator_name": vote.get("legislator_name", ""),
-                    "vote": SENADO_VOTE_MAP.get(vote.get("vote", ""), "absent"),
+                    "vote": SENADO_VOTE_MAP.get(
+                        vote.get("vote", ""), VoteChoice.ABSENT
+                    ),
                 }
                 for vote in raw.get("detail", [])
             ],

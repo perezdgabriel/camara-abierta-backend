@@ -1,6 +1,15 @@
 from datetime import date, datetime
 
-from sqlalchemy import BigInteger, Boolean, Date, DateTime, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    Date,
+    DateTime,
+    ForeignKey,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -8,8 +17,8 @@ from app.core.database import Base
 from app.models.base import SyncableMixin
 
 
-class NormaGeneral(SyncableMixin, Base):
-    __tablename__ = "normas_generales"
+class OfficialGazetteNorm(SyncableMixin, Base):
+    __tablename__ = "official_gazette_norms"
 
     date: Mapped[date] = mapped_column(Date, nullable=False)
     edition: Mapped[str | None] = mapped_column(Text)
@@ -28,10 +37,16 @@ class NormaGeneral(SyncableMixin, Base):
     importancia_ciudadana: Mapped[int | None] = mapped_column(BigInteger)
 
 
-class Reglamento(SyncableMixin, Base):
-    __tablename__ = "reglamentos"
+class Regulation(SyncableMixin, Base):
+    __tablename__ = "regulations"
     __table_args__ = (
-        UniqueConstraint("numero", "anio", "ministerio", "categoria", name="uq_reglamentos_natural_key"),
+        UniqueConstraint(
+            "numero",
+            "anio",
+            "ministerio",
+            "categoria",
+            name="uq_regulations_natural_key",
+        ),
     )
 
     numero: Mapped[str] = mapped_column(Text, nullable=False)
@@ -42,22 +57,26 @@ class Reglamento(SyncableMixin, Base):
     fecha_ingreso: Mapped[date | None] = mapped_column(Date)
     estado: Mapped[str | None] = mapped_column(Text)
     categoria: Mapped[str] = mapped_column(Text, nullable=False)
-    reingresado: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
-    content_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    reingresado: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false"
+    )
+    content_fingerprint: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, index=True
+    )
 
-    etapas: Mapped[list["ReglamentoEtapa"]] = relationship(
+    etapas: Mapped[list["RegulationStage"]] = relationship(
         back_populates="reglamento",
-        order_by="ReglamentoEtapa.etapa",
+        order_by="RegulationStage.etapa",
     )
 
 
-class ReglamentoEtapa(Base):
-    __tablename__ = "reglamentos_etapas"
+class RegulationStage(Base):
+    __tablename__ = "regulation_stages"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     reglamento_id: Mapped[int] = mapped_column(
         BigInteger,
-        ForeignKey("reglamentos.id", ondelete="CASCADE"),
+        ForeignKey("regulations.id", ondelete="CASCADE"),
         nullable=False,
     )
     etapa: Mapped[str | None] = mapped_column(Text)
@@ -69,4 +88,4 @@ class ReglamentoEtapa(Base):
     documento_url: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime | None] = mapped_column(DateTime)
 
-    reglamento: Mapped[Reglamento] = relationship(back_populates="etapas")
+    reglamento: Mapped[Regulation] = relationship(back_populates="etapas")

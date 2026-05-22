@@ -1,5 +1,5 @@
 from app.models.core import Circumscription, Commune, District, Province, Region, Topic
-from app.models.diario_oficial import NormaGeneral, Reglamento, ReglamentoEtapa
+from app.models.diario_oficial import OfficialGazetteNorm, Regulation, RegulationStage
 from app.models.ingestor_state import IngestorState
 from app.models.legislature import (
     Chamber,
@@ -13,7 +13,14 @@ from app.models.legislature import (
     LegislatorTerm,
     PoliticalParty,
 )
-from app.models.proyecto import Bill, BillAuthorship, BillDocument, BillEvent, BillStage, BillUrgency
+from app.models.proyecto import (
+    Bill,
+    BillAuthorship,
+    BillDocument,
+    BillEvent,
+    BillStage,
+    BillUrgency,
+)
 from app.models.sync import ChangeLog, ClientSyncState
 from app.models.votacion import LegislatorVotingStats, Vote, VotingSession
 
@@ -40,12 +47,12 @@ __all__ = [
     "Legislator",
     "LegislatorTerm",
     "LegislatorVotingStats",
-    "NormaGeneral",
+    "OfficialGazetteNorm",
     "PoliticalParty",
     "Province",
     "Region",
-    "Reglamento",
-    "ReglamentoEtapa",
+    "Regulation",
+    "RegulationStage",
     "Topic",
     "Vote",
     "VotingSession",

@@ -1,4 +1,4 @@
-from celery import Task
+from celery import Task  # type: ignore[import-untyped]
 
 
 class DatabaseTask(Task):

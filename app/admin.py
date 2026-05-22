@@ -9,7 +9,7 @@ from starlette.requests import Request
 from app.core.config import settings
 from app.core.database import engine
 from app.models.core import Circumscription, District, Region, Topic
-from app.models.diario_oficial import NormaGeneral, Reglamento, ReglamentoEtapa
+from app.models.diario_oficial import OfficialGazetteNorm, Regulation, RegulationStage
 from app.models.legislature import (
     Chamber,
     Coalition,
@@ -22,8 +22,8 @@ from app.models.legislature import (
 from app.models.proyecto import Bill, BillEvent, BillStage, BillUrgency
 from app.models.votacion import LegislatorVotingStats, Vote, VotingSession
 
-
 # ── Authentication ────────────────────────────────────────────────────
+
 
 class AdminAuth(AuthenticationBackend):
     async def login(self, request: Request) -> bool:
@@ -46,74 +46,97 @@ class AdminAuth(AuthenticationBackend):
 
 # ── Diario Oficial ────────────────────────────────────────────────────
 
-class NormaGeneralAdmin(ModelView, model=NormaGeneral):
+
+class NormaGeneralAdmin(ModelView, model=OfficialGazetteNorm):
     name = "Norma"
     name_plural = "Normas Generales"
     icon = "fa-solid fa-newspaper"
     category = "Diario Oficial"
 
     column_list = [
-        NormaGeneral.id,
-        NormaGeneral.date,
-        NormaGeneral.branch,
-        NormaGeneral.ministry,
-        NormaGeneral.title,
-        NormaGeneral.cve,
-        NormaGeneral.categoria_ia,
-        NormaGeneral.importancia_ciudadana,
-        NormaGeneral.sync_version,
+        OfficialGazetteNorm.id,
+        OfficialGazetteNorm.date,
+        OfficialGazetteNorm.branch,
+        OfficialGazetteNorm.ministry,
+        OfficialGazetteNorm.title,
+        OfficialGazetteNorm.cve,
+        OfficialGazetteNorm.categoria_ia,
+        OfficialGazetteNorm.importancia_ciudadana,
+        OfficialGazetteNorm.sync_version,
     ]
     column_details_list = "__all__"
-    column_searchable_list = [NormaGeneral.title, NormaGeneral.cve, NormaGeneral.ministry, NormaGeneral.organ]
-    column_sortable_list = [NormaGeneral.id, NormaGeneral.date, NormaGeneral.importancia_ciudadana, NormaGeneral.sync_version]
+    column_searchable_list = [
+        OfficialGazetteNorm.title,
+        OfficialGazetteNorm.cve,
+        OfficialGazetteNorm.ministry,
+        OfficialGazetteNorm.organ,
+    ]
+    column_sortable_list = [
+        OfficialGazetteNorm.id,
+        OfficialGazetteNorm.date,
+        OfficialGazetteNorm.importancia_ciudadana,
+        OfficialGazetteNorm.sync_version,
+    ]
     page_size = 50
     can_delete = False
 
 
-class ReglamentoAdmin(ModelView, model=Reglamento):
+class ReglamentoAdmin(ModelView, model=Regulation):
     name = "Reglamento"
     name_plural = "Reglamentos"
     icon = "fa-solid fa-file-contract"
     category = "Diario Oficial"
 
     column_list = [
-        Reglamento.id,
-        Reglamento.numero,
-        Reglamento.anio,
-        Reglamento.ministerio,
-        Reglamento.categoria,
-        Reglamento.estado,
-        Reglamento.fecha_ingreso,
-        Reglamento.reingresado,
-        Reglamento.sync_version,
+        Regulation.id,
+        Regulation.numero,
+        Regulation.anio,
+        Regulation.ministerio,
+        Regulation.categoria,
+        Regulation.estado,
+        Regulation.fecha_ingreso,
+        Regulation.reingresado,
+        Regulation.sync_version,
     ]
     column_details_list = "__all__"
-    column_searchable_list = [Reglamento.numero, Reglamento.ministerio, Reglamento.materia, Reglamento.categoria]
-    column_sortable_list = [Reglamento.id, Reglamento.anio, Reglamento.ministerio, Reglamento.fecha_ingreso, Reglamento.sync_version]
+    column_searchable_list = [
+        Regulation.numero,
+        Regulation.ministerio,
+        Regulation.materia,
+        Regulation.categoria,
+    ]
+    column_sortable_list = [
+        Regulation.id,
+        Regulation.anio,
+        Regulation.ministerio,
+        Regulation.fecha_ingreso,
+        Regulation.sync_version,
+    ]
     page_size = 50
     can_delete = False
 
 
-class ReglamentoEtapaAdmin(ModelView, model=ReglamentoEtapa):
+class ReglamentoEtapaAdmin(ModelView, model=RegulationStage):
     name = "Etapa"
     name_plural = "Etapas de Reglamentos"
     icon = "fa-solid fa-list-check"
     category = "Diario Oficial"
 
     column_list = [
-        ReglamentoEtapa.id,
-        ReglamentoEtapa.reglamento_id,
-        ReglamentoEtapa.etapa,
-        ReglamentoEtapa.fecha,
-        ReglamentoEtapa.accion,
-        ReglamentoEtapa.sector,
+        RegulationStage.id,
+        RegulationStage.reglamento_id,
+        RegulationStage.etapa,
+        RegulationStage.fecha,
+        RegulationStage.accion,
+        RegulationStage.sector,
     ]
-    column_sortable_list = [ReglamentoEtapa.id, ReglamentoEtapa.fecha]
+    column_sortable_list = [RegulationStage.id, RegulationStage.fecha]
     page_size = 100
     can_delete = False
 
 
 # ── Parlamento ────────────────────────────────────────────────────────
+
 
 class LegislatorAdmin(ModelView, model=Legislator):
     name = "Legislador"
@@ -131,8 +154,19 @@ class LegislatorAdmin(ModelView, model=Legislator):
         Legislator.is_active,
     ]
     column_details_list = "__all__"
-    column_searchable_list = [Legislator.full_name, Legislator.first_name, Legislator.last_name, Legislator.email, Legislator.bcn_id]
-    column_sortable_list = [Legislator.id, Legislator.last_name, Legislator.chamber_type, Legislator.is_active]
+    column_searchable_list = [
+        Legislator.full_name,
+        Legislator.first_name,
+        Legislator.last_name,
+        Legislator.email,
+        Legislator.bcn_id,
+    ]
+    column_sortable_list = [
+        Legislator.id,
+        Legislator.last_name,
+        Legislator.chamber_type,
+        Legislator.is_active,
+    ]
     page_size = 50
 
 
@@ -151,7 +185,11 @@ class PoliticalPartyAdmin(ModelView, model=PoliticalParty):
         PoliticalParty.color,
     ]
     column_searchable_list = [PoliticalParty.name, PoliticalParty.abbreviation]
-    column_sortable_list = [PoliticalParty.id, PoliticalParty.name, PoliticalParty.is_active]
+    column_sortable_list = [
+        PoliticalParty.id,
+        PoliticalParty.name,
+        PoliticalParty.is_active,
+    ]
 
 
 class CoalitionAdmin(ModelView, model=Coalition):
@@ -160,7 +198,12 @@ class CoalitionAdmin(ModelView, model=Coalition):
     icon = "fa-solid fa-people-group"
     category = "Parlamento"
 
-    column_list = [Coalition.id, Coalition.name, Coalition.abbreviation, Coalition.is_active]
+    column_list = [
+        Coalition.id,
+        Coalition.name,
+        Coalition.abbreviation,
+        Coalition.is_active,
+    ]
     column_searchable_list = [Coalition.name, Coalition.abbreviation]
 
 
@@ -179,7 +222,13 @@ class LegislativePeriodAdmin(ModelView, model=LegislativePeriod):
     icon = "fa-solid fa-calendar-days"
     category = "Parlamento"
 
-    column_list = [LegislativePeriod.id, LegislativePeriod.number, LegislativePeriod.start_date, LegislativePeriod.end_date, LegislativePeriod.description]
+    column_list = [
+        LegislativePeriod.id,
+        LegislativePeriod.number,
+        LegislativePeriod.start_date,
+        LegislativePeriod.end_date,
+        LegislativePeriod.description,
+    ]
     column_sortable_list = [LegislativePeriod.number, LegislativePeriod.start_date]
 
 
@@ -189,8 +238,20 @@ class LegislativeSessionAdmin(ModelView, model=LegislativeSession):
     icon = "fa-solid fa-gavel"
     category = "Parlamento"
 
-    column_list = [LegislativeSession.id, LegislativeSession.number, LegislativeSession.session_type, LegislativeSession.chamber, LegislativeSession.period, LegislativeSession.start_date, LegislativeSession.end_date]
-    column_sortable_list = [LegislativeSession.id, LegislativeSession.start_date, LegislativeSession.number]
+    column_list = [
+        LegislativeSession.id,
+        LegislativeSession.number,
+        LegislativeSession.session_type,
+        LegislativeSession.chamber,
+        LegislativeSession.period,
+        LegislativeSession.start_date,
+        LegislativeSession.end_date,
+    ]
+    column_sortable_list = [
+        LegislativeSession.id,
+        LegislativeSession.start_date,
+        LegislativeSession.number,
+    ]
     page_size = 50
 
 
@@ -200,12 +261,19 @@ class CommitteeAdmin(ModelView, model=Committee):
     icon = "fa-solid fa-users"
     category = "Parlamento"
 
-    column_list = [Committee.id, Committee.name, Committee.chamber, Committee.committee_type, Committee.is_active]
+    column_list = [
+        Committee.id,
+        Committee.name,
+        Committee.chamber,
+        Committee.committee_type,
+        Committee.is_active,
+    ]
     column_searchable_list = [Committee.name]
     column_sortable_list = [Committee.id, Committee.name, Committee.is_active]
 
 
 # ── Legislación ───────────────────────────────────────────────────────
+
 
 class TopicAdmin(ModelView, model=Topic):
     name = "Tema"
@@ -238,8 +306,19 @@ class BillAdmin(ModelView, model=Bill):
         Bill.sync_version,
     ]
     column_details_list = "__all__"
-    column_searchable_list = [Bill.title, Bill.bulletin_number, Bill.bcn_id, Bill.law_number]
-    column_sortable_list = [Bill.id, Bill.entry_date, Bill.status, Bill.bill_type, Bill.sync_version]
+    column_searchable_list = [
+        Bill.title,
+        Bill.bulletin_number,
+        Bill.bcn_id,
+        Bill.law_number,
+    ]
+    column_sortable_list = [
+        Bill.id,
+        Bill.entry_date,
+        Bill.status,
+        Bill.bill_type,
+        Bill.sync_version,
+    ]
     page_size = 50
     can_delete = False
 
@@ -271,7 +350,13 @@ class BillEventAdmin(ModelView, model=BillEvent):
     icon = "fa-solid fa-clock-rotate-left"
     category = "Legislación"
 
-    column_list = [BillEvent.id, BillEvent.bill, BillEvent.chamber, BillEvent.event_date, BillEvent.title]
+    column_list = [
+        BillEvent.id,
+        BillEvent.bill,
+        BillEvent.chamber,
+        BillEvent.event_date,
+        BillEvent.title,
+    ]
     column_searchable_list = [BillEvent.title]
     column_sortable_list = [BillEvent.id, BillEvent.event_date]
     page_size = 100
@@ -284,12 +369,25 @@ class BillUrgencyAdmin(ModelView, model=BillUrgency):
     icon = "fa-solid fa-triangle-exclamation"
     category = "Legislación"
 
-    column_list = [BillUrgency.id, BillUrgency.bill, BillUrgency.urgency_type, BillUrgency.chamber, BillUrgency.entry_date, BillUrgency.deadline_date, BillUrgency.is_active]
-    column_sortable_list = [BillUrgency.id, BillUrgency.entry_date, BillUrgency.deadline_date]
+    column_list = [
+        BillUrgency.id,
+        BillUrgency.bill,
+        BillUrgency.urgency_type,
+        BillUrgency.chamber,
+        BillUrgency.entry_date,
+        BillUrgency.deadline_date,
+        BillUrgency.is_active,
+    ]
+    column_sortable_list = [
+        BillUrgency.id,
+        BillUrgency.entry_date,
+        BillUrgency.deadline_date,
+    ]
     can_delete = False
 
 
 # ── Votaciones ────────────────────────────────────────────────────────
+
 
 class VotingSessionAdmin(ModelView, model=VotingSession):
     name = "Votación"
@@ -309,7 +407,11 @@ class VotingSessionAdmin(ModelView, model=VotingSession):
         VotingSession.subject,
     ]
     column_searchable_list = [VotingSession.subject, VotingSession.bcn_id]
-    column_sortable_list = [VotingSession.id, VotingSession.voting_date, VotingSession.result]
+    column_sortable_list = [
+        VotingSession.id,
+        VotingSession.voting_date,
+        VotingSession.result,
+    ]
     page_size = 50
     can_delete = False
 
@@ -339,11 +441,16 @@ class LegislatorVotingStatsAdmin(ModelView, model=LegislatorVotingStats):
         LegislatorVotingStats.votes_for,
         LegislatorVotingStats.votes_against,
     ]
-    column_sortable_list = [LegislatorVotingStats.id, LegislatorVotingStats.total_sessions, LegislatorVotingStats.votes_for]
+    column_sortable_list = [
+        LegislatorVotingStats.id,
+        LegislatorVotingStats.total_sessions,
+        LegislatorVotingStats.votes_for,
+    ]
     can_delete = False
 
 
 # ── Geografía ─────────────────────────────────────────────────────────
+
 
 class RegionAdmin(ModelView, model=Region):
     name = "Región"

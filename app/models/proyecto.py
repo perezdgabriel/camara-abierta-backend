@@ -3,12 +3,24 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, Column, Date, DateTime, ForeignKey, String, Table, Text, UniqueConstraint
+from sqlalchemy import (
+    Boolean,
+    Column,
+    Date,
+    DateTime,
+    ForeignKey,
+    String,
+    Table,
+    Text,
+    UniqueConstraint,
+)
+from sqlalchemy import Enum as SqlEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
 from app.models.base import SyncableMixin
 from app.models.core import Topic
+from app.models.enums import BillOrigin, BillStatus, BillType, StageType, UrgencyType
 from app.models.legislature import Chamber, Committee, Legislator
 
 if TYPE_CHECKING:
@@ -26,26 +38,59 @@ class Bill(SyncableMixin, Base):
     __tablename__ = "bills"
 
     bcn_id: Mapped[str | None] = mapped_column(String(50), unique=True)
-    bulletin_number: Mapped[str] = mapped_column(String(50), nullable=False, unique=True)
+    bulletin_number: Mapped[str] = mapped_column(
+        String(50), nullable=False, unique=True
+    )
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     summary: Mapped[str | None] = mapped_column(Text)
-    bill_type: Mapped[str | None] = mapped_column(String(20), default="project")
-    origin: Mapped[str] = mapped_column(String(20), nullable=False)
-    origin_chamber_id: Mapped[int | None] = mapped_column(ForeignKey("chambers.id", ondelete="RESTRICT"))
-    status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
-    current_chamber_id: Mapped[int | None] = mapped_column(ForeignKey("chambers.id", ondelete="SET NULL"))
+    bill_type: Mapped[BillType] = mapped_column(
+        SqlEnum(BillType, name="bill_type", native_enum=False, validate_strings=True),
+        nullable=False,
+        default=BillType.PROJECT,
+    )
+    origin: Mapped[BillOrigin] = mapped_column(
+        SqlEnum(
+            BillOrigin, name="bill_origin", native_enum=False, validate_strings=True
+        ),
+        nullable=False,
+    )
+    origin_chamber_id: Mapped[int | None] = mapped_column(
+        ForeignKey("chambers.id", ondelete="RESTRICT")
+    )
+    status: Mapped[BillStatus] = mapped_column(
+        SqlEnum(
+            BillStatus, name="bill_status", native_enum=False, validate_strings=True
+        ),
+        nullable=False,
+        default=BillStatus.PENDING,
+    )
+    current_chamber_id: Mapped[int | None] = mapped_column(
+        ForeignKey("chambers.id", ondelete="SET NULL")
+    )
     entry_date: Mapped[date] = mapped_column(Date, nullable=False)
     publication_date: Mapped[date | None] = mapped_column(Date)
     law_number: Mapped[str | None] = mapped_column(String(50))
-    current_committee_id: Mapped[int | None] = mapped_column(ForeignKey("committees.id", ondelete="SET NULL"))
+    current_committee_id: Mapped[int | None] = mapped_column(
+        ForeignKey("committees.id", ondelete="SET NULL")
+    )
     full_text_url: Mapped[str | None] = mapped_column(String(500))
     full_text: Mapped[str | None] = mapped_column(Text)
     ai_summary: Mapped[str | None] = mapped_column(Text)
-    ai_summary_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    origin_chamber: Mapped[Chamber | None] = relationship(back_populates="originated_bills", foreign_keys=[origin_chamber_id])
-    current_chamber: Mapped[Chamber | None] = relationship(back_populates="current_bills", foreign_keys=[current_chamber_id])
-    current_committee: Mapped[Committee | None] = relationship(back_populates="current_bills")
-    topics: Mapped[list[Topic]] = relationship(secondary=bill_topics, back_populates="bills")
+    ai_summary_updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
+    origin_chamber: Mapped[Chamber | None] = relationship(
+        back_populates="originated_bills", foreign_keys=[origin_chamber_id]
+    )
+    current_chamber: Mapped[Chamber | None] = relationship(
+        back_populates="current_bills", foreign_keys=[current_chamber_id]
+    )
+    current_committee: Mapped[Committee | None] = relationship(
+        back_populates="current_bills"
+    )
+    topics: Mapped[list[Topic]] = relationship(
+        secondary=bill_topics, back_populates="bills"
+    )
     authorships: Mapped[list["BillAuthorship"]] = relationship(back_populates="bill")
     stages: Mapped[list["BillStage"]] = relationship(back_populates="bill")
     urgencies: Mapped[list["BillUrgency"]] = relationship(back_populates="bill")
@@ -61,12 +106,20 @@ class Bill(SyncableMixin, Base):
 class BillAuthorship(SyncableMixin, Base):
     __tablename__ = "bill_authorships"
     __table_args__ = (
-        UniqueConstraint("bill_id", "legislator_id", name="uq_bill_authorships_bill_legislator"),
+        UniqueConstraint(
+            "bill_id", "legislator_id", name="uq_bill_authorships_bill_legislator"
+        ),
     )
 
-    bill_id: Mapped[int] = mapped_column(ForeignKey("bills.id", ondelete="CASCADE"), nullable=False)
-    legislator_id: Mapped[int] = mapped_column(ForeignKey("legislators.id", ondelete="CASCADE"), nullable=False)
-    author_type: Mapped[str] = mapped_column(String(20), nullable=False, default="author")
+    bill_id: Mapped[int] = mapped_column(
+        ForeignKey("bills.id", ondelete="CASCADE"), nullable=False
+    )
+    legislator_id: Mapped[int] = mapped_column(
+        ForeignKey("legislators.id", ondelete="CASCADE"), nullable=False
+    )
+    author_type: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="author"
+    )
 
     bill: Mapped[Bill] = relationship(back_populates="authorships")
     legislator: Mapped[Legislator] = relationship(back_populates="authored_bills")
@@ -78,10 +131,19 @@ class BillAuthorship(SyncableMixin, Base):
 class BillStage(SyncableMixin, Base):
     __tablename__ = "bill_stages"
 
-    bill_id: Mapped[int] = mapped_column(ForeignKey("bills.id", ondelete="CASCADE"), nullable=False)
-    stage_type: Mapped[str] = mapped_column(String(30), nullable=False)
-    chamber_id: Mapped[int | None] = mapped_column(ForeignKey("chambers.id", ondelete="SET NULL"))
-    committee_id: Mapped[int | None] = mapped_column(ForeignKey("committees.id", ondelete="SET NULL"))
+    bill_id: Mapped[int] = mapped_column(
+        ForeignKey("bills.id", ondelete="CASCADE"), nullable=False
+    )
+    stage_type: Mapped[StageType] = mapped_column(
+        SqlEnum(StageType, name="stage_type", native_enum=False, validate_strings=True),
+        nullable=False,
+    )
+    chamber_id: Mapped[int | None] = mapped_column(
+        ForeignKey("chambers.id", ondelete="SET NULL")
+    )
+    committee_id: Mapped[int | None] = mapped_column(
+        ForeignKey("committees.id", ondelete="SET NULL")
+    )
     start_date: Mapped[date] = mapped_column(Date, nullable=False)
     end_date: Mapped[date | None] = mapped_column(Date)
     result: Mapped[str | None] = mapped_column(String(200))
@@ -93,7 +155,9 @@ class BillStage(SyncableMixin, Base):
     committee: Mapped[Committee | None] = relationship()
     documents: Mapped[list["BillDocument"]] = relationship(back_populates="bill_stage")
     events: Mapped[list["BillEvent"]] = relationship(back_populates="bill_stage")
-    voting_sessions: Mapped[list["VotingSession"]] = relationship(back_populates="bill_stage")
+    voting_sessions: Mapped[list["VotingSession"]] = relationship(
+        back_populates="bill_stage"
+    )
 
     def __str__(self) -> str:
         stage_type = self.stage_type or "Tramite"
@@ -104,9 +168,18 @@ class BillStage(SyncableMixin, Base):
 class BillUrgency(SyncableMixin, Base):
     __tablename__ = "bill_urgencies"
 
-    bill_id: Mapped[int] = mapped_column(ForeignKey("bills.id", ondelete="CASCADE"), nullable=False)
-    urgency_type: Mapped[str] = mapped_column(String(20), nullable=False)
-    chamber_id: Mapped[int] = mapped_column(ForeignKey("chambers.id", ondelete="RESTRICT"), nullable=False)
+    bill_id: Mapped[int] = mapped_column(
+        ForeignKey("bills.id", ondelete="CASCADE"), nullable=False
+    )
+    urgency_type: Mapped[UrgencyType] = mapped_column(
+        SqlEnum(
+            UrgencyType, name="urgency_type", native_enum=False, validate_strings=True
+        ),
+        nullable=False,
+    )
+    chamber_id: Mapped[int] = mapped_column(
+        ForeignKey("chambers.id", ondelete="RESTRICT"), nullable=False
+    )
     entry_date: Mapped[date] = mapped_column(Date, nullable=False)
     withdrawal_date: Mapped[date | None] = mapped_column(Date)
     deadline_date: Mapped[date | None] = mapped_column(Date)
@@ -122,8 +195,12 @@ class BillUrgency(SyncableMixin, Base):
 class BillDocument(SyncableMixin, Base):
     __tablename__ = "bill_documents"
 
-    bill_id: Mapped[int] = mapped_column(ForeignKey("bills.id", ondelete="CASCADE"), nullable=False)
-    bill_stage_id: Mapped[int | None] = mapped_column(ForeignKey("bill_stages.id", ondelete="SET NULL"))
+    bill_id: Mapped[int] = mapped_column(
+        ForeignKey("bills.id", ondelete="CASCADE"), nullable=False
+    )
+    bill_stage_id: Mapped[int | None] = mapped_column(
+        ForeignKey("bill_stages.id", ondelete="SET NULL")
+    )
     document_type: Mapped[str] = mapped_column(String(20), nullable=False)
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
@@ -140,9 +217,15 @@ class BillDocument(SyncableMixin, Base):
 class BillEvent(SyncableMixin, Base):
     __tablename__ = "bill_events"
 
-    bill_id: Mapped[int] = mapped_column(ForeignKey("bills.id", ondelete="CASCADE"), nullable=False)
-    bill_stage_id: Mapped[int | None] = mapped_column(ForeignKey("bill_stages.id", ondelete="SET NULL"))
-    chamber_id: Mapped[int | None] = mapped_column(ForeignKey("chambers.id", ondelete="SET NULL"))
+    bill_id: Mapped[int] = mapped_column(
+        ForeignKey("bills.id", ondelete="CASCADE"), nullable=False
+    )
+    bill_stage_id: Mapped[int | None] = mapped_column(
+        ForeignKey("bill_stages.id", ondelete="SET NULL")
+    )
+    chamber_id: Mapped[int | None] = mapped_column(
+        ForeignKey("chambers.id", ondelete="SET NULL")
+    )
     event_date: Mapped[date] = mapped_column(Date, nullable=False)
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     description: Mapped[str | None] = mapped_column(Text)

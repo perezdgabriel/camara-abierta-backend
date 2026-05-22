@@ -1,13 +1,15 @@
+from app.models.enums import ChamberType, CommitteeType
+
 COMMITTEE_TYPE_MAP = {
-    "Permanente": "permanent",
-    "permanente": "permanent",
-    "Especial": "special",
-    "especial": "special",
-    "Mixta": "mixed",
-    "mixta": "mixed",
-    "Investigadora": "investigative",
-    "investigadora": "investigative",
-    "Especial Investigadora": "investigative",
+    "Permanente": CommitteeType.PERMANENT,
+    "permanente": CommitteeType.PERMANENT,
+    "Especial": CommitteeType.SPECIAL,
+    "especial": CommitteeType.SPECIAL,
+    "Mixta": CommitteeType.MIXED,
+    "mixta": CommitteeType.MIXED,
+    "Investigadora": CommitteeType.INVESTIGATIVE,
+    "investigadora": CommitteeType.INVESTIGATIVE,
+    "Especial Investigadora": CommitteeType.INVESTIGATIVE,
 }
 
 ROLE_MAP = {
@@ -33,11 +35,16 @@ class CommitteeParser:
             "_source": "senado",
             "_external_id": f"senado:{raw['id']}",
             "name": raw.get("name", "").strip(),
-            "committee_type": COMMITTEE_TYPE_MAP.get(raw.get("type", ""), "permanent"),
-            "_chamber_type": "senate",
+            "committee_type": COMMITTEE_TYPE_MAP.get(
+                raw.get("type", ""), CommitteeType.PERMANENT
+            ),
+            "_chamber_type": ChamberType.SENATE,
             "_email": raw.get("email", ""),
             "members": [
-                {"bcn_id": f"senado:{member['parlid']}", "role": _parse_role(member.get("role", ""))}
+                {
+                    "bcn_id": f"senado:{member['parlid']}",
+                    "role": _parse_role(member.get("role", "")),
+                }
                 for member in raw.get("members", [])
             ],
         }
@@ -48,8 +55,10 @@ class CommitteeParser:
             "_source": "opendata",
             "_external_id": f"opendata:{raw.get('id', '')}",
             "name": raw.get("name", "").strip(),
-            "committee_type": COMMITTEE_TYPE_MAP.get(raw.get("type", ""), "permanent"),
-            "_chamber_type": "deputies",
+            "committee_type": COMMITTEE_TYPE_MAP.get(
+                raw.get("type", ""), CommitteeType.PERMANENT
+            ),
+            "_chamber_type": ChamberType.DEPUTIES,
             "_email": raw.get("email", ""),
             "members": [],
         }
@@ -72,8 +81,10 @@ class CommitteeParser:
             "_source": "opendata",
             "_external_id": f"opendata:{raw.get('id', '')}",
             "name": raw.get("name", "").strip(),
-            "committee_type": COMMITTEE_TYPE_MAP.get(raw.get("type", ""), "permanent"),
-            "_chamber_type": "deputies",
+            "committee_type": COMMITTEE_TYPE_MAP.get(
+                raw.get("type", ""), CommitteeType.PERMANENT
+            ),
+            "_chamber_type": ChamberType.DEPUTIES,
             "_email": raw.get("email", ""),
             "members": members,
         }

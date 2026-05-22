@@ -1,56 +1,58 @@
+from app.models.enums import BillOrigin, BillStatus, ChamberType, StageType, UrgencyType
+
 STATUS_MAP = {
-    "En tramitacion": "pending",
-    "En tramitación": "pending",
-    "Tramitacion terminada": "approved",
-    "Tramitación terminada": "approved",
-    "Aprobado": "approved",
-    "Rechazado": "rejected",
-    "Archivado": "archived",
-    "Retirado": "withdrawn",
-    "Inconstitucional": "unconstitutional",
-    "Promulgado": "enacted",
-    "Publicado": "published",
+    "En tramitacion": BillStatus.PENDING,
+    "En tramitación": BillStatus.PENDING,
+    "Tramitacion terminada": BillStatus.APPROVED,
+    "Tramitación terminada": BillStatus.APPROVED,
+    "Aprobado": BillStatus.APPROVED,
+    "Rechazado": BillStatus.REJECTED,
+    "Archivado": BillStatus.ARCHIVED,
+    "Retirado": BillStatus.WITHDRAWN,
+    "Inconstitucional": BillStatus.UNCONSTITUTIONAL,
+    "Promulgado": BillStatus.ENACTED,
+    "Publicado": BillStatus.PUBLISHED,
 }
 
 ORIGIN_MAP = {
-    "Mensaje": "executive",
-    "Mocion": "deputies",
-    "Moción": "deputies",
-    "Indicacion": "deputies",
-    "Indicación": "deputies",
-    "Urgencia": "executive",
-    "Oficio": "executive",
+    "Mensaje": BillOrigin.EXECUTIVE,
+    "Mocion": BillOrigin.DEPUTIES,
+    "Moción": BillOrigin.DEPUTIES,
+    "Indicacion": BillOrigin.DEPUTIES,
+    "Indicación": BillOrigin.DEPUTIES,
+    "Urgencia": BillOrigin.EXECUTIVE,
+    "Oficio": BillOrigin.EXECUTIVE,
 }
 
 CHAMBER_MAP = {
-    "C.Diputados": "deputies",
-    "C. Diputados": "deputies",
-    "Camara de Diputados": "deputies",
-    "Cámara de Diputados": "deputies",
-    "Senado": "senate",
+    "C.Diputados": ChamberType.DEPUTIES,
+    "C. Diputados": ChamberType.DEPUTIES,
+    "Camara de Diputados": ChamberType.DEPUTIES,
+    "Cámara de Diputados": ChamberType.DEPUTIES,
+    "Senado": ChamberType.SENATE,
 }
 
 STAGE_TYPE_MAP = {
-    "Primer tramite constitucional": "Primer trámite constitucional",
-    "Primer trámite constitucional": "Primer trámite constitucional",
-    "Segundo tramite constitucional": "Segundo trámite constitucional",
-    "Segundo trámite constitucional": "Segundo trámite constitucional",
-    "Tercer tramite constitucional": "Tercer trámite constitucional",
-    "Tercer trámite constitucional": "Tercer trámite constitucional",
-    "Comision Mixta": "Comisión Mixta",
-    "Comisión Mixta": "Comisión Mixta",
-    "Tribunal Constitucional": "Tribunal Constitucional",
-    "Promulgacion": "Promulgación",
-    "Promulgación": "Promulgación",
-    "Publicacion": "Publicación",
-    "Publicación": "Publicación",
+    "Primer tramite constitucional": StageType.FIRST_CONSTITUTIONAL_TRAMITE,
+    "Primer trámite constitucional": StageType.FIRST_CONSTITUTIONAL_TRAMITE,
+    "Segundo tramite constitucional": StageType.SECOND_CONSTITUTIONAL_TRAMITE,
+    "Segundo trámite constitucional": StageType.SECOND_CONSTITUTIONAL_TRAMITE,
+    "Tercer tramite constitucional": StageType.THIRD_CONSTITUTIONAL_TRAMITE,
+    "Tercer trámite constitucional": StageType.THIRD_CONSTITUTIONAL_TRAMITE,
+    "Comision Mixta": StageType.MIXED_COMMISSION,
+    "Comisión Mixta": StageType.MIXED_COMMISSION,
+    "Tribunal Constitucional": StageType.CONSTITUTIONAL_TRIBUNAL,
+    "Promulgacion": StageType.PROMULGATION,
+    "Promulgación": StageType.PROMULGATION,
+    "Publicacion": StageType.PUBLICATION,
+    "Publicación": StageType.PUBLICATION,
 }
 
 URGENCY_MAP = {
-    "Simple": "simple",
-    "Suma": "sum",
-    "Discusion inmediata": "immediate",
-    "Discusión inmediata": "immediate",
+    "Simple": UrgencyType.SIMPLE,
+    "Suma": UrgencyType.SUM,
+    "Discusion inmediata": UrgencyType.IMMEDIATE,
+    "Discusión inmediata": UrgencyType.IMMEDIATE,
     "Sin urgencia": None,
     "Sin Urgencia": None,
 }
@@ -59,17 +61,23 @@ URGENCY_MAP = {
 class BillParser:
     @staticmethod
     def parse_bill(raw: dict) -> dict:
-        origin_type = ORIGIN_MAP.get(raw.get("initiative", ""), "deputies")
-        origin_chamber_type = CHAMBER_MAP.get(raw.get("origin_chamber", ""), "deputies")
+        origin_type = ORIGIN_MAP.get(raw.get("initiative", ""), BillOrigin.DEPUTIES)
+        origin_chamber_type = CHAMBER_MAP.get(
+            raw.get("origin_chamber", ""), ChamberType.DEPUTIES
+        )
         urgency_type = URGENCY_MAP.get(raw.get("current_urgency", ""))
-        status = STATUS_MAP.get(raw.get("status", ""), "pending")
+        status = STATUS_MAP.get(raw.get("status", ""), BillStatus.PENDING)
 
         authors = [
             {"name": author.get("legislator", "").strip()}
             for author in raw.get("authors", [])
             if author.get("legislator", "").strip()
         ]
-        topics = [materia.strip() for materia in raw.get("materias", []) if materia and materia.strip()]
+        topics = [
+            materia.strip()
+            for materia in raw.get("materias", [])
+            if materia and materia.strip()
+        ]
         stages = BillParser._parse_stages(raw.get("tramitaciones", []))
         documents = BillParser._parse_documents(
             raw.get("informes", []),
@@ -98,7 +106,9 @@ class BillParser:
     def _parse_stages(tramitaciones: list[dict]) -> list[dict]:
         return [
             {
-                "stage_type": STAGE_TYPE_MAP.get(tram.get("stage", ""), "other"),
+                "stage_type": STAGE_TYPE_MAP.get(
+                    tram.get("stage", ""), StageType.OTHER
+                ),
                 "start_date": tram.get("date"),
                 "_chamber_type": CHAMBER_MAP.get(tram.get("chamber", "")),
                 "description": tram.get("description", ""),
@@ -108,7 +118,9 @@ class BillParser:
         ]
 
     @staticmethod
-    def _parse_documents(informes: list[dict], comparados: list[dict], oficios: list[dict]) -> list[dict]:
+    def _parse_documents(
+        informes: list[dict], comparados: list[dict], oficios: list[dict]
+    ) -> list[dict]:
         documents = []
         for informe in informes:
             if informe.get("url"):
