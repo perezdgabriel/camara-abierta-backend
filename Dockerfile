@@ -1,4 +1,10 @@
-FROM python:3.12-slim
+FROM python:3.14-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+	PYTHONUNBUFFERED=1 \
+	UV_COMPILE_BYTECODE=1 \
+	UV_LINK_MODE=copy \
+	PATH="/app/.venv/bin:$PATH"
 
 WORKDIR /app
 
@@ -20,11 +26,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 	libasound2 \
 	&& rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-RUN playwright install --with-deps chromium
+RUN pip install --no-cache-dir "uv>=0.8,<1"
 
-COPY . .
+COPY README.md pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-dev --no-install-project
+
+COPY alembic.ini ./
+COPY app ./app
+COPY templates ./templates
+
+RUN uv sync --frozen --no-dev
+RUN playwright install --with-deps chromium
 
 EXPOSE 8000
 

@@ -1,0 +1,17 @@
+.git
+.gitignore
+.mypy_cache
+.pytest_cache
+.ruff_cache
+.venv
+__pycache__
+build
+dist
+docs
+dump.rdb
+tests
+*.pyc
+*.pyo
+*.pyd
+*.swp
+.DS_Store

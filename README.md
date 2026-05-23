@@ -74,6 +74,8 @@ migrations/
 ## Ejecución local
 
 ```bash
+# Requiere Python 3.14
+
 # Variables de entorno
 # Crear .env.local con al menos:
 # DATABASE_URL=postgresql://postgres:postgres@localhost:5432/camara_abierta
@@ -146,6 +148,8 @@ alembic current
 ```bash
 docker compose up --build
 ```
+
+La imagen de Docker instala dependencias desde `pyproject.toml` y `uv.lock`, que ahora son la fuente de verdad del entorno de ejecucion.
 
 Servicios incluidos: `api`, `celery-worker`, `celery-beat`, `postgres`, `redis`, `elasticsearch`.
 
