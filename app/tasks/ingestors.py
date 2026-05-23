@@ -395,7 +395,11 @@ def run_ingest_voting_sessions(
 
     try:
         with SenadoClient() as senado:
+            seen: set[str] = set()
             for bulletin_number in senado.get_bills_by_date(since_date):
+                if not bulletin_number or bulletin_number in seen:
+                    continue
+                seen.add(bulletin_number)
                 try:
                     time.sleep(REQUEST_DELAY)
                     for raw_vote in senado.get_votes_by_bulletin(bulletin_number):
