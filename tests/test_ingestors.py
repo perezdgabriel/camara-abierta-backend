@@ -321,3 +321,79 @@ def test_run_ingest_reference_data_dispatches_regions_and_districts(monkeypatch)
             },
         ),
     ]
+
+
+def test_run_ingest_voting_sessions_uses_explicit_since_and_deduplicates_bulletins(
+    monkeypatch,
+):
+    requested_since: list[datetime.date] = []
+    fetched_vote_bulletins: list[str] = []
+
+    class FakeSenadoClient:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def get_bills_by_date(self, since_date: datetime.date) -> list[str]:
+            requested_since.append(since_date)
+            return ["111-06", "111-06", "222-07"]
+
+        def get_votes_by_bulletin(self, bulletin: str) -> list[dict]:
+            fetched_vote_bulletins.append(bulletin)
+            return [
+                {"session": f"{bulletin}-1"},
+                {"session": f"{bulletin}-2"},
+            ]
+
+    monkeypatch.setattr(ingestor_tasks, "SenadoClient", FakeSenadoClient)
+    monkeypatch.setattr(
+        ingestor_tasks.VoteParser,
+        "parse_senate_vote",
+        lambda raw_vote, bulletin: {
+            "bcn_id": f"senado:vot:{bulletin}:{raw_vote['session']}",
+        },
+    )
+    monkeypatch.setattr(ingestor_tasks.time, "sleep", lambda _: None)
+
+    result = ingestor_tasks.run_ingest_voting_sessions(since="2026-05-01", dry_run=True)
+
+    assert requested_since == [datetime.date(2026, 5, 1)]
+    assert fetched_vote_bulletins == ["111-06", "222-07"]
+    assert result["since"] == "2026-05-01"
+    assert result["would_dispatch"] == 4
+
+
+def test_run_ingest_voting_sessions_uses_ingestor_state_since(monkeypatch):
+    first_db = object()
+    requested_since: list[datetime.date] = []
+
+    class FakeSenadoClient:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def get_bills_by_date(self, since_date: datetime.date) -> list[str]:
+            requested_since.append(since_date)
+            return []
+
+    monkeypatch.setattr(ingestor_tasks, "task_session", session_sequence(first_db))
+    monkeypatch.setattr(
+        ingestor_tasks,
+        "_get_state",
+        lambda db, entity_type, create=False: type(
+            "State",
+            (),
+            {"last_sync_date": datetime.date(2026, 5, 20)},
+        )(),
+    )
+    monkeypatch.setattr(ingestor_tasks, "SenadoClient", FakeSenadoClient)
+
+    result = ingestor_tasks.run_ingest_voting_sessions(dry_run=True)
+
+    assert requested_since == [datetime.date(2026, 5, 20)]
+    assert result["since"] == "2026-05-20"
+    assert result["would_dispatch"] == 0
