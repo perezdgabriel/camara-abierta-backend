@@ -1,8 +1,8 @@
 """initial_schema
 
-Revision ID: c717d8982798
+Revision ID: 7323ce0f3f12
 Revises: 
-Create Date: 2026-05-22 21:53:34.079889
+Create Date: 2026-05-24 08:53:29.832911
 """
 
 from alembic import op
@@ -11,7 +11,7 @@ from sqlalchemy.dialects import postgresql
 
 
 # revision identifiers, used by Alembic.
-revision = 'c717d8982798'
+revision = '7323ce0f3f12'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -418,6 +418,20 @@ def upgrade() -> None:
     )
     op.create_index(op.f('ix_bill_authorships_deleted_at'), 'bill_authorships', ['deleted_at'], unique=False)
     op.create_index(op.f('ix_bill_authorships_sync_version'), 'bill_authorships', ['sync_version'], unique=False)
+    op.create_table('bill_sponsoring_ministries',
+    sa.Column('bill_id', sa.BigInteger(), nullable=False),
+    sa.Column('source_id', sa.Integer(), nullable=True),
+    sa.Column('name', sa.String(length=200), nullable=True),
+    sa.Column('id', sa.BigInteger(), nullable=False),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.Column('deleted_at', sa.DateTime(timezone=True), nullable=True),
+    sa.Column('sync_version', sa.BigInteger(), server_default=sa.text("nextval('global_sync_version_seq')"), nullable=False),
+    sa.ForeignKeyConstraint(['bill_id'], ['bills.id'], name=op.f('fk_bill_sponsoring_ministries_bill_id_bills'), ondelete='CASCADE'),
+    sa.PrimaryKeyConstraint('id', name=op.f('pk_bill_sponsoring_ministries'))
+    )
+    op.create_index(op.f('ix_bill_sponsoring_ministries_deleted_at'), 'bill_sponsoring_ministries', ['deleted_at'], unique=False)
+    op.create_index(op.f('ix_bill_sponsoring_ministries_sync_version'), 'bill_sponsoring_ministries', ['sync_version'], unique=False)
     op.create_table('bill_stages',
     sa.Column('bill_id', sa.BigInteger(), nullable=False),
     sa.Column('stage_type', sa.Enum('FIRST_CONSTITUTIONAL_TRAMITE', 'SECOND_CONSTITUTIONAL_TRAMITE', 'THIRD_CONSTITUTIONAL_TRAMITE', 'MIXED_COMMISSION', 'CONSTITUTIONAL_TRIBUNAL', 'PROMULGATION', 'PUBLICATION', 'OTHER', name='stage_type', native_enum=False), nullable=False),
@@ -576,9 +590,15 @@ def upgrade() -> None:
     sa.Column('votes_for', sa.Integer(), nullable=False),
     sa.Column('votes_against', sa.Integer(), nullable=False),
     sa.Column('abstentions', sa.Integer(), nullable=False),
+    sa.Column('dispensed_count', sa.Integer(), nullable=False),
     sa.Column('absences', sa.Integer(), nullable=False),
     sa.Column('quorum_required', sa.Integer(), nullable=True),
     sa.Column('quorum_type', sa.String(length=100), nullable=True),
+    sa.Column('article_text', sa.Text(), nullable=True),
+    sa.Column('constitutional_procedure_id', sa.Integer(), nullable=True),
+    sa.Column('constitutional_procedure_label', sa.String(length=100), nullable=True),
+    sa.Column('regulatory_procedure_id', sa.Integer(), nullable=True),
+    sa.Column('regulatory_procedure_label', sa.String(length=100), nullable=True),
     sa.Column('id', sa.BigInteger(), nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
@@ -596,7 +616,7 @@ def upgrade() -> None:
     op.create_table('votes',
     sa.Column('voting_session_id', sa.BigInteger(), nullable=False),
     sa.Column('legislator_id', sa.BigInteger(), nullable=False),
-    sa.Column('vote', sa.Enum('FOR', 'AGAINST', 'ABSTAIN', 'PAIRED', 'ABSENT', name='vote_choice', native_enum=False), nullable=False),
+    sa.Column('vote', sa.Enum('FOR', 'AGAINST', 'ABSTAIN', 'PAIRED', 'DISPENSED', 'ABSENT', name='vote_choice', native_enum=False), nullable=False),
     sa.Column('id', sa.BigInteger(), nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
@@ -642,6 +662,9 @@ def downgrade() -> None:
     op.drop_index(op.f('ix_bill_stages_sync_version'), table_name='bill_stages')
     op.drop_index(op.f('ix_bill_stages_deleted_at'), table_name='bill_stages')
     op.drop_table('bill_stages')
+    op.drop_index(op.f('ix_bill_sponsoring_ministries_sync_version'), table_name='bill_sponsoring_ministries')
+    op.drop_index(op.f('ix_bill_sponsoring_ministries_deleted_at'), table_name='bill_sponsoring_ministries')
+    op.drop_table('bill_sponsoring_ministries')
     op.drop_index(op.f('ix_bill_authorships_sync_version'), table_name='bill_authorships')
     op.drop_index(op.f('ix_bill_authorships_deleted_at'), table_name='bill_authorships')
     op.drop_table('bill_authorships')

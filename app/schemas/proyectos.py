@@ -99,6 +99,12 @@ class Urgency(ORMModel):
     is_active: bool
 
 
+class SponsoringMinistry(ORMModel):
+    id: int
+    source_id: int | None = None
+    name: str | None = None
+
+
 class VotingResult(ORMModel):
     id: int
     bcn_id: str | None = None
@@ -110,8 +116,14 @@ class VotingResult(ORMModel):
     votes_for: int
     votes_against: int
     abstentions: int
+    dispensed_count: int
     absences: int
     quorum_type: str | None = None
+    article_text: str | None = None
+    constitutional_procedure_id: int | None = None
+    constitutional_procedure_label: str | None = None
+    regulatory_procedure_id: int | None = None
+    regulatory_procedure_label: str | None = None
 
 
 # ── List / summary schema ─────────────────────────────────────────────
@@ -150,6 +162,7 @@ class BillDetail(BillSummary):
     summary: str | None = None
     ai_summary: str | None = None
     full_text_url: str | None = None
+    sponsoring_ministries: list[SponsoringMinistry] = Field(default_factory=list)
     authors: list[Author] = Field(default_factory=list)
     stages: list[Stage] = Field(default_factory=list)
     events: list[Event] = Field(default_factory=list)

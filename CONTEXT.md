@@ -19,10 +19,18 @@ All categorical string fields use formal Python enums. Current vocabulary:
 - `StageType`: first_constitutional_tramite, second_constitutional_tramite, third_constitutional_tramite, mixed_commission, constitutional_tribunal, promulgation, publication
 - `UrgencyType`: simple, sum, immediate
 - `VotingType`: general, particular, single, other
-- `VoteChoice`: for, against, abstain, paired, absent
+- `VoteChoice`: for, against, abstain, paired, dispensed, absent
 - `VotingResult`: approved, rejected, tie
 - `ChamberType`: deputies, senate
 - `CommitteeType`: permanent, special, investigative, mixed
+
+**Sponsoring ministries**:
+Optional zero-to-many ministries attached to a bill as upstream metadata from the Chamber of Deputies. They are historical bill-scoped labels, not a shared platform-wide ministry catalog.
+_Avoid_: ministries, ministry catalog
+
+**Dispensed vote**:
+An excused legislator vote choice recorded explicitly by an upstream chamber voting source. It is distinct from an absence.
+_Avoid_: absent
 
 **Bill lifecycle**:
 `Bill.status` is the source of truth from the upstream Congress API, not derived from stages. `BillStage` records are the detailed legislative history. The `is_current` flag on `BillStage` tracks where the bill currently is in the process.

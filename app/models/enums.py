@@ -50,6 +50,7 @@ class VoteChoice(str, Enum):
     AGAINST = "against"
     ABSTAIN = "abstain"
     PAIRED = "paired"
+    DISPENSED = "dispensed"
     ABSENT = "absent"
 
 

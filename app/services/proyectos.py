@@ -98,6 +98,7 @@ def _full_options():
         ),
         selectinload(Bill.events).joinedload(BillEvent.chamber),
         selectinload(Bill.documents),
+        selectinload(Bill.sponsoring_ministries),
         selectinload(Bill.urgencies).joinedload(BillUrgency.chamber),
         selectinload(Bill.voting_sessions).joinedload(VotingSession.chamber),
     ]

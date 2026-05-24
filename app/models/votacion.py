@@ -46,9 +46,15 @@ class VotingSession(SyncableMixin, Base):
     votes_for: Mapped[int] = mapped_column(nullable=False, default=0)
     votes_against: Mapped[int] = mapped_column(nullable=False, default=0)
     abstentions: Mapped[int] = mapped_column(nullable=False, default=0)
+    dispensed_count: Mapped[int] = mapped_column(nullable=False, default=0)
     absences: Mapped[int] = mapped_column(nullable=False, default=0)
     quorum_required: Mapped[int | None] = mapped_column()
     quorum_type: Mapped[str | None] = mapped_column(String(100))
+    article_text: Mapped[str | None] = mapped_column(Text)
+    constitutional_procedure_id: Mapped[int | None] = mapped_column()
+    constitutional_procedure_label: Mapped[str | None] = mapped_column(String(100))
+    regulatory_procedure_id: Mapped[int | None] = mapped_column()
+    regulatory_procedure_label: Mapped[str | None] = mapped_column(String(100))
 
     chamber: Mapped[Chamber] = relationship()
     session: Mapped[LegislativeSession | None] = relationship(

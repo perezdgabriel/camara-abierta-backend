@@ -18,6 +18,7 @@ from app.models.proyecto import (
     BillAuthorship,
     BillDocument,
     BillEvent,
+    BillSponsoringMinistry,
     BillStage,
     BillUrgency,
 )
@@ -29,6 +30,7 @@ __all__ = [
     "BillAuthorship",
     "BillDocument",
     "BillEvent",
+    "BillSponsoringMinistry",
     "BillStage",
     "BillUrgency",
     "Chamber",

@@ -96,11 +96,29 @@ class Bill(SyncableMixin, Base):
     urgencies: Mapped[list["BillUrgency"]] = relationship(back_populates="bill")
     documents: Mapped[list["BillDocument"]] = relationship(back_populates="bill")
     events: Mapped[list["BillEvent"]] = relationship(back_populates="bill")
+    sponsoring_ministries: Mapped[list["BillSponsoringMinistry"]] = relationship(
+        back_populates="bill"
+    )
     voting_sessions: Mapped[list["VotingSession"]] = relationship(back_populates="bill")
 
     def __str__(self) -> str:
         title = self.title if len(self.title) <= 80 else f"{self.title[:77]}..."
         return f"Boletin {self.bulletin_number} - {title}"
+
+
+class BillSponsoringMinistry(SyncableMixin, Base):
+    __tablename__ = "bill_sponsoring_ministries"
+
+    bill_id: Mapped[int] = mapped_column(
+        ForeignKey("bills.id", ondelete="CASCADE"), nullable=False
+    )
+    source_id: Mapped[int | None] = mapped_column()
+    name: Mapped[str | None] = mapped_column(String(200))
+
+    bill: Mapped[Bill] = relationship(back_populates="sponsoring_ministries")
+
+    def __str__(self) -> str:
+        return self.name or f"Ministerio patrocinante {self.source_id}"
 
 
 class BillAuthorship(SyncableMixin, Base):

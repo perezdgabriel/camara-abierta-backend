@@ -58,6 +58,12 @@ class VotingSessionSummary(ORMModel):
 
 
 class VotingSessionDetail(VotingSessionSummary):
+    dispensed_count: int
+    article_text: str | None = None
+    constitutional_procedure_id: int | None = None
+    constitutional_procedure_label: str | None = None
+    regulatory_procedure_id: int | None = None
+    regulatory_procedure_label: str | None = None
     votes: list[VoteDetail] = Field(default_factory=list)
 
 
