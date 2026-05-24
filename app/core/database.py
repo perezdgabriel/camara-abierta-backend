@@ -1,5 +1,6 @@
 from sqlalchemy import MetaData, create_engine
-from sqlalchemy.orm import DeclarativeBase, sessionmaker
+from sqlalchemy.engine import Engine
+from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.core.config import settings
 
@@ -16,8 +17,16 @@ class Base(DeclarativeBase):
     metadata = MetaData(naming_convention=NAMING_CONVENTION)
 
 
-engine = create_engine(settings.database_url, pool_pre_ping=True)
-SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
+def build_engine(database_url: str) -> Engine:
+    return create_engine(database_url, pool_pre_ping=True)
+
+
+def build_sessionmaker(bind: Engine) -> sessionmaker[Session]:
+    return sessionmaker(bind=bind, autocommit=False, autoflush=False)
+
+
+engine = build_engine(settings.database_url)
+SessionLocal = build_sessionmaker(engine)
 
 
 def get_db():
