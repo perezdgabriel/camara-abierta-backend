@@ -1,13 +1,22 @@
 dev:
     uv run uvicorn app.main:app --reload
 
+check: 
+    uv run ruff check
+
+format:
+    uv run ruff format
+
+typecheck:
+    uv run mypy app/
+
 test:
     uv run pytest
 
 test-integration:
     uv run pytest -m integration --integration
 
-flush:
+recreate-db:
     uv run python scripts/recreate_db.py -y
 
 worker:
@@ -25,5 +34,5 @@ legislators:
 bills:
     uv run python -m app.cli ingestors bills
 
-seed: reference legislature legislators bills
+seed: reference legislature legislators
     echo "Database has been seeded with initial data"

@@ -3,3 +3,6 @@ __pycache__/
 .env*
 .venv/
 dump.rdb
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
