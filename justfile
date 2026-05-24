@@ -4,6 +4,9 @@ dev:
 test:
     uv run pytest
 
+test-integration:
+    uv run pytest -m integration --integration
+
 flush:
     uv run python scripts/recreate_db.py -y
 

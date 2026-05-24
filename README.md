@@ -104,6 +104,22 @@ python -m app.cli ingestors legislators
 
 Documentación interactiva disponible en [http://localhost:8000/docs](http://localhost:8000/docs).
 
+## Tests
+
+```bash
+# Fast default test suite
+uv run pytest
+
+# PostgreSQL-backed integration tests
+# TEST_DATABASE_URL must already exist, must differ from DATABASE_URL,
+# and its database name must end with `_test`.
+TEST_DATABASE_URL=postgresql://postgres@localhost:5432/camara_abierta_test \
+  uv run pytest -m integration --integration
+
+# Convenience command
+just test-integration
+```
+
 ## Reset de base de datos y baseline Alembic
 
 ```bash

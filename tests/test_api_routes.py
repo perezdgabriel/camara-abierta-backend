@@ -1,9 +1,16 @@
+from collections.abc import Iterator
 from datetime import date, datetime
 from types import SimpleNamespace
 
+import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+from app.api.router import router as api_router
 from app.api.v1 import legislators as legislators_api
 from app.api.v1 import proyectos as bills_api
 from app.api.v1 import voting as voting_api
+from app.core.database import get_db
 from app.models.enums import (
     BillOrigin,
     BillStatus,
@@ -18,6 +25,29 @@ from app.models.enums import (
 
 def ns(**kwargs):
     return SimpleNamespace(**kwargs)
+
+
+@pytest.fixture
+def fake_db() -> object:
+    return object()
+
+
+@pytest.fixture
+def api_app(fake_db: object) -> Iterator[FastAPI]:
+    app = FastAPI()
+    app.include_router(api_router)
+
+    def override_get_db():
+        yield fake_db
+
+    app.dependency_overrides[get_db] = override_get_db
+    yield app
+
+
+@pytest.fixture
+def client(api_app: FastAPI) -> Iterator[TestClient]:
+    with TestClient(api_app) as test_client:
+        yield test_client
 
 
 def make_bill() -> SimpleNamespace:
