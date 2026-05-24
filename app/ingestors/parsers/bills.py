@@ -103,6 +103,21 @@ class BillParser:
         }
 
     @staticmethod
+    def parse_opendata_enrichment(raw: dict) -> dict:
+        sponsoring_ministries = [
+            {
+                "source_id": ministry.get("id"),
+                "name": (ministry.get("name") or "").strip() or None,
+            }
+            for ministry in raw.get("sponsoring_ministries", [])
+            if ministry.get("id") is not None or (ministry.get("name") or "").strip()
+        ]
+        return {
+            "sponsoring_ministries": sponsoring_ministries,
+            "_camara_votaciones": raw.get("chamber_votes", []),
+        }
+
+    @staticmethod
     def _parse_stages(tramitaciones: list[dict]) -> list[dict]:
         return [
             {

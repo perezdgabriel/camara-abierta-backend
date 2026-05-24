@@ -39,6 +39,7 @@ from app.models.proyecto import (
     Bill,
     BillAuthorship,
     BillDocument,
+    BillSponsoringMinistry,
     BillStage,
     BillUrgency,
 )
@@ -118,6 +119,15 @@ def _parse_datetime(value: str | datetime | date | None) -> datetime:
     if parsed_date is not None:
         return datetime.combine(parsed_date, datetime.min.time(), tzinfo=timezone.utc)
     return datetime.now(timezone.utc)
+
+
+def _parse_int(value: Any) -> int | None:
+    if value is None or value == "":
+        return None
+    try:
+        return int(value)
+    except TypeError, ValueError:
+        return None
 
 
 def _coerce_enum(enum_type: type[Any], value: Any, default: Any = None) -> Any:
@@ -296,6 +306,12 @@ def _document_key(
     return (document_type, title.strip(), document_url.strip(), document_date)
 
 
+def _sponsoring_ministry_key(
+    source_id: int | None, name: str | None
+) -> tuple[Any, ...]:
+    return (source_id, (name or "").strip().lower())
+
+
 def _reconcile_stages(
     db: Session, bill: Bill, stages: list[dict[str, Any]]
 ) -> tuple[bool, int | None]:
@@ -401,6 +417,54 @@ def _reconcile_documents(
     for key, document in list(current_by_key.items()):
         if key not in desired_keys:
             db.delete(document)
+            changed = True
+    return changed
+
+
+def _reconcile_sponsoring_ministries(
+    db: Session, bill: Bill, ministries: list[dict[str, Any]]
+) -> bool:
+    current_by_key = {
+        _sponsoring_ministry_key(ministry.source_id, ministry.name): ministry
+        for ministry in bill.sponsoring_ministries
+    }
+    desired_keys: set[tuple[Any, ...]] = set()
+    changed = False
+
+    for payload in ministries:
+        source_id = _parse_int(payload.get("source_id"))
+        name = (payload.get("name") or "").strip()[:200]
+        if source_id is None and not name:
+            continue
+
+        key = _sponsoring_ministry_key(source_id, name)
+        desired_keys.add(key)
+        ministry = current_by_key.get(key)
+        if ministry is None:
+            db.add(
+                BillSponsoringMinistry(
+                    bill_id=bill.id,
+                    source_id=source_id,
+                    name=name or None,
+                )
+            )
+            changed = True
+            continue
+
+        field_changed = False
+        if ministry.source_id != source_id:
+            ministry.source_id = source_id
+            field_changed = True
+        if (ministry.name or "") != name:
+            ministry.name = name or None
+            field_changed = True
+        if field_changed:
+            _touch_syncable(db, ministry)
+            changed = True
+
+    for key, ministry in list(current_by_key.items()):
+        if key not in desired_keys:
+            db.delete(ministry)
             changed = True
     return changed
 
@@ -563,20 +627,14 @@ def _reconcile_committee_memberships(
 
 
 def _reconcile_votes(
-    db: Session, voting_session: VotingSession, individual_votes: list[dict[str, Any]]
+    db: Session,
+    voting_session: VotingSession,
+    individual_votes: list[dict[str, Any]],
+    chamber_type: ChamberType | None = None,
 ) -> bool:
     desired: dict[int, VoteChoice] = {}
     for payload in individual_votes:
-        legislator_name = (
-            payload.get("_legislator_name") or payload.get("legislator_name") or ""
-        ).strip()
-        if not legislator_name:
-            continue
-        legislator_id = db.execute(
-            select(Legislator.id).where(
-                func.lower(Legislator.full_name) == legislator_name.lower()
-            )
-        ).scalar_one_or_none()
+        legislator_id = _resolve_vote_legislator(db, payload, chamber_type)
         if legislator_id is None:
             continue
         desired[legislator_id] = _coerce_enum(
@@ -607,6 +665,75 @@ def _reconcile_votes(
             _touch_syncable(db, vote)
             changed = True
     return changed
+
+
+def _find_legislator_by_name(
+    db: Session, full_name: str, chamber_type: ChamberType | None = None
+) -> Legislator | None:
+    normalized_name = full_name.strip()
+    if not normalized_name:
+        return None
+
+    stmt = select(Legislator).where(
+        func.lower(Legislator.full_name) == normalized_name.lower()
+    )
+    if chamber_type is not None:
+        stmt = stmt.where(Legislator.chamber_type == chamber_type)
+    stmt = stmt.limit(1)
+    return db.execute(stmt).scalar_one_or_none()
+
+
+def _resolve_vote_legislator(
+    db: Session, payload: dict[str, Any], chamber_type: ChamberType | None = None
+) -> int | None:
+    external_id = (payload.get("legislator_external_id") or "").strip() or None
+    full_name = (
+        payload.get("_legislator_name") or payload.get("legislator_name") or ""
+    ).strip()
+    first_name = (payload.get("legislator_first_name") or "").strip()
+    last_name = (payload.get("legislator_last_name") or "").strip()
+
+    if external_id:
+        legislator = db.execute(
+            select(Legislator).where(Legislator.bcn_id == external_id).limit(1)
+        ).scalar_one_or_none()
+        if legislator is not None:
+            return legislator.id
+
+        legislator = _find_legislator_by_name(db, full_name, chamber_type)
+        if legislator is not None and (
+            legislator.bcn_id is None or legislator.bcn_id == external_id
+        ):
+            if legislator.bcn_id != external_id:
+                legislator.bcn_id = external_id
+                _touch_syncable(db, legislator)
+                db.flush()
+            return legislator.id
+
+        chamber_label = "Senador" if chamber_type == ChamberType.SENATE else "Diputado"
+        external_ref = external_id.rsplit(":", 1)[-1]
+        normalized_first_name = first_name or chamber_label
+        normalized_last_name = last_name or external_ref or "Desconocido"
+        normalized_full_name = (
+            full_name
+            or " ".join(
+                part for part in [normalized_first_name, normalized_last_name] if part
+            ).strip()
+        )
+        legislator = Legislator(
+            bcn_id=external_id,
+            first_name=normalized_first_name[:100],
+            last_name=normalized_last_name[:100],
+            full_name=normalized_full_name[:200],
+            chamber_type=chamber_type or ChamberType.DEPUTIES,
+            is_active=False,
+        )
+        db.add(legislator)
+        db.flush()
+        return legislator.id
+
+    legislator = _find_legislator_by_name(db, full_name, chamber_type)
+    return legislator.id if legislator is not None else None
 
 
 def upsert_norma(
@@ -806,8 +933,14 @@ def upsert_bill(db: Session, data: dict[str, Any]) -> tuple[Bill, dict[str, Any]
         bill = db.execute(
             select(Bill)
             .execution_options(populate_existing=True)
+            .options(selectinload(Bill.sponsoring_ministries))
             .where(Bill.id == bill_id)
         ).scalar_one()
+        if _reconcile_sponsoring_ministries(
+            db, bill, data.get("sponsoring_ministries") or []
+        ):
+            _touch_syncable(db, bill)
+            db.flush()
         status_changed = old_status != new_status
         return bill, {
             "is_new": False,
@@ -826,6 +959,7 @@ def upsert_bill(db: Session, data: dict[str, Any]) -> tuple[Bill, dict[str, Any]
             selectinload(Bill.authorships),
             selectinload(Bill.stages),
             selectinload(Bill.documents),
+            selectinload(Bill.sponsoring_ministries),
             selectinload(Bill.urgencies),
         )
         .where(Bill.id == bill_id)
@@ -839,6 +973,9 @@ def upsert_bill(db: Session, data: dict[str, Any]) -> tuple[Bill, dict[str, Any]
     )
     changed |= stages_changed
     changed |= _reconcile_documents(db, bill, data.get("documents") or [])
+    changed |= _reconcile_sponsoring_ministries(
+        db, bill, data.get("sponsoring_ministries") or []
+    )
     changed |= _reconcile_urgencies(
         db,
         bill,
@@ -1045,8 +1182,18 @@ def upsert_voting_session(
         votes_for=int(data.get("votes_for", 0) or 0),
         votes_against=int(data.get("votes_against", 0) or 0),
         abstentions=int(data.get("abstentions", 0) or 0),
+        dispensed_count=int(data.get("dispensed_count", 0) or 0),
         absences=int(data.get("absences", 0) or 0),
         quorum_type=(data.get("quorum") or data.get("quorum_type") or "")[:100] or None,
+        article_text=(data.get("article_text") or "")[:5000] or None,
+        constitutional_procedure_id=_parse_int(data.get("constitutional_procedure_id")),
+        constitutional_procedure_label=(
+            data.get("constitutional_procedure_label") or ""
+        )[:100]
+        or None,
+        regulatory_procedure_id=_parse_int(data.get("regulatory_procedure_id")),
+        regulatory_procedure_label=(data.get("regulatory_procedure_label") or "")[:100]
+        or None,
     )
     voting_session_id = db.execute(
         insert_stmt.on_conflict_do_update(
@@ -1061,8 +1208,14 @@ def upsert_voting_session(
                 "votes_for": insert_stmt.excluded.votes_for,
                 "votes_against": insert_stmt.excluded.votes_against,
                 "abstentions": insert_stmt.excluded.abstentions,
+                "dispensed_count": insert_stmt.excluded.dispensed_count,
                 "absences": insert_stmt.excluded.absences,
                 "quorum_type": insert_stmt.excluded.quorum_type,
+                "article_text": insert_stmt.excluded.article_text,
+                "constitutional_procedure_id": insert_stmt.excluded.constitutional_procedure_id,
+                "constitutional_procedure_label": insert_stmt.excluded.constitutional_procedure_label,
+                "regulatory_procedure_id": insert_stmt.excluded.regulatory_procedure_id,
+                "regulatory_procedure_label": insert_stmt.excluded.regulatory_procedure_label,
                 "updated_at": func.now(),
                 "sync_version": global_sync_version_seq.next_value(),
             },
@@ -1074,7 +1227,12 @@ def upsert_voting_session(
         .options(selectinload(VotingSession.votes))
         .where(VotingSession.id == voting_session_id)
     ).scalar_one()
-    if _reconcile_votes(db, voting_session, data.get("individual_votes") or []):
+    if _reconcile_votes(
+        db,
+        voting_session,
+        data.get("individual_votes") or [],
+        chamber.chamber_type,
+    ):
         _touch_syncable(db, voting_session)
     db.flush()
     return voting_session

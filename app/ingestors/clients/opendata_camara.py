@@ -47,6 +47,15 @@ class OpenDataCamaraClient(BaseCongresoClient):
         except ValueError, TypeError:
             return 0
 
+    def _int_attr(
+        self, el: ET.Element | None, tag: str, attr: str = "Valor"
+    ) -> int | None:
+        value = self._attr(el, tag, attr)
+        try:
+            return int(value)
+        except TypeError, ValueError:
+            return None
+
     def _parse_dt(self, value: str) -> str | None:
         if not value:
             return None
@@ -288,6 +297,120 @@ class OpenDataCamaraClient(BaseCongresoClient):
             "origin_chamber_code": self._attr(proyecto, "CamaraOrigen", "Valor"),
             "admissible": self._txt(proyecto, "Admisible") == "true",
         }
+
+    def _parse_chamber_vote_summary(self, voting: ET.Element) -> dict[str, Any]:
+        return {
+            "id": self._int_val(voting, "Id"),
+            "description": self._txt(voting, "Descripcion"),
+            "date": self._parse_dt(self._txt(voting, "Fecha")),
+            "votes_for": self._int_val(voting, "TotalSi"),
+            "votes_against": self._int_val(voting, "TotalNo"),
+            "abstentions": self._int_val(voting, "TotalAbstencion"),
+            "dispensed_count": self._int_val(voting, "TotalDispensado"),
+            "quorum": self._txt(voting, "Quorum"),
+            "quorum_code": self._int_attr(voting, "Quorum", "Valor"),
+            "result": self._txt(voting, "Resultado"),
+            "result_code": self._int_attr(voting, "Resultado", "Valor"),
+            "type": self._txt(voting, "Tipo"),
+            "type_code": self._int_attr(voting, "Tipo", "Valor"),
+            "voting_type": self._txt(voting, "TipoVotacionProyectoLey"),
+            "voting_type_code": self._int_attr(
+                voting, "TipoVotacionProyectoLey", "Valor"
+            ),
+            "article_text": self._txt(voting, "Articulo"),
+            "constitutional_procedure": self._txt(voting, "TramiteConstitucional"),
+            "constitutional_procedure_id": self._int_attr(
+                voting, "TramiteConstitucional", "Id"
+            ),
+            "regulatory_procedure": self._txt(voting, "TramiteReglamentario"),
+            "regulatory_procedure_id": self._int_attr(
+                voting, "TramiteReglamentario", "Id"
+            ),
+        }
+
+    def _parse_bill_detail(self, proyecto: ET.Element) -> dict[str, Any]:
+        payload = self._parse_proyecto_ley(proyecto)
+        payload["sponsoring_ministries"] = [
+            {
+                "id": self._int_val(ministry, "Id") or None,
+                "name": self._txt(ministry, "Nombre") or None,
+            }
+            for ministry in self._iter(proyecto, "Ministerio")
+        ]
+        payload["chamber_votes"] = [
+            self._parse_chamber_vote_summary(voting)
+            for voting in self._iter(proyecto, "VotacionProyectoLey")
+        ]
+        return payload
+
+    def get_bill_detail(self, bulletin: str) -> dict[str, Any] | None:
+        root = self._get_xml(
+            "WSLegislativo.asmx/retornarProyectoLey",
+            params={"prmNumeroBoletin": bulletin},
+        )
+        proyecto = root
+        if proyecto.tag not in (f"{NS_BRACE}ProyectoLey", "ProyectoLey"):
+            found = self._find(root, "ProyectoLey")
+            if found is None:
+                return None
+            proyecto = found
+
+        detail = self._parse_bill_detail(proyecto)
+        if not detail.get("bulletin_number"):
+            return None
+
+        logger.info("Fetched bill detail for bulletin %s (opendata)", bulletin)
+        return detail
+
+    def _parse_vote_detail(self, voting: ET.Element) -> dict[str, Any]:
+        payload = {
+            "id": self._int_val(voting, "Id"),
+            "description": self._txt(voting, "Descripcion"),
+            "date": self._parse_dt(self._txt(voting, "Fecha")),
+            "votes_for": self._int_val(voting, "TotalSi"),
+            "votes_against": self._int_val(voting, "TotalNo"),
+            "abstentions": self._int_val(voting, "TotalAbstencion"),
+            "dispensed_count": self._int_val(voting, "TotalDispensado"),
+            "quorum": self._txt(voting, "Quorum"),
+            "quorum_code": self._int_attr(voting, "Quorum", "Valor"),
+            "result": self._txt(voting, "Resultado"),
+            "result_code": self._int_attr(voting, "Resultado", "Valor"),
+            "type": self._txt(voting, "Tipo"),
+            "type_code": self._int_attr(voting, "Tipo", "Valor"),
+        }
+        payload["individual_votes"] = [
+            {
+                "deputy_id": self._int_val(deputy, "Id") or None,
+                "first_name": self._txt(deputy, "Nombre"),
+                "last_name_father": self._txt(deputy, "ApellidoPaterno"),
+                "last_name_mother": self._txt(deputy, "ApellidoMaterno"),
+                "vote": self._txt(vote, "OpcionVoto"),
+                "vote_code": self._int_attr(vote, "OpcionVoto", "Valor"),
+            }
+            for vote in self._iter(voting, "Voto")
+            for deputy in [self._find(vote, "Diputado")]
+            if deputy is not None
+        ]
+        return payload
+
+    def get_voting_detail(self, voting_id: int) -> dict[str, Any] | None:
+        root = self._get_xml(
+            "WSLegislativo.asmx/retornarVotacionDetalle",
+            params={"prmVotacionId": str(voting_id)},
+        )
+        voting = root
+        if voting.tag not in (f"{NS_BRACE}Votacion", "Votacion"):
+            found = self._find(root, "Votacion")
+            if found is None:
+                return None
+            voting = found
+
+        detail = self._parse_vote_detail(voting)
+        if not detail.get("id"):
+            return None
+
+        logger.info("Fetched vote detail for voting id %s (opendata)", voting_id)
+        return detail
 
     def get_mensajes_x_anno(self, anno: int) -> list[dict]:
         root = self._get_xml(

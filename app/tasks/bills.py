@@ -35,6 +35,14 @@ def sync_bill(self, data: dict) -> dict:
             data["bulletin_number"],
         )
 
+    for raw_vote in data.get("_camara_votaciones", []):
+        if not raw_vote.get("id"):
+            continue
+        sync_voting_session.delay(
+            VoteParser.parse_chamber_vote(raw_vote, bulletin=data["bulletin_number"]),
+            data["bulletin_number"],
+        )
+
     bulletin_number = data["bulletin_number"]
     title = data.get("title") or ""
 

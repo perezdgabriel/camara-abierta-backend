@@ -188,3 +188,64 @@ def test_sync_bill_enqueues_only_new_notification_for_new_bill(monkeypatch):
     assert len(notifications) == 1
     assert notifications[0]["change_type"] == "new"
     assert notifications[0]["extra"]["origin"] == "executive"
+
+
+def test_sync_bill_enqueues_chamber_votes(monkeypatch):
+    first_db = object()
+    queued_summary_ids: list[int] = []
+    queued_votes: list[tuple[dict, str]] = []
+
+    monkeypatch.setattr(bill_tasks, "task_session", session_sequence(first_db))
+
+    def fake_upsert_bill(db, data):
+        assert db is first_db
+        return ns(id=42), {
+            "is_new": False,
+            "status_changed": False,
+            "stage_changed": False,
+            "old_status": BillStatus.PENDING,
+            "new_status": BillStatus.PENDING,
+        }
+
+    monkeypatch.setattr(bill_tasks, "upsert_bill", fake_upsert_bill)
+    monkeypatch.setattr(
+        bill_tasks.generate_bill_ai_summary, "delay", queued_summary_ids.append
+    )
+    monkeypatch.setattr(
+        bill_tasks.VoteParser,
+        "parse_chamber_vote",
+        lambda raw_vote, bulletin: {
+            "parsed": raw_vote,
+            "bulletin": bulletin,
+            "source": "camara",
+        },
+    )
+    monkeypatch.setattr(
+        bill_tasks.sync_voting_session,
+        "delay",
+        lambda payload, bulletin: queued_votes.append((payload, bulletin)),
+    )
+
+    result = bill_tasks.sync_bill.run(
+        {
+            "bulletin_number": "555-06",
+            "title": "Proyecto demo",
+            "entry_date": "2026-05-10",
+            "origin_type": BillOrigin.EXECUTIVE,
+            "_votaciones": [],
+            "_camara_votaciones": [{"id": 88980, "individual_votes": []}],
+        }
+    )
+
+    assert result == {"bill_id": 42, "status": "ok"}
+    assert queued_summary_ids == [42]
+    assert queued_votes == [
+        (
+            {
+                "parsed": {"id": 88980, "individual_votes": []},
+                "bulletin": "555-06",
+                "source": "camara",
+            },
+            "555-06",
+        )
+    ]

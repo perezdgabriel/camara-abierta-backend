@@ -37,7 +37,20 @@ def test_run_ingest_bills_uses_senado_incremental_mode_for_explicit_since(monkey
             ("222-07", {"bulletin": "222-07", "title": "Dos"}),
         ]
 
+    class FakeOpenDataCamaraClient:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def get_bill_detail(self, bulletin_number: str):
+            return None
+
     monkeypatch.setattr(ingestor_tasks, "SenadoClient", FakeSenadoClient)
+    monkeypatch.setattr(
+        ingestor_tasks, "OpenDataCamaraClient", FakeOpenDataCamaraClient
+    )
     monkeypatch.setattr(
         ingestor_tasks, "fetch_bills_parallel", fake_fetch_bills_parallel
     )
@@ -46,6 +59,7 @@ def test_run_ingest_bills_uses_senado_incremental_mode_for_explicit_since(monkey
         "parse_bill",
         lambda raw: {"bulletin_number": raw["bulletin"]},
     )
+    monkeypatch.setattr(ingestor_tasks.time, "sleep", lambda _: None)
 
     result = ingestor_tasks.run_ingest_bills(since="2026-05-01", dry_run=True)
 
@@ -117,6 +131,9 @@ def test_run_ingest_bills_falls_back_to_full_scan_without_state(monkeypatch):
         def get_mociones_x_anno(self, year: int):
             return [{"bulletin_number": "333-06"}, {"bulletin_number": "444-06"}]
 
+        def get_bill_detail(self, bulletin_number: str):
+            return None
+
     async def fake_fetch_bills_parallel(bulletins: list[str]):
         fetched_bulletins.append(bulletins)
         return [(bulletin, {"bulletin": bulletin}) for bulletin in bulletins]
@@ -139,6 +156,7 @@ def test_run_ingest_bills_falls_back_to_full_scan_without_state(monkeypatch):
         lambda raw: {"bulletin_number": raw["bulletin"]},
     )
     monkeypatch.setattr(ingestor_tasks.settings, "ingestor_bills_start_year", 2026)
+    monkeypatch.setattr(ingestor_tasks.time, "sleep", lambda _: None)
 
     result = ingestor_tasks.run_ingest_bills(dry_run=True)
 
@@ -169,6 +187,9 @@ def test_run_ingest_bills_falls_back_to_full_scan_when_state_lookup_fails(monkey
         def get_mociones_x_anno(self, year: int):
             return []
 
+        def get_bill_detail(self, bulletin_number: str):
+            return None
+
     async def fake_fetch_bills_parallel(bulletins: list[str]):
         fetched_bulletins.append(bulletins)
         return [(bulletin, {"bulletin": bulletin}) for bulletin in bulletins]
@@ -186,6 +207,7 @@ def test_run_ingest_bills_falls_back_to_full_scan_when_state_lookup_fails(monkey
         lambda raw: {"bulletin_number": raw["bulletin"]},
     )
     monkeypatch.setattr(ingestor_tasks.settings, "ingestor_bills_start_year", 2026)
+    monkeypatch.setattr(ingestor_tasks.time, "sleep", lambda _: None)
 
     result = ingestor_tasks.run_ingest_bills(dry_run=True)
 
@@ -347,7 +369,20 @@ def test_run_ingest_voting_sessions_uses_explicit_since_and_deduplicates_bulleti
                 {"session": f"{bulletin}-2"},
             ]
 
+    class FakeOpenDataCamaraClient:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def get_bill_detail(self, bulletin_number: str):
+            return None
+
     monkeypatch.setattr(ingestor_tasks, "SenadoClient", FakeSenadoClient)
+    monkeypatch.setattr(
+        ingestor_tasks, "OpenDataCamaraClient", FakeOpenDataCamaraClient
+    )
     monkeypatch.setattr(
         ingestor_tasks.VoteParser,
         "parse_senate_vote",
@@ -380,6 +415,16 @@ def test_run_ingest_voting_sessions_uses_ingestor_state_since(monkeypatch):
             requested_since.append(since_date)
             return []
 
+    class FakeOpenDataCamaraClient:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def get_bill_detail(self, bulletin_number: str):
+            return None
+
     monkeypatch.setattr(ingestor_tasks, "task_session", session_sequence(first_db))
     monkeypatch.setattr(
         ingestor_tasks,
@@ -391,9 +436,163 @@ def test_run_ingest_voting_sessions_uses_ingestor_state_since(monkeypatch):
         )(),
     )
     monkeypatch.setattr(ingestor_tasks, "SenadoClient", FakeSenadoClient)
+    monkeypatch.setattr(
+        ingestor_tasks, "OpenDataCamaraClient", FakeOpenDataCamaraClient
+    )
 
     result = ingestor_tasks.run_ingest_voting_sessions(dry_run=True)
 
     assert requested_since == [datetime.date(2026, 5, 20)]
     assert result["since"] == "2026-05-20"
     assert result["would_dispatch"] == 0
+
+
+def test_run_ingest_bills_merges_opendata_detail_before_dispatch(monkeypatch):
+    dispatched: list[tuple[object, dict]] = []
+
+    async def fake_fetch_bills_parallel(bulletins: list[str]):
+        assert bulletins == ["111-06"]
+        return [("111-06", {"bulletin": "111-06", "title": "Uno"})]
+
+    async def fake_fetch_voting_details_parallel(voting_ids: list[int]):
+        assert voting_ids == [88980]
+        return [(88980, {"id": 88980, "individual_votes": [{"deputy_id": 803}]})]
+
+    class FakeOpenDataCamaraClient:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def get_bill_detail(self, bulletin_number: str):
+            assert bulletin_number == "111-06"
+            return {
+                "sponsoring_ministries": [{"id": 12, "name": "Ministerio de Hacienda"}],
+                "chamber_votes": [{"id": 88980}],
+            }
+
+    monkeypatch.setattr(
+        ingestor_tasks, "fetch_bills_parallel", fake_fetch_bills_parallel
+    )
+    monkeypatch.setattr(
+        ingestor_tasks, "OpenDataCamaraClient", FakeOpenDataCamaraClient
+    )
+    monkeypatch.setattr(
+        ingestor_tasks,
+        "fetch_voting_details_parallel",
+        fake_fetch_voting_details_parallel,
+    )
+    monkeypatch.setattr(
+        ingestor_tasks.BillParser,
+        "parse_bill",
+        lambda raw: {"bulletin_number": raw["bulletin"]},
+    )
+    monkeypatch.setattr(
+        ingestor_tasks.BillParser,
+        "parse_opendata_enrichment",
+        lambda raw: {
+            "sponsoring_ministries": raw["sponsoring_ministries"],
+            "_camara_votaciones": raw["chamber_votes"],
+        },
+    )
+    monkeypatch.setattr(
+        ingestor_tasks,
+        "_dispatch",
+        lambda task, payload: dispatched.append((task, payload)),
+    )
+    monkeypatch.setattr(ingestor_tasks, "_mark_synced", lambda entity_type: None)
+    monkeypatch.setattr(ingestor_tasks.time, "sleep", lambda _: None)
+
+    result = ingestor_tasks.run_ingest_bills(bulletin="111-06", dry_run=False)
+
+    assert result["dispatched"] == 1
+    assert dispatched == [
+        (
+            ingestor_tasks.sync_bill,
+            {
+                "bulletin_number": "111-06",
+                "sponsoring_ministries": [{"id": 12, "name": "Ministerio de Hacienda"}],
+                "_camara_votaciones": [
+                    {"id": 88980, "individual_votes": [{"deputy_id": 803}]}
+                ],
+            },
+        )
+    ]
+
+
+def test_run_ingest_voting_sessions_dispatches_chamber_votes_from_opendata(
+    monkeypatch,
+):
+    dispatched: list[tuple[object, dict, str]] = []
+
+    async def fake_fetch_voting_details_parallel(voting_ids: list[int]):
+        assert voting_ids == [88980]
+        return [(88980, {"id": 88980, "individual_votes": [{"deputy_id": 803}]})]
+
+    class FakeSenadoClient:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def get_bills_by_date(self, since_date: datetime.date) -> list[str]:
+            return ["111-06"]
+
+        def get_votes_by_bulletin(self, bulletin: str) -> list[dict]:
+            return []
+
+    class FakeOpenDataCamaraClient:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def get_bill_detail(self, bulletin_number: str):
+            assert bulletin_number == "111-06"
+            return {"chamber_votes": [{"id": 88980}]}
+
+    monkeypatch.setattr(ingestor_tasks, "SenadoClient", FakeSenadoClient)
+    monkeypatch.setattr(
+        ingestor_tasks, "OpenDataCamaraClient", FakeOpenDataCamaraClient
+    )
+    monkeypatch.setattr(
+        ingestor_tasks,
+        "fetch_voting_details_parallel",
+        fake_fetch_voting_details_parallel,
+    )
+    monkeypatch.setattr(
+        ingestor_tasks.VoteParser,
+        "parse_chamber_vote",
+        lambda raw_vote, bulletin: {
+            "bcn_id": f"camara:vot:{raw_vote['id']}",
+            "individual_votes": raw_vote["individual_votes"],
+            "bill_bulletin": bulletin,
+        },
+    )
+    monkeypatch.setattr(
+        ingestor_tasks,
+        "_dispatch",
+        lambda task, payload, bulletin: dispatched.append((task, payload, bulletin)),
+    )
+    monkeypatch.setattr(ingestor_tasks, "_mark_synced", lambda entity_type: None)
+    monkeypatch.setattr(ingestor_tasks.time, "sleep", lambda _: None)
+
+    result = ingestor_tasks.run_ingest_voting_sessions(
+        since="2026-05-01", dry_run=False
+    )
+
+    assert result["dispatched"] == 1
+    assert dispatched == [
+        (
+            ingestor_tasks.sync_voting_session,
+            {
+                "bcn_id": "camara:vot:88980",
+                "individual_votes": [{"deputy_id": 803}],
+                "bill_bulletin": "111-06",
+            },
+            "111-06",
+        )
+    ]

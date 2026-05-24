@@ -86,6 +86,70 @@ def test_vote_parser_maps_votes_and_result_to_canonical_enums():
     assert payload["individual_votes"][1]["vote"] is VoteChoice.ABSENT
 
 
+def test_bill_parser_maps_opendata_enrichment_to_sponsoring_ministries_and_votes():
+    payload = BillParser.parse_opendata_enrichment(
+        {
+            "sponsoring_ministries": [
+                {"id": 12, "name": "Ministerio de Hacienda"},
+                {"id": None, "name": "  Ministerio Secretaría General  "},
+            ],
+            "chamber_votes": [{"id": 88980}, {"id": 88981}],
+        }
+    )
+
+    assert payload["sponsoring_ministries"] == [
+        {"source_id": 12, "name": "Ministerio de Hacienda"},
+        {"source_id": None, "name": "Ministerio Secretaría General"},
+    ]
+    assert payload["_camara_votaciones"] == [{"id": 88980}, {"id": 88981}]
+
+
+def test_vote_parser_maps_chamber_votes_and_metadata_to_canonical_payload():
+    payload = VoteParser.parse_chamber_vote(
+        {
+            "id": 88980,
+            "description": "Boletín N° 18216-05",
+            "date": "2026-05-20T14:04:00",
+            "votes_for": 68,
+            "votes_against": 83,
+            "abstentions": 2,
+            "dispensed_count": 1,
+            "quorum": "Quórum Simple",
+            "result": "Rechazado",
+            "voting_type": "Discusión particular",
+            "article_text": "Artículo 1°",
+            "constitutional_procedure_id": 1,
+            "constitutional_procedure": "Primer trámite constitucional",
+            "regulatory_procedure_id": 2,
+            "regulatory_procedure": "Segundo informe",
+            "individual_votes": [
+                {
+                    "deputy_id": 803,
+                    "first_name": "René",
+                    "last_name_father": "Alinco",
+                    "last_name_mother": "Bustos",
+                    "vote": "Dispensado",
+                    "vote_code": 3,
+                }
+            ],
+        },
+        bulletin="18216-05",
+    )
+
+    assert payload["bcn_id"] == "camara:vot:88980"
+    assert payload["_chamber_type"] is ChamberType.DEPUTIES
+    assert payload["bill_bulletin"] == "18216-05"
+    assert payload["voting_type"] is VotingType.PARTICULAR
+    assert payload["subject"] == "Artículo 1°"
+    assert payload["result"] is VotingResult.REJECTED
+    assert payload["dispensed_count"] == 1
+    assert payload["constitutional_procedure_id"] == 1
+    assert payload["regulatory_procedure_label"] == "Segundo informe"
+    assert payload["individual_votes"][0]["legislator_external_id"] == "camara:803"
+    assert payload["individual_votes"][0]["_legislator_name"] == "René Alinco Bustos"
+    assert payload["individual_votes"][0]["vote"] is VoteChoice.DISPENSED
+
+
 def test_senado_bill_xml_maps_through_bill_and_vote_parsers():
     root = ET.fromstring(
         """
