@@ -802,7 +802,12 @@ def upsert_bill(db: Session, data: dict[str, Any]) -> tuple[Bill, dict[str, Any]
 
     if already_terminal:
         db.flush()
-        bill = db.execute(select(Bill).where(Bill.id == bill_id)).scalar_one()
+        db.expire_all()
+        bill = db.execute(
+            select(Bill)
+            .execution_options(populate_existing=True)
+            .where(Bill.id == bill_id)
+        ).scalar_one()
         status_changed = old_status != new_status
         return bill, {
             "is_new": False,
@@ -812,8 +817,10 @@ def upsert_bill(db: Session, data: dict[str, Any]) -> tuple[Bill, dict[str, Any]
             "new_status": new_status,
         }
 
+    db.expire_all()
     bill = db.execute(
         select(Bill)
+        .execution_options(populate_existing=True)
         .options(
             selectinload(Bill.topics),
             selectinload(Bill.authorships),
@@ -848,11 +855,12 @@ def upsert_bill(db: Session, data: dict[str, Any]) -> tuple[Bill, dict[str, Any]
     db.flush()
 
     status_changed = (not is_new) and old_status != new_status
+    stage_changed = (not is_new) and stages_changed
 
     return bill, {
         "is_new": is_new,
         "status_changed": status_changed,
-        "stage_changed": stages_changed,
+        "stage_changed": stage_changed,
         "old_status": old_status,
         "new_status": new_status,
     }
