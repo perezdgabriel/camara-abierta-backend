@@ -295,7 +295,7 @@ def test_run_ingest_legislators_dispatches_both_sources_with_geography(monkeypat
     assert dispatched[1][1]["_district_number"] == 8
 
 
-def test_run_ingest_reference_data_dispatches_regions_and_districts(monkeypatch):
+def test_run_ingest_reference_data_dispatches_regions_districts_and_topics(monkeypatch):
     dispatched: list[tuple[object, dict]] = []
 
     class FakeOpenDataCamaraClient:
@@ -316,6 +316,9 @@ def test_run_ingest_reference_data_dispatches_regions_and_districts(monkeypatch)
                 }
             ]
 
+        def get_materias(self) -> list[dict]:
+            return [{"name": "Transparencia", "source_id": 3}]
+
     monkeypatch.setattr(
         ingestor_tasks, "OpenDataCamaraClient", FakeOpenDataCamaraClient
     )
@@ -329,7 +332,7 @@ def test_run_ingest_reference_data_dispatches_regions_and_districts(monkeypatch)
 
     result = ingestor_tasks.run_ingest_reference_data(dry_run=False)
 
-    assert result == {"errors": 0, "dry_run": False, "dispatched": 2}
+    assert result == {"errors": 0, "dry_run": False, "dispatched": 3}
     assert dispatched == [
         (
             ingestor_tasks.sync_region,
@@ -341,6 +344,10 @@ def test_run_ingest_reference_data_dispatches_regions_and_districts(monkeypatch)
                 "number": 8,
                 "communes": [{"number": 13101, "name": "Santiago"}],
             },
+        ),
+        (
+            ingestor_tasks.sync_topic,
+            {"name": "Transparencia", "source_id": 3},
         ),
     ]
 
