@@ -224,24 +224,45 @@ def _get_or_create_circumscription(
     return circumscription
 
 
+def _upsert_topic_record(db: Session, name: str) -> tuple[Topic, bool]:
+    normalized_name = name.strip()
+    if not normalized_name:
+        raise ValueError("Topic name is required")
+
+    slug = _normalize_slug(normalized_name)
+    topic = db.execute(select(Topic).where(Topic.slug == slug)).scalar_one_or_none()
+    if topic is None:
+        topic = db.execute(
+            select(Topic).where(func.lower(Topic.name) == normalized_name.lower())
+        ).scalar_one_or_none()
+
+    if topic is None:
+        topic = Topic(name=normalized_name[:100], slug=slug)
+        db.add(topic)
+        db.flush()
+        return topic, True
+
+    changed = False
+    if topic.slug != slug:
+        topic.slug = slug
+        changed = True
+    if topic.name != normalized_name[:100]:
+        topic.name = normalized_name[:100]
+        changed = True
+    if changed:
+        _touch_syncable(db, topic)
+        db.flush()
+    return topic, changed
+
+
 def _reconcile_topics(db: Session, bill: Bill, topic_names: list[str]) -> bool:
     desired_topics: list[Topic] = []
     changed = False
     for topic_name in topic_names:
-        name = topic_name.strip()
-        if not name:
+        if not topic_name or not topic_name.strip():
             continue
-        slug = _normalize_slug(name)
-        topic = db.execute(select(Topic).where(Topic.slug == slug)).scalar_one_or_none()
-        if topic is None:
-            topic = Topic(name=name[:100], slug=slug)
-            db.add(topic)
-            db.flush()
-            changed = True
-        elif topic.name != name[:100]:
-            topic.name = name[:100]
-            _touch_syncable(db, topic)
-            changed = True
+        topic, topic_changed = _upsert_topic_record(db, topic_name)
+        changed |= topic_changed
         desired_topics.append(topic)
 
     current_ids = {topic.id for topic in bill.topics}
@@ -1389,6 +1410,11 @@ def upsert_region(db: Session, data: dict[str, Any]) -> Region:
         _touch_syncable(db, region)
     db.flush()
     return region
+
+
+def upsert_topic(db: Session, data: dict[str, Any]) -> Topic:
+    topic, _ = _upsert_topic_record(db, data.get("name") or "")
+    return topic
 
 
 def upsert_district(db: Session, data: dict[str, Any]) -> District:
