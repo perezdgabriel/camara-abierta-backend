@@ -176,35 +176,50 @@ def _get_or_create_chamber(
     return chamber
 
 
-def _get_or_create_party(db: Session, party_name: str | None) -> PoliticalParty | None:
-    name = (party_name or "").strip()
+_INDEPENDENT_LABELS = {"independiente", "independientes", "ind", "independ"}
+
+
+def _upsert_party_from_opendata(
+    db: Session, name: str | None, alias: str | None
+) -> PoliticalParty | None:
+    name = (name or "").strip()
     if not name:
+        return None
+    abbreviation = (alias or "").strip()[:20] or name[:20]
+    if (
+        abbreviation.lower() in _INDEPENDENT_LABELS
+        or name.lower() in _INDEPENDENT_LABELS
+    ):
         return None
 
     party = db.execute(
         select(PoliticalParty).where(func.lower(PoliticalParty.name) == name.lower())
     ).scalar_one_or_none()
-    if party is not None:
-        return party
+    if party is None:
+        party = PoliticalParty(
+            name=name[:200], abbreviation=abbreviation, is_active=True
+        )
+        db.add(party)
+    else:
+        party.abbreviation = abbreviation
+    db.flush()
+    return party
 
-    abbreviation = re.sub(r"\s+", " ", name).strip()[:20]
-    party = PoliticalParty(
-        name=name[:200], abbreviation=abbreviation or name[:20], is_active=True
-    )
-    db.add(party)
-    try:
-        db.flush()
-        return party
-    except Exception:
-        db.rollback()
-        existing = db.execute(
-            select(PoliticalParty).where(
-                func.lower(PoliticalParty.name) == name.lower()
-            )
-        ).scalar_one_or_none()
-        if existing is not None:
-            return existing
-        raise
+
+def _resolve_party_from_senado(
+    db: Session, raw_abbreviation: str | None
+) -> PoliticalParty | None:
+    raw = (raw_abbreviation or "").strip()
+    if not raw:
+        return None
+    normalized = raw.replace(".", "").upper()
+    if normalized.lower() in _INDEPENDENT_LABELS:
+        return None
+    return db.execute(
+        select(PoliticalParty).where(
+            func.upper(PoliticalParty.abbreviation) == normalized
+        )
+    ).scalar_one_or_none()
 
 
 def _get_or_create_circumscription(
@@ -600,9 +615,10 @@ def _reconcile_terms(
         start_date_value = _parse_date(militancia.get("start_date"))
         if start_date_value is None:
             continue
-        party = _get_or_create_party(
+        party = _upsert_party_from_opendata(
             db,
-            militancia.get("party_name") or militancia.get("party_alias"),
+            militancia.get("party_name"),
+            militancia.get("party_alias"),
         )
         period = (
             db.execute(
@@ -1128,7 +1144,12 @@ def update_bill_ai_summary(
 
 
 def upsert_legislator(db: Session, data: dict[str, Any]) -> Legislator:
-    party = _get_or_create_party(db, data.get("_party_name"))
+    if data.get("chamber_type") == ChamberType.SENATE:
+        party = _resolve_party_from_senado(db, data.get("_party_name"))
+    else:
+        party = _upsert_party_from_opendata(
+            db, data.get("_party_name"), data.get("_party_alias")
+        )
     district = None
     if data.get("_district_number"):
         district = db.execute(

@@ -40,6 +40,7 @@ class LegislatorParser:
 
         militancias = raw.get("militancias", [])
         current_party = ""
+        current_party_alias = ""
         if militancias:
             active = [
                 militancia
@@ -50,6 +51,7 @@ class LegislatorParser:
             current_party = source.get("party_name", "") or source.get(
                 "party_alias", ""
             )
+            current_party_alias = source.get("party_alias", "")
 
         return {
             "bcn_id": f"camara:{raw.get('id', '')}",
@@ -61,6 +63,7 @@ class LegislatorParser:
             "birth_date": raw.get("birth_date"),
             "gender": raw.get("gender_code") or raw.get("gender") or "",
             "_party_name": current_party.strip(),
+            "_party_alias": current_party_alias.strip(),
             "_district_number": raw.get("district_number") or None,
             "_militancias": militancias,
         }

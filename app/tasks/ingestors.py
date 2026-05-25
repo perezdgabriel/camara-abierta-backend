@@ -241,23 +241,6 @@ def run_ingest_legislators(*, dry_run: bool = False) -> dict[str, Any]:
     errors = 0
 
     try:
-        with SenadoClient() as senado:
-            for raw in senado.get_senadores_vigentes():
-                try:
-                    payload = LegislatorParser.parse_senator(raw)
-                    if not dry_run:
-                        _dispatch(sync_legislator, payload)
-                    dispatched += 1
-                except Exception:
-                    logger.exception("Failed to parse senator from SenadoClient")
-                    errors += 1
-    except Exception:
-        logger.exception("Failed to fetch senators from SenadoClient")
-        errors += 1
-
-    time.sleep(REQUEST_DELAY)
-
-    try:
         with OpenDataCamaraClient() as opendata:
             for raw in opendata.get_diputados_periodo_actual():
                 try:
@@ -270,6 +253,23 @@ def run_ingest_legislators(*, dry_run: bool = False) -> dict[str, Any]:
                     errors += 1
     except Exception:
         logger.exception("Failed to fetch deputies from OpenDataCamaraClient")
+        errors += 1
+
+    time.sleep(REQUEST_DELAY)
+
+    try:
+        with SenadoClient() as senado:
+            for raw in senado.get_senadores_vigentes():
+                try:
+                    payload = LegislatorParser.parse_senator(raw)
+                    if not dry_run:
+                        _dispatch(sync_legislator, payload)
+                    dispatched += 1
+                except Exception:
+                    logger.exception("Failed to parse senator from SenadoClient")
+                    errors += 1
+    except Exception:
+        logger.exception("Failed to fetch senators from SenadoClient")
         errors += 1
 
     if not dry_run:

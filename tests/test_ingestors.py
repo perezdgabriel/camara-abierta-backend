@@ -287,12 +287,12 @@ def test_run_ingest_legislators_dispatches_both_sources_with_geography(monkeypat
     result = ingestor_tasks.run_ingest_legislators(dry_run=False)
 
     assert result == {"errors": 0, "dry_run": False, "dispatched": 2}
-    assert dispatched[0][1]["bcn_id"] == "senado:42"
-    assert dispatched[0][1]["_party_name"] == "Partido Demo"
-    assert dispatched[0][1]["_circumscription_number"] == 7
-    assert dispatched[1][1]["bcn_id"] == "camara:1254"
-    assert dispatched[1][1]["_party_name"] == "Partido Republicano"
-    assert dispatched[1][1]["_district_number"] == 8
+    assert dispatched[0][1]["bcn_id"] == "camara:1254"
+    assert dispatched[0][1]["_party_name"] == "Partido Republicano"
+    assert dispatched[0][1]["_district_number"] == 8
+    assert dispatched[1][1]["bcn_id"] == "senado:42"
+    assert dispatched[1][1]["_party_name"] == "Partido Demo"
+    assert dispatched[1][1]["_circumscription_number"] == 7
 
 
 def test_run_ingest_reference_data_dispatches_regions_districts_and_topics(monkeypatch):
