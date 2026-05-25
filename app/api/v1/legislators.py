@@ -7,6 +7,10 @@ from app.schemas.legislators import (
     LegislatorDetail,
     LegislatorsResponse,
     LegislatorSummary,
+    LegislatorVotingResponse,
+    LegislatorVotingSummary,
+    TopicAffinityItem,
+    VotingRecordItem,
 )
 from app.services import legislators as legislators_service
 
@@ -50,3 +54,24 @@ def get_legislator(legislator_id: int, db: Session = Depends(get_db)):
     if legislator is None:
         raise HTTPException(status_code=404, detail="Legislator not found")
     return LegislatorDetail.model_validate(legislator)
+
+
+@router.get("/{legislator_id}/voting", response_model=LegislatorVotingResponse)
+def get_legislator_voting(
+    legislator_id: int,
+    limit: int = Query(legislators_service.DEFAULT_RECORD_LIMIT, ge=1, le=200),
+    db: Session = Depends(get_db),
+):
+    legislator = legislators_service.get_legislator(db=db, legislator_id=legislator_id)
+    if legislator is None:
+        raise HTTPException(status_code=404, detail="Legislator not found")
+    summary = legislators_service.get_legislator_voting_summary(db, legislator_id)
+    record = legislators_service.get_legislator_voting_record(db, legislator_id, limit)
+    topic_affinity = legislators_service.get_legislator_topic_affinity(
+        db, legislator_id
+    )
+    return LegislatorVotingResponse(
+        summary=LegislatorVotingSummary.model_validate(summary),
+        record=[VotingRecordItem.model_validate(r) for r in record],
+        topic_affinity=[TopicAffinityItem.model_validate(t) for t in topic_affinity],
+    )

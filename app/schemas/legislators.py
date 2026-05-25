@@ -2,8 +2,16 @@ from datetime import date, datetime
 
 from pydantic import Field
 
-from app.models.enums import ChamberType, CommitteeType
+from app.models.enums import ChamberType, CommitteeType, VoteChoice
+from app.models.enums import VotingResult as VotingResultEnum
 from app.schemas.common import CountResponse, ORMModel
+
+
+class TopicBrief(ORMModel):
+    id: int
+    name: str
+    slug: str
+    icon: str | None = None
 
 
 class PartyBrief(ORMModel):
@@ -95,3 +103,38 @@ class LegislatorDetail(LegislatorSummary):
 
 class LegislatorsResponse(CountResponse[LegislatorSummary]):
     data: list[LegislatorSummary] = Field(default_factory=list)
+
+
+# ── Voting aggregation (computed from the votes table) ────────────────
+
+
+class LegislatorVotingSummary(ORMModel):
+    total_sessions: int
+    votes_for: int
+    votes_against: int
+    abstentions: int
+    absences: int
+    attendance_percentage: float
+    participation_rate: float
+
+
+class VotingRecordItem(ORMModel):
+    id: int
+    voting_session_id: int
+    vote: VoteChoice
+    date: date
+    subject: str
+    result: VotingResultEnum | None = None
+
+
+class TopicAffinityItem(ORMModel):
+    topic: TopicBrief
+    for_: int = Field(alias="for", serialization_alias="for")
+    against: int
+    abstain: int
+
+
+class LegislatorVotingResponse(ORMModel):
+    summary: LegislatorVotingSummary
+    record: list[VotingRecordItem] = Field(default_factory=list)
+    topic_affinity: list[TopicAffinityItem] = Field(default_factory=list)
