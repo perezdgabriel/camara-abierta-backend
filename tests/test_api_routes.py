@@ -85,6 +85,13 @@ def make_bill() -> SimpleNamespace:
         chamber=chamber,
         bill_stage_id=None,
     )
+    voting_session = ns(
+        id=7,
+        voting_date=now,
+        votes_for=80,
+        votes_against=40,
+        abstentions=5,
+    )
     return ns(
         id=10,
         bulletin_number="123-06",
@@ -102,6 +109,7 @@ def make_bill() -> SimpleNamespace:
         events=[event],
         urgencies=[urgency],
         stages=[stage],
+        voting_sessions=[voting_session],
         created_at=now,
         updated_at=now,
         sync_version=99,
