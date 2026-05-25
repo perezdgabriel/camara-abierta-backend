@@ -73,12 +73,14 @@ class BillParser:
             for author in raw.get("authors", [])
             if author.get("legislator", "").strip()
         ]
+        tramitaciones = raw.get("tramitaciones", [])
         topics = [
             materia.strip()
             for materia in raw.get("materias", [])
             if materia and materia.strip()
         ]
-        stages = BillParser._parse_stages(raw.get("tramitaciones", []))
+        stages = BillParser._parse_stages(tramitaciones)
+        events = BillParser._parse_events(tramitaciones)
         documents = BillParser._parse_documents(
             raw.get("informes", []),
             raw.get("comparados", []),
@@ -98,6 +100,7 @@ class BillParser:
             "authors": authors,
             "topics": topics,
             "stages": stages,
+            "events": events,
             "documents": documents,
             "_votaciones": raw.get("votaciones", []),
         }
@@ -131,6 +134,28 @@ class BillParser:
             }
             for tram in tramitaciones
         ]
+
+    @staticmethod
+    def _parse_events(tramitaciones: list[dict]) -> list[dict]:
+        events: list[dict] = []
+        for tram in tramitaciones:
+            event_date = tram.get("date")
+            raw_description = (tram.get("description") or "").strip()
+            raw_stage = (tram.get("stage") or "").strip()
+            title = raw_description or raw_stage
+            if not event_date or not title:
+                continue
+
+            description = raw_stage if raw_stage and raw_stage != title else None
+            events.append(
+                {
+                    "event_date": event_date,
+                    "title": title,
+                    "description": description,
+                    "_chamber_type": CHAMBER_MAP.get(tram.get("chamber", "")),
+                }
+            )
+        return events
 
     @staticmethod
     def _parse_documents(

@@ -3,7 +3,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload, sessionmaker
 
 from app.models.core import Topic
-from app.models.proyecto import Bill, BillStage, BillUrgency
+from app.models.proyecto import Bill, BillEvent, BillStage, BillUrgency
 from app.services.write import upsert_bill
 
 from .bill_payloads import make_initial_bill_payload, make_updated_bill_payload
@@ -17,6 +17,7 @@ def _load_bill(session_maker: sessionmaker, bulletin_number: str) -> Bill:
             select(Bill)
             .options(
                 selectinload(Bill.topics),
+                selectinload(Bill.events),
                 selectinload(Bill.stages),
                 selectinload(Bill.urgencies),
             )
@@ -47,6 +48,9 @@ def test_upsert_bill_tracks_create_update_and_noop_contract(
     }
     assert len(persisted_bill.stages) == 1
     assert persisted_bill.stages[0].description == "Ingreso al Senado"
+    assert len(persisted_bill.events) == 1
+    assert persisted_bill.events[0].title == "Ingreso al Senado"
+    assert persisted_bill.events[0].description == "Primer trámite constitucional"
     assert len(persisted_bill.urgencies) == 1
     assert persisted_bill.urgencies[0].is_active is True
 
@@ -63,6 +67,9 @@ def test_upsert_bill_tracks_create_update_and_noop_contract(
     assert {topic.name for topic in refreshed_bill.topics} == {"Salud"}
     assert len(refreshed_bill.stages) == 1
     assert refreshed_bill.stages[0].description == "Pasa a segundo tramite"
+    assert len(refreshed_bill.events) == 1
+    assert refreshed_bill.events[0].title == "Pasa a segundo tramite"
+    assert refreshed_bill.events[0].description == "Segundo trámite constitucional"
     assert len(refreshed_bill.urgencies) == 2
     assert sum(1 for urgency in refreshed_bill.urgencies if urgency.is_active) == 1
 
@@ -85,6 +92,11 @@ def test_upsert_bill_tracks_create_update_and_noop_contract(
             .select_from(BillStage)
             .where(BillStage.bill_id == created_bill.id)
         ).scalar_one()
+        event_count = session.execute(
+            select(func.count())
+            .select_from(BillEvent)
+            .where(BillEvent.bill_id == created_bill.id)
+        ).scalar_one()
         topic_names = set(session.execute(select(Topic.name)).scalars().all())
         urgency_count = session.execute(
             select(func.count())
@@ -94,5 +106,6 @@ def test_upsert_bill_tracks_create_update_and_noop_contract(
 
     assert bill_count == 1
     assert stage_count == 1
+    assert event_count == 1
     assert "Salud" in topic_names
     assert urgency_count == 2

@@ -56,6 +56,14 @@ def test_bill_parser_maps_canonical_enums_and_discards_blank_authors():
     assert payload["topics"] == ["Transparencia"]
     assert payload["stages"][0]["stage_type"] is StageType.FIRST_CONSTITUTIONAL_TRAMITE
     assert payload["stages"][0]["_chamber_type"] is ChamberType.SENATE
+    assert payload["events"] == [
+        {
+            "event_date": "2026-05-11",
+            "title": "Ingreso",
+            "description": "Primer trámite constitucional",
+            "_chamber_type": ChamberType.SENATE,
+        }
+    ]
 
 
 def test_vote_parser_maps_votes_and_result_to_canonical_enums():
@@ -249,6 +257,14 @@ def test_senado_bill_xml_maps_through_bill_and_vote_parsers():
         is StageType.FIRST_CONSTITUTIONAL_TRAMITE
     )
     assert bill_payload["stages"][0]["_chamber_type"] is ChamberType.SENATE
+    assert bill_payload["events"] == [
+        {
+            "event_date": "2026-05-11",
+            "title": "Ingreso",
+            "description": "Primer trámite constitucional",
+            "_chamber_type": ChamberType.SENATE,
+        }
+    ]
     assert len(bill_payload["documents"]) == 3
 
     vote_payload = VoteParser.parse_senate_vote(

@@ -28,6 +28,14 @@ def make_initial_bill_payload() -> dict[str, object]:
                 "description": "Ingreso al Senado",
             }
         ],
+        "events": [
+            {
+                "event_date": "2026-05-02",
+                "title": "Ingreso al Senado",
+                "description": "Primer trámite constitucional",
+                "_chamber_type": ChamberType.SENATE,
+            }
+        ],
         "documents": [],
         "_current_urgency_type": UrgencyType.SIMPLE,
     }
@@ -53,6 +61,14 @@ def make_updated_bill_payload() -> dict[str, object]:
                 "description": "Pasa a segundo tramite",
             }
         ],
+        "events": [
+            {
+                "event_date": "2026-05-10",
+                "title": "Pasa a segundo tramite",
+                "description": "Segundo trámite constitucional",
+                "_chamber_type": ChamberType.DEPUTIES,
+            }
+        ],
         "documents": [],
         "_current_urgency_type": UrgencyType.IMMEDIATE,
     }
@@ -75,6 +91,14 @@ def make_secondary_bill_payload() -> dict[str, object]:
                 "start_date": "2026-05-04",
                 "_chamber_type": ChamberType.DEPUTIES,
                 "description": "Ingreso a la Camara",
+            }
+        ],
+        "events": [
+            {
+                "event_date": "2026-05-04",
+                "title": "Ingreso a la Camara",
+                "description": "Primer trámite constitucional",
+                "_chamber_type": ChamberType.DEPUTIES,
             }
         ],
         "documents": [],

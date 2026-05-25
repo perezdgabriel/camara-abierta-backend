@@ -39,6 +39,7 @@ from app.models.proyecto import (
     Bill,
     BillAuthorship,
     BillDocument,
+    BillEvent,
     BillSponsoringMinistry,
     BillStage,
     BillUrgency,
@@ -321,6 +322,15 @@ def _stage_key(
     return (stage_type, start_date_value, chamber_id, description.strip())
 
 
+def _event_key(
+    event_date_value: date | None,
+    title: str,
+    description: str,
+    chamber_id: int | None,
+) -> tuple[Any, ...]:
+    return (event_date_value, title.strip(), description.strip(), chamber_id)
+
+
 def _document_key(
     document_type: str, title: str, document_url: str, document_date: date | None
 ) -> tuple[Any, ...]:
@@ -439,6 +449,59 @@ def _reconcile_documents(
         if key not in desired_keys:
             db.delete(document)
             changed = True
+    return changed
+
+
+def _reconcile_events(db: Session, bill: Bill, events: list[dict[str, Any]]) -> bool:
+    current_by_key = {
+        _event_key(
+            event.event_date,
+            event.title,
+            event.description or "",
+            event.chamber_id,
+        ): event
+        for event in bill.events
+    }
+    desired_keys: set[tuple[Any, ...]] = set()
+    changed = False
+
+    for payload in events:
+        event_date_value = _parse_date(payload.get("event_date"))
+        title = (payload.get("title") or "").strip()[:500]
+        description = (payload.get("description") or "").strip()
+        if event_date_value is None or not title:
+            continue
+
+        chamber = None
+        if payload.get("_chamber_type"):
+            chamber = _get_or_create_chamber(db, payload["_chamber_type"])
+
+        key = _event_key(
+            event_date_value,
+            title,
+            description,
+            chamber.id if chamber else None,
+        )
+        desired_keys.add(key)
+        if key in current_by_key:
+            continue
+
+        db.add(
+            BillEvent(
+                bill_id=bill.id,
+                chamber_id=chamber.id if chamber else None,
+                event_date=event_date_value,
+                title=title,
+                description=description or None,
+            )
+        )
+        changed = True
+
+    for key, event in list(current_by_key.items()):
+        if key not in desired_keys:
+            db.delete(event)
+            changed = True
+
     return changed
 
 
@@ -979,6 +1042,7 @@ def upsert_bill(db: Session, data: dict[str, Any]) -> tuple[Bill, dict[str, Any]
             selectinload(Bill.topics),
             selectinload(Bill.authorships),
             selectinload(Bill.stages),
+            selectinload(Bill.events),
             selectinload(Bill.documents),
             selectinload(Bill.sponsoring_ministries),
             selectinload(Bill.urgencies),
@@ -993,6 +1057,7 @@ def upsert_bill(db: Session, data: dict[str, Any]) -> tuple[Bill, dict[str, Any]
         db, bill, data.get("stages") or []
     )
     changed |= stages_changed
+    changed |= _reconcile_events(db, bill, data.get("events") or [])
     changed |= _reconcile_documents(db, bill, data.get("documents") or [])
     changed |= _reconcile_sponsoring_ministries(
         db, bill, data.get("sponsoring_ministries") or []
