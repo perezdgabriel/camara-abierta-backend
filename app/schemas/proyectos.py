@@ -139,6 +139,7 @@ class BillSummary(ORMModel):
     origin: BillOrigin
     status: BillStatus
     entry_date: date
+    last_activity_date: date
     publication_date: date | None = None
     law_number: str | None = None
     origin_chamber: ChamberBrief | None = None

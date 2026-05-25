@@ -77,6 +77,14 @@ def make_bill() -> SimpleNamespace:
         description="Primer tramite",
         is_current=True,
     )
+    event = ns(
+        id=6,
+        event_date=date(2026, 5, 3),
+        title="Ingreso",
+        description="Primer trámite constitucional",
+        chamber=chamber,
+        bill_stage_id=None,
+    )
     return ns(
         id=10,
         bulletin_number="123-06",
@@ -91,6 +99,7 @@ def make_bill() -> SimpleNamespace:
         current_chamber=chamber,
         current_committee=committee,
         topics=[topic],
+        events=[event],
         urgencies=[urgency],
         stages=[stage],
         created_at=now,
@@ -172,12 +181,31 @@ def test_bills_endpoint_uses_english_prefix_and_enum_filters(
     assert captured["status"] is BillStatus.PENDING
     assert captured["origin"] is BillOrigin.EXECUTIVE
     assert captured["bill_type"] is BillType.PROJECT
+    assert captured["sort"] is bills_api.svc.BillSort.RECENT_ACTIVITY
     body = response.json()
     assert body["count"] == 1
     assert body["data"][0]["bulletin_number"] == "123-06"
     assert body["data"][0]["status"] == "pending"
     assert body["data"][0]["current_stage_type"] == "first_constitutional_tramite"
     assert body["data"][0]["active_urgency_type"] == "simple"
+    assert body["data"][0]["last_activity_date"] == "2026-05-03"
+
+
+def test_bills_endpoint_accepts_entry_date_sort(client, fake_db, monkeypatch):
+    captured: dict[str, object] = {}
+
+    def fake_list_bills(db, **kwargs):
+        captured["db"] = db
+        captured.update(kwargs)
+        return 1, [make_bill()]
+
+    monkeypatch.setattr(bills_api.svc, "list_bills", fake_list_bills)
+
+    response = client.get("/api/v1/bills", params={"sort": "entry_date"})
+
+    assert response.status_code == 200
+    assert captured["db"] is fake_db
+    assert captured["sort"] is bills_api.svc.BillSort.ENTRY_DATE
 
 
 def test_legislators_endpoint_uses_new_prefix_and_canonical_chamber_filter(

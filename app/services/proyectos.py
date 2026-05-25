@@ -1,4 +1,5 @@
 from datetime import date
+from enum import StrEnum
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload, selectinload
@@ -20,6 +21,22 @@ DEFAULT_LIMIT = 50
 MAX_LIMIT = 200
 
 
+class BillSort(StrEnum):
+    RECENT_ACTIVITY = "recent_activity"
+    ENTRY_DATE = "entry_date"
+
+
+def _latest_bill_activity_subquery(db: Session):
+    return (
+        db.query(
+            BillEvent.bill_id.label("bill_id"),
+            func.max(BillEvent.event_date).label("last_activity_date"),
+        )
+        .group_by(BillEvent.bill_id)
+        .subquery()
+    )
+
+
 def list_bills(
     db: Session,
     *,
@@ -30,6 +47,7 @@ def list_bills(
     date_from: date | None,
     date_to: date | None,
     law_number: str | None,
+    sort: BillSort,
     offset: int,
     limit: int,
 ) -> tuple[int, list[Bill]]:
@@ -37,6 +55,7 @@ def list_bills(
         joinedload(Bill.origin_chamber),
         joinedload(Bill.current_chamber),
         joinedload(Bill.current_committee),
+        selectinload(Bill.events),
         selectinload(Bill.topics),
         selectinload(Bill.urgencies).joinedload(BillUrgency.chamber),
         selectinload(Bill.stages).options(
@@ -72,13 +91,17 @@ def list_bills(
         query = query.filter(Bill.law_number == law_number)
         count_query = count_query.filter(Bill.law_number == law_number)
 
+    order_by = (Bill.entry_date.desc(), Bill.id.desc())
+    if sort == BillSort.RECENT_ACTIVITY:
+        latest_activity = _latest_bill_activity_subquery(db)
+        query = query.outerjoin(latest_activity, Bill.id == latest_activity.c.bill_id)
+        order_by = (
+            func.coalesce(latest_activity.c.last_activity_date, Bill.entry_date).desc(),
+            Bill.id.desc(),
+        )
+
     total = count_query.scalar() or 0
-    rows = (
-        query.order_by(Bill.entry_date.desc(), Bill.id.desc())
-        .offset(offset)
-        .limit(limit)
-        .all()
-    )
+    rows = query.order_by(*order_by).offset(offset).limit(limit).all()
     return total, rows
 
 
@@ -119,9 +142,14 @@ def bill_to_summary_extra(bill: Bill) -> dict:
     """Compute denormalised convenience fields not present on the ORM object."""
     active_urgency = next((u for u in bill.urgencies if u.is_active), None)
     current_stage = next((s for s in bill.stages if s.is_current), None)
+    last_activity_date = max(
+        (event.event_date for event in (bill.events or [])),
+        default=bill.entry_date,
+    )
     return {
         "active_urgency_type": active_urgency.urgency_type if active_urgency else None,
         "current_stage_type": current_stage.stage_type if current_stage else None,
+        "last_activity_date": last_activity_date,
     }
 
 
@@ -135,6 +163,7 @@ def list_bills_by_ids(db: Session, bill_ids: list[int]) -> list[Bill]:
             joinedload(Bill.origin_chamber),
             joinedload(Bill.current_chamber),
             joinedload(Bill.current_committee),
+            selectinload(Bill.events),
             selectinload(Bill.topics),
             selectinload(Bill.urgencies).joinedload(BillUrgency.chamber),
             selectinload(Bill.stages).options(

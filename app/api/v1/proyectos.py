@@ -46,6 +46,10 @@ def list_bills(
     law_number: str | None = Query(
         None, alias="ley", description="Número de ley (solo leyes aprobadas)"
     ),
+    sort: svc.BillSort = Query(
+        svc.BillSort.RECENT_ACTIVITY,
+        description="Orden del listado de proyectos",
+    ),
     offset: int = Query(svc.DEFAULT_OFFSET, ge=0),
     limit: int = Query(svc.DEFAULT_LIMIT, ge=1, le=svc.MAX_LIMIT),
 ):
@@ -58,6 +62,7 @@ def list_bills(
         date_from=date_from,
         date_to=date_to,
         law_number=law_number,
+        sort=sort,
         offset=offset,
         limit=limit,
     )
