@@ -13,6 +13,9 @@ class Settings(BaseSettings):
     )
     app_version: str = "0.1.0"
     api_v1_prefix: str = "/api/v1"
+    cors_origins: list[str] = Field(
+        default=["http://localhost:3000"], alias="CORS_ORIGINS"
+    )
     database_url: str = Field(..., alias="DATABASE_URL")
     redis_url: str = Field(default="redis://localhost:6379/0", alias="REDIS_URL")
     gobierno_actual_inicio: date = date(2026, 3, 11)
