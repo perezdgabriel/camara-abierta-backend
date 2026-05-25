@@ -4,8 +4,8 @@ from enum import StrEnum
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload, selectinload
 
-from app.models.enums import BillOrigin, BillStatus, BillType
-from app.models.legislature import Legislator
+from app.models.enums import BillOrigin, BillStatus, BillType, ChamberType
+from app.models.legislature import Chamber, Legislator
 from app.models.proyecto import (
     Bill,
     BillAuthorship,
@@ -24,6 +24,7 @@ MAX_LIMIT = 200
 class BillSort(StrEnum):
     RECENT_ACTIVITY = "recent_activity"
     ENTRY_DATE = "entry_date"
+    BULLETIN = "bulletin"
 
 
 def _latest_bill_activity_subquery(db: Session):
@@ -44,6 +45,9 @@ def list_bills(
     bill_type: BillType | None,
     origin: BillOrigin | None,
     topic_id: int | None,
+    current_chamber: ChamberType | None = None,
+    has_urgency: bool | None = None,
+    search: str | None = None,
     date_from: date | None,
     date_to: date | None,
     law_number: str | None,
@@ -62,6 +66,7 @@ def list_bills(
             joinedload(BillStage.chamber),
             joinedload(BillStage.committee),
         ),
+        selectinload(Bill.voting_sessions),
     )
     count_query = db.query(func.count(Bill.id.distinct()))
 
@@ -90,8 +95,21 @@ def list_bills(
     if law_number:
         query = query.filter(Bill.law_number == law_number)
         count_query = count_query.filter(Bill.law_number == law_number)
+    if current_chamber is not None:
+        clause = Bill.current_chamber.has(Chamber.chamber_type == current_chamber)
+        query = query.filter(clause)
+        count_query = count_query.filter(clause)
+    if has_urgency:
+        clause = Bill.urgencies.any(BillUrgency.is_active.is_(True))
+        query = query.filter(clause)
+        count_query = count_query.filter(clause)
+    if search:
+        pattern = f"%{search}%"
+        clause = Bill.title.ilike(pattern) | Bill.bulletin_number.ilike(pattern)
+        query = query.filter(clause)
+        count_query = count_query.filter(clause)
 
-    order_by = (Bill.entry_date.desc(), Bill.id.desc())
+    order_by: tuple = (Bill.entry_date.desc(), Bill.id.desc())
     if sort == BillSort.RECENT_ACTIVITY:
         latest_activity = _latest_bill_activity_subquery(db)
         query = query.outerjoin(latest_activity, Bill.id == latest_activity.c.bill_id)
@@ -99,6 +117,8 @@ def list_bills(
             func.coalesce(latest_activity.c.last_activity_date, Bill.entry_date).desc(),
             Bill.id.desc(),
         )
+    elif sort == BillSort.BULLETIN:
+        order_by = (Bill.bulletin_number.asc(), Bill.id.desc())
 
     total = count_query.scalar() or 0
     rows = query.order_by(*order_by).offset(offset).limit(limit).all()
@@ -146,10 +166,25 @@ def bill_to_summary_extra(bill: Bill) -> dict:
         (event.event_date for event in (bill.events or [])),
         default=bill.entry_date,
     )
+    latest_voting = max(
+        (bill.voting_sessions or []),
+        key=lambda v: v.voting_date,
+        default=None,
+    )
+    votes_summary = (
+        {
+            "for": latest_voting.votes_for,
+            "against": latest_voting.votes_against,
+            "abstain": latest_voting.abstentions,
+        }
+        if latest_voting is not None
+        else None
+    )
     return {
         "active_urgency_type": active_urgency.urgency_type if active_urgency else None,
         "current_stage_type": current_stage.stage_type if current_stage else None,
         "last_activity_date": last_activity_date,
+        "votes_summary": votes_summary,
     }
 
 
@@ -170,6 +205,7 @@ def list_bills_by_ids(db: Session, bill_ids: list[int]) -> list[Bill]:
                 joinedload(BillStage.chamber),
                 joinedload(BillStage.committee),
             ),
+            selectinload(Bill.voting_sessions),
         )
         .filter(Bill.id.in_(bill_ids))
         .all()

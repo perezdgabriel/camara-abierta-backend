@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.models.enums import BillOrigin, BillStatus, BillType
+from app.models.enums import BillOrigin, BillStatus, BillType, ChamberType
 from app.schemas.proyectos import (
     BillDetail,
     BillsResponse,
@@ -37,6 +37,15 @@ def list_bills(
     ),
     origin: BillOrigin | None = Query(None, description="Origen canónico del proyecto"),
     topic_id: int | None = Query(None, alias="tema_id", description="Filtrar por tema"),
+    current_chamber: ChamberType | None = Query(
+        None, alias="camara", description="Cámara actual del proyecto"
+    ),
+    has_urgency: bool | None = Query(
+        None, alias="con_urgencia", description="Solo proyectos con urgencia activa"
+    ),
+    search: str | None = Query(
+        None, alias="buscar", description="Búsqueda en título o número de boletín"
+    ),
     date_from: date | None = Query(
         None, alias="desde", description="Fecha de ingreso desde (YYYY-MM-DD)"
     ),
@@ -59,6 +68,9 @@ def list_bills(
         bill_type=bill_type,
         origin=origin,
         topic_id=topic_id,
+        current_chamber=current_chamber,
+        has_urgency=has_urgency,
+        search=search,
         date_from=date_from,
         date_to=date_to,
         law_number=law_number,

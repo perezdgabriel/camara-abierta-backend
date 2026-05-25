@@ -105,6 +105,14 @@ class SponsoringMinistry(ORMModel):
     name: str | None = None
 
 
+class VotesSummary(ORMModel):
+    """Denormalised vote tally from a bill's most recent voting session."""
+
+    for_: int = Field(alias="for", serialization_alias="for")
+    against: int
+    abstain: int
+
+
 class VotingResult(ORMModel):
     id: int
     bcn_id: str | None = None
@@ -149,6 +157,7 @@ class BillSummary(ORMModel):
     # Denormalised convenience fields populated by the service layer
     active_urgency_type: UrgencyType | None = None
     current_stage_type: StageType | None = None
+    votes_summary: VotesSummary | None = None
     created_at: datetime
     updated_at: datetime
     sync_version: int
