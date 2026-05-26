@@ -177,6 +177,32 @@ def _get_or_create_chamber(
 
 
 _INDEPENDENT_LABELS = {"independiente", "independientes", "ind", "independ"}
+_PARTIES_COLORS = {
+    "UDI": "#1d4ed8",
+    "PNL": "#eab308",
+    "PREP": "#0f172a",
+    "PRO": "#be185d",
+    "PC": "#b91c1c",
+    "FA": "#ea580c",
+    "PS": "#dc2626",
+    "PDG": "#f97316",
+    "PCS": "#e11d48",
+    "DC": "#15803d",
+    "RN": "#1e40af",
+    "RD": "#f43f5e",
+    "PPD": "#f59e0b",
+    "COMUNES": "#9333ea",
+    "PAH": "#d97706",
+    "PH": "#fb923c",
+    "FRVS": "#65a30d",
+    "EVOP": "#0891b2",
+    "PSC": "#2563eb",
+    "PCC": "#312e81",
+    "DEM": "#6366f1",
+    "PL": "#db2777",
+    "PR": "#991b1b",
+    "PRI": "#84cc16",
+}
 
 
 def _upsert_party_from_opendata(
@@ -195,9 +221,10 @@ def _upsert_party_from_opendata(
     party = db.execute(
         select(PoliticalParty).where(func.lower(PoliticalParty.name) == name.lower())
     ).scalar_one_or_none()
+    color = _PARTIES_COLORS.get(abbreviation, "#888888")
     if party is None:
         party = PoliticalParty(
-            name=name[:200], abbreviation=abbreviation, is_active=True
+            name=name[:200], abbreviation=abbreviation, is_active=True, color=color
         )
         db.add(party)
     else:
