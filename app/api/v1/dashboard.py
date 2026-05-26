@@ -9,9 +9,13 @@ from app.schemas.dashboard import (
     RecentEvent,
     TopicCount,
 )
-from app.schemas.proyectos import BillSummary
+from app.schemas.proyectos import BillSummary, PartyBrief
 from app.services import dashboard as svc
 from app.services import proyectos as bills_svc
+
+_IND_PARTY = PartyBrief(
+    id=0, name="Independientes", abbreviation="IND", color="#6b7280"
+)
 
 router = APIRouter(tags=["Dashboard"])
 
@@ -27,7 +31,10 @@ def get_dashboard(db: Session = Depends(get_db)):
             for topic, count in data["topic_distribution"]
         ],
         chamber_composition=[
-            PartyComposition(party=party, count=count)
+            PartyComposition(
+                party=_IND_PARTY if party is None else PartyBrief.model_validate(party),
+                count=count,
+            )
             for party, count in data["chamber_composition"]
         ],
         featured_bills=[

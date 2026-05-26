@@ -73,7 +73,7 @@ def _topic_distribution(db: Session) -> list[tuple[Topic, int]]:
     return [(topic, count) for topic, count in rows]
 
 
-def _chamber_composition(db: Session) -> list[tuple[PoliticalParty, int]]:
+def _chamber_composition(db: Session) -> list[tuple[PoliticalParty | None, int]]:
     rows = (
         db.query(PoliticalParty, func.count(Legislator.id).label("count"))
         .join(Legislator, Legislator.party_id == PoliticalParty.id)
@@ -85,7 +85,22 @@ def _chamber_composition(db: Session) -> list[tuple[PoliticalParty, int]]:
         .order_by(func.count(Legislator.id).desc())
         .all()
     )
-    return [(party, count) for party, count in rows]
+    result: list[tuple[PoliticalParty | None, int]] = [
+        (party, count) for party, count in rows
+    ]
+    ind_count = (
+        db.query(func.count(Legislator.id))
+        .filter(
+            Legislator.party_id.is_(None),
+            Legislator.chamber_type == ChamberType.DEPUTIES,
+            Legislator.is_active.is_(True),
+        )
+        .scalar()
+        or 0
+    )
+    if ind_count:
+        result.append((None, ind_count))
+    return result
 
 
 def _featured_bills(db: Session) -> list[Bill]:
