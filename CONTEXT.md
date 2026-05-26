@@ -76,5 +76,5 @@ A registered party in the Chilean Congress. `PoliticalParty.name` is the full of
 _Avoid_: creating party records from Senado data
 
 **Independent legislator**:
-A legislator with no current party affiliation. `Legislator.party_id` is null. Senado signals this via "Independiente" (and variants) in the `PARTIDO` field. This is not a party — it means unaffiliated.
-_Avoid_: "Independientes" as a party name
+A legislator with no current party affiliation. `Legislator.party_id` is null. Senado signals this via "Independiente" (and variants) in the `PARTIDO` field. This is not a party — it means unaffiliated. In the UI, independents are displayed with the label "Ind." (badge/list) or "Independiente" (full name), and the color `#6b7280` (gray).
+_Avoid_: "Independientes" as a party name; treating null party as missing data
