@@ -78,3 +78,7 @@ _Avoid_: creating party records from Senado data
 **Independent legislator**:
 A legislator with no current party affiliation. `Legislator.party_id` is null. Senado signals this via "Independiente" (and variants) in the `PARTIDO` field. This is not a party — it means unaffiliated. In the UI, independents are displayed with the label "Ind." (badge/list) or "Independiente" (full name), and the color `#6b7280` (gray).
 _Avoid_: "Independientes" as a party name; treating null party as missing data
+
+**Active legislator**:
+A legislator currently serving in their chamber. `Legislator.is_active` is the canonical flag, sourced from the OpenData Camara upstream `Estado` element. Used by the dashboard chamber-composition counts and by the `/legisladores` listing endpoint as the default scope. Inactive legislators are historical and are excluded by default from user-facing rosters.
+_Avoid_: deriving "active" from term dates when `is_active` is available
