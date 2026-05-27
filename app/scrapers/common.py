@@ -150,13 +150,14 @@ async def launch_patchright(headed: bool = False) -> tuple[Any, BrowserContext, 
 async def launch_camoufox(headed: bool = False) -> tuple[Any, None, Page]:
     if not HAS_CAMOUFOX:
         raise RuntimeError("camoufox is not installed")
+    from browserforge.fingerprints import Screen
+
     viewport = random.choice(VIEWPORTS)
     fox = AsyncCamoufox(
         headless=not headed,
         os="macos",
-        screen={"width": viewport["width"], "height": viewport["height"]},
+        screen=Screen(max_width=viewport["width"], max_height=viewport["height"]),
         locale=["es-CL", "es", "en-US"],
-        timezone="America/Santiago",
         geoip=True,
         fonts=["Arial", "Helvetica Neue"],
     )
