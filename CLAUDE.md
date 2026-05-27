@@ -90,7 +90,9 @@ The default test suite (`uv run pytest`) uses SQLite in-memory (`sqlite+pysqlite
 |--------|--------|
 | Bills (list) | OpenData Camara (`get_mensajes_x_anno`, `get_mociones_x_anno`) |
 | Bills (detail) | Senado (`get_bill_by_bulletin`) |
-| Legislators | Senado + OpenData Camara |
+| Deputies (roster) | OpenData Camara (`get_diputados_periodo_actual`) |
+| Deputies (district + photo) | camara.cl scraper (`scrapers/camara_diputados.py`) — no API exposes district (ADR-0003) |
+| Senators (roster) | senado.cl web JSON API (`SenadoWebClient.get_senators`) — wspublico returns only 31/50 (ADR-0002) |
 | Voting sessions | Senado (`get_votes_by_bulletin`) |
 
 ## Domain language

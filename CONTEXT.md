@@ -80,5 +80,13 @@ A legislator with no current party affiliation. `Legislator.party_id` is null. S
 _Avoid_: "Independientes" as a party name; treating null party as missing data
 
 **Active legislator**:
-A legislator currently serving in their chamber. `Legislator.is_active` is the canonical flag, sourced from the OpenData Camara upstream `Estado` element. Used by the dashboard chamber-composition counts and by the `/legisladores` listing endpoint as the default scope. Inactive legislators are historical and are excluded by default from user-facing rosters.
+A legislator currently serving in their chamber. `Legislator.is_active` is the canonical flag. For deputies it is sourced from the OpenData Camara upstream `Estado` element; for senators it is derived from the senado.cl hemicycle seated set (see **Senator roster source**) — every senator returned by the roster fetch is, by definition, currently seated. Used by the dashboard chamber-composition counts and by the `/legisladores` listing endpoint as the default scope. Inactive legislators are historical and are excluded by default from user-facing rosters.
 _Avoid_: deriving "active" from term dates when `is_active` is available
+
+**Senator roster source**:
+The authoritative source for the *list* of sitting senators is the senado.cl web backend JSON API (`web-back.senado.cl/api/hemicycle`), not the wspublico XML. The documented wspublico `senadores_vigentes.php` returns only 31 of 50 senators, so it is no longer used for the roster (it remains the source for bills, votes, and committees). The JSON `ID_PARLAMENTARIO` equals the wspublico `PARLID`, so records reconcile to the same `senado:{id}` `bcn_id`. See ADR-0002.
+_Avoid_: senadores_vigentes.php for the senator roster
+
+**Deputy district source**:
+No congress API exposes the deputy→district link, so it is scraped from camara.cl (Cloudflare-protected; via the stealth `ScraperEngine`). The scrape is *enrichment-only*: it matches existing deputies by `camara:{dipid}` and sets `district_id` (plus photo/profile), never creating legislators or touching party data. See ADR-0003.
+_Avoid_: expecting district from OpenData/wscamaradiputados (always empty)
