@@ -361,22 +361,42 @@ def test_legislator_parser_maps_opendata_deputy_party_and_district_number():
     assert payload["_district_number"] == 8
 
 
-def test_legislator_parser_maps_senator_party_and_circumscription_number():
+def test_legislator_parser_maps_senator_from_web_json():
     payload = LegislatorParser.parse_senator(
         {
-            "parlid": "42",
-            "first_name": "Ada",
-            "last_name_father": "Demo",
-            "last_name_mother": "Senadora",
-            "party": "Partido Demo",
-            "circumscription": "Circunscripción Senatorial 7",
-            "region": "Valparaiso",
-            "email": "ada@example.com",
-            "phone": "+56 2 1234 5678",
+            "ID_PARLAMENTARIO": 1110,
+            "NOMBRE": "Pedro",
+            "APELLIDO_PATERNO": "Araya",
+            "APELLIDO_MATERNO": "Guerrero",
+            "NOMBRE_COMPLETO": "Pedro Araya Guerrero",
+            "PARTIDO": "P.P.D.",
+            "CIRCUNSCRIPCION_ID": 3,
+            "REGION": "Región de Antofagasta",
+            "EMAIL": "paraya@senado.cl",
+            "FONO": "(56-32) 2504703",
+            "SEXO": "2",
+            "SEXO_ETIQUETA": "Hombre",
+            "SLUG": "pedro-araya-guerrero-sen",
+            "IMAGEN_450": "https://cdn.senado.cl/x_450x750.jpg",
+            "IMAGEN_120": "https://cdn.senado.cl/x_120x120.jpg",
         }
     )
 
-    assert payload["bcn_id"] == "senado:42"
+    assert payload["bcn_id"] == "senado:1110"
     assert payload["chamber_type"] is ChamberType.SENATE
-    assert payload["_party_name"] == "Partido Demo"
-    assert payload["_circumscription_number"] == 7
+    assert payload["full_name"] == "Pedro Araya Guerrero"
+    assert payload["_party_name"] == "P.P.D."
+    assert payload["_circumscription_number"] == 3
+    assert payload["_region_name"] == "Región de Antofagasta"
+    assert payload["gender"] == "M"
+    assert payload["email"] == "paraya@senado.cl"
+    assert payload["photo_url"] == "https://cdn.senado.cl/x_450x750.jpg"
+    assert payload["photo_thumbnail_url"] == "https://cdn.senado.cl/x_120x120.jpg"
+    assert payload["profile_url"].endswith("/pedro-araya-guerrero-sen")
+
+
+def test_legislator_parser_maps_female_senator_gender():
+    payload = LegislatorParser.parse_senator(
+        {"ID_PARLAMENTARIO": 1, "SEXO": "1", "SEXO_ETIQUETA": "Mujer"}
+    )
+    assert payload["gender"] == "F"

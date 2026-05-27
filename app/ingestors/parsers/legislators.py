@@ -2,27 +2,44 @@ import re
 
 from app.models.enums import ChamberType
 
+SENADO_PROFILE_BASE = (
+    "https://www.senado.cl/senadoras-y-senadores/listado-de-senadoras-y-senadores"
+)
+
 
 class LegislatorParser:
     @staticmethod
     def parse_senator(raw: dict) -> dict:
-        first_name = (raw.get("first_name") or "").strip().title()
-        last_name_father = (raw.get("last_name_father") or "").strip().title()
-        last_name_mother = (raw.get("last_name_mother") or "").strip().title()
-        full_name = f"{first_name} {last_name_father} {last_name_mother}".strip()
+        """Parse a senator from the senado.cl web-back JSON catalog (see ADR-0002).
+
+        ``ID_PARLAMENTARIO`` equals the wspublico ``PARLID``, so the resulting
+        ``bcn_id`` (``senado:{id}``) reconciles with any record previously created
+        from the wspublico XML.
+        """
+        first_name = (raw.get("NOMBRE") or "").strip().title()
+        last_name_father = (raw.get("APELLIDO_PATERNO") or "").strip().title()
+        last_name_mother = (raw.get("APELLIDO_MATERNO") or "").strip().title()
+        full_name = (
+            raw.get("NOMBRE_COMPLETO") or ""
+        ).strip() or f"{first_name} {last_name_father} {last_name_mother}".strip()
+        slug = (raw.get("SLUG") or "").strip()
         return {
-            "bcn_id": f"senado:{raw.get('parlid', '')}",
+            "bcn_id": f"senado:{raw.get('ID_PARLAMENTARIO', '')}",
             "first_name": first_name,
             "last_name": f"{last_name_father} {last_name_mother}".strip(),
             "full_name": full_name,
             "chamber_type": ChamberType.SENATE,
             "is_active": True,
-            "email": (raw.get("email") or "").strip(),
-            "phone": (raw.get("phone") or "").strip(),
-            "_party_name": (raw.get("party") or "").strip(),
-            "_circumscription": (raw.get("circumscription") or "").strip(),
-            "_circumscription_number": _parse_number(raw.get("circumscription", "")),
-            "_region_name": (raw.get("region") or "").strip(),
+            "gender": _gender_from_sexo(raw.get("SEXO"), raw.get("SEXO_ETIQUETA")),
+            "email": (raw.get("EMAIL") or "").strip(),
+            "phone": (raw.get("FONO") or "").strip(),
+            "photo_url": (raw.get("IMAGEN_450") or raw.get("IMAGEN") or "").strip(),
+            "photo_thumbnail_url": (raw.get("IMAGEN_120") or "").strip(),
+            "profile_url": f"{SENADO_PROFILE_BASE}/{slug}" if slug else "",
+            "_party_name": (raw.get("PARTIDO") or "").strip(),
+            "_circumscription": "",
+            "_circumscription_number": _coerce_int(raw.get("CIRCUNSCRIPCION_ID")),
+            "_region_name": (raw.get("REGION") or "").strip(),
         }
 
     @staticmethod
@@ -67,6 +84,33 @@ class LegislatorParser:
             "_district_number": raw.get("district_number") or None,
             "_militancias": militancias,
         }
+
+
+def _gender_from_sexo(sexo: object, etiqueta: object) -> str:
+    """Map the senado SEXO code/label to a single char ("M"/"F").
+
+    SEXO is "2" (Hombre) / "1" (Mujer); SEXO_ETIQUETA is "Hombre"/"Mujer".
+    """
+    label = (str(etiqueta) if etiqueta is not None else "").strip().lower()
+    if label.startswith("hombre"):
+        return "M"
+    if label.startswith("mujer"):
+        return "F"
+    code = str(sexo).strip() if sexo is not None else ""
+    if code == "2":
+        return "M"
+    if code == "1":
+        return "F"
+    return ""
+
+
+def _coerce_int(value: object) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(str(value).strip())
+    except ValueError, TypeError:
+        return None
 
 
 def _parse_number(value: str) -> int | None:

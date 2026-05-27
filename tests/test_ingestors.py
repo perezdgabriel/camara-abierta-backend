@@ -220,25 +220,29 @@ def test_run_ingest_bills_falls_back_to_full_scan_when_state_lookup_fails(monkey
 def test_run_ingest_legislators_dispatches_both_sources_with_geography(monkeypatch):
     dispatched: list[tuple[object, dict]] = []
 
-    class FakeSenadoClient:
+    class FakeSenadoWebClient:
         def __enter__(self):
             return self
 
         def __exit__(self, *args):
             return None
 
-        def get_senadores_vigentes(self) -> list[dict]:
+        def get_senators(self) -> list[dict]:
             return [
                 {
-                    "parlid": "42",
-                    "first_name": "Ada",
-                    "last_name_father": "Demo",
-                    "last_name_mother": "Senadora",
-                    "party": "Partido Demo",
-                    "circumscription": "Circunscripción Senatorial 7",
-                    "region": "Valparaiso",
-                    "email": "ada@example.com",
-                    "phone": "+56 2 1234 5678",
+                    "ID_PARLAMENTARIO": 42,
+                    "NOMBRE": "Ada",
+                    "APELLIDO_PATERNO": "Demo",
+                    "APELLIDO_MATERNO": "Senadora",
+                    "NOMBRE_COMPLETO": "Ada Demo Senadora",
+                    "PARTIDO": "Partido Demo",
+                    "CIRCUNSCRIPCION_ID": 7,
+                    "REGION": "Valparaiso",
+                    "EMAIL": "ada@example.com",
+                    "FONO": "+56 2 1234 5678",
+                    "SEXO": "1",
+                    "SEXO_ETIQUETA": "Mujer",
+                    "SLUG": "ada-demo-senadora-sen",
                 }
             ]
 
@@ -272,7 +276,7 @@ def test_run_ingest_legislators_dispatches_both_sources_with_geography(monkeypat
                 }
             ]
 
-    monkeypatch.setattr(ingestor_tasks, "SenadoClient", FakeSenadoClient)
+    monkeypatch.setattr(ingestor_tasks, "SenadoWebClient", FakeSenadoWebClient)
     monkeypatch.setattr(
         ingestor_tasks, "OpenDataCamaraClient", FakeOpenDataCamaraClient
     )

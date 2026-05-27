@@ -49,6 +49,10 @@ class Settings(BaseSettings):
         default="https://tramitacion.senado.cl/wspublico/",
         alias="INGESTOR_BASE_URL_SENADO",
     )
+    ingestor_base_url_senado_web: str = Field(
+        default="https://web-back.senado.cl/",
+        alias="INGESTOR_BASE_URL_SENADO_WEB",
+    )
     ingestor_bills_start_year: int = Field(
         default=2026,
         alias="INGESTOR_BILLS_START_YEAR",

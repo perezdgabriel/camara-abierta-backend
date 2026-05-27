@@ -16,6 +16,7 @@ from app.ingestors.clients.opendata_camara_async import (
     fetch_voting_details_parallel,
 )
 from app.ingestors.clients.senado import SenadoClient
+from app.ingestors.clients.senado_web import SenadoWebClient
 from app.ingestors.clients.senado_async import fetch_bills_parallel
 from app.ingestors.parsers.bills import BillParser
 from app.ingestors.parsers.committees import CommitteeParser
@@ -265,18 +266,18 @@ def run_ingest_legislators(*, dry_run: bool = False) -> dict[str, Any]:
     time.sleep(REQUEST_DELAY)
 
     try:
-        with SenadoClient() as senado:
-            for raw in senado.get_senadores_vigentes():
+        with SenadoWebClient() as senado_web:
+            for raw in senado_web.get_senators():
                 try:
                     payload = LegislatorParser.parse_senator(raw)
                     if not dry_run:
                         _dispatch(sync_legislator, payload)
                     dispatched += 1
                 except Exception:
-                    logger.exception("Failed to parse senator from SenadoClient")
+                    logger.exception("Failed to parse senator from SenadoWebClient")
                     errors += 1
     except Exception:
-        logger.exception("Failed to fetch senators from SenadoClient")
+        logger.exception("Failed to fetch senators from SenadoWebClient")
         errors += 1
 
     if not dry_run:
