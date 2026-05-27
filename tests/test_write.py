@@ -1,5 +1,6 @@
 from types import SimpleNamespace
 
+from app.models.core import Region
 from app.models.enums import ChamberType, VoteChoice
 from app.services import write
 
@@ -101,3 +102,29 @@ def test_resolve_vote_legislator_creates_placeholder_from_chamber_external_id():
     assert placeholder.full_name == "René Alinco Bustos"
     assert placeholder.chamber_type is ChamberType.DEPUTIES
     assert placeholder.is_active is False
+
+
+def test_get_or_create_circumscription_links_mapped_region(monkeypatch):
+    monkeypatch.setattr(write, "CIRCUMSCRIPTION_REGION_MAP", {5: 12})
+    monkeypatch.setattr(write, "_touch_syncable", lambda db_session, obj: None)
+
+    region = Region(number=12, name="Region 12", capital="Capital")
+    db = FakeDB(None, region)  # no existing circ, then region lookup
+
+    circumscription = write._get_or_create_circumscription(db, 5, "Circ 5")
+
+    assert circumscription is not None
+    assert circumscription.number == 5
+    assert region in circumscription.regions
+
+
+def test_get_or_create_circumscription_skips_when_unmapped(monkeypatch):
+    monkeypatch.setattr(write, "CIRCUMSCRIPTION_REGION_MAP", {})
+
+    db = FakeDB(None)  # only the circ lookup; no region lookup expected
+
+    circumscription = write._get_or_create_circumscription(db, 7, "Circ 7")
+
+    assert circumscription is not None
+    assert circumscription.number == 7
+    assert list(circumscription.regions) == []

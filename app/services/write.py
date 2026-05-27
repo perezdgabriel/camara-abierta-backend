@@ -79,6 +79,29 @@ DISTRICT_REGION_MAP: dict[int, int] = {
     28: 14,
 }
 
+# Circumscription number -> region number. No upstream source exposes this
+# relation, so it is maintained by hand (mirrors DISTRICT_REGION_MAP).
+# Populate this dict, then re-run legislator ingestion to link circumscriptions
+# to regions via the circumscription_regions join table.
+CIRCUMSCRIPTION_REGION_MAP: dict[int, int] = {
+    1: 15,  # 1ª Circunscripción: Región de Arica y Parinacota
+    2: 1,  # 2ª Circunscripción: Región de Tarapacá
+    3: 2,  # 3ª Circunscripción: Región de Antofagasta
+    4: 3,  # 4ª Circunscripción: Región de Atacama
+    5: 4,  # 5ª Circunscripción: Región de Coquimbo
+    6: 5,  # 6ª Circunscripción: Región de Valparaíso
+    7: 13,  # 7ª Circunscripción: Región Metropolitana de Santiago
+    8: 6,  # 8ª Circunscripción: Región de O'Higgins
+    9: 7,  # 9ª Circunscripción: Región del Maule
+    10: 8,  # 10ª Circunscripción: Región del Biobío
+    11: 9,  # 11ª Circunscripción: Región de La Araucanía
+    12: 14,  # 12ª Circunscripción: Región de Los Ríos
+    13: 10,  # 13ª Circunscripción: Región de Los Lagos
+    14: 11,  # 14ª Circunscripción: Región de Aysén
+    15: 12,  # 15ª Circunscripción: Región de Magallanes y de la Antártica Chilena
+    16: 16,  # 16ª Circunscripción: Región de Ñuble
+}
+
 
 def _next_sync_value(db: Session) -> int:
     return db.execute(select(global_sync_version_seq.next_value())).scalar_one()
@@ -257,14 +280,35 @@ def _get_or_create_circumscription(
     circumscription = db.execute(
         select(Circumscription).where(Circumscription.number == number)
     ).scalar_one_or_none()
-    if circumscription is not None:
-        return circumscription
-    circumscription = Circumscription(
-        number=number, name=(name or f"Circunscripcion {number}")[:200]
-    )
-    db.add(circumscription)
-    db.flush()
+    if circumscription is None:
+        circumscription = Circumscription(
+            number=number, name=(name or f"Circunscripcion {number}")[:200]
+        )
+        db.add(circumscription)
+        db.flush()
+    _link_circumscription_region(db, circumscription)
     return circumscription
+
+
+def _link_circumscription_region(db: Session, circumscription: Circumscription) -> None:
+    """Link a circumscription to its region via the hardcoded map.
+
+    Idempotent: re-running ingestion after editing CIRCUMSCRIPTION_REGION_MAP
+    picks up newly added entries. Circumscriptions with no map entry, or whose
+    target region has not been seeded, are left unlinked (no fabricated rows).
+    """
+    region_number = CIRCUMSCRIPTION_REGION_MAP.get(circumscription.number)
+    if region_number is None:
+        return
+    region = db.execute(
+        select(Region).where(Region.number == region_number)
+    ).scalar_one_or_none()
+    if region is None:
+        return
+    if region not in circumscription.regions:
+        circumscription.regions.append(region)
+        _touch_syncable(db, circumscription)
+        db.flush()
 
 
 def _upsert_topic_record(db: Session, name: str) -> tuple[Topic, bool]:
