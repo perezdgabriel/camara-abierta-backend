@@ -11,7 +11,10 @@ from app.core.config import settings
 from app.core.session import task_session
 from app.ingestors.clients.camara import CamaraClient
 from app.ingestors.clients.opendata_camara import OpenDataCamaraClient
-from app.ingestors.clients.opendata_camara_async import fetch_voting_details_parallel
+from app.ingestors.clients.opendata_camara_async import (
+    fetch_bill_details_parallel,
+    fetch_voting_details_parallel,
+)
 from app.ingestors.clients.senado import SenadoClient
 from app.ingestors.clients.senado_async import fetch_bills_parallel
 from app.ingestors.parsers.bills import BillParser
@@ -88,49 +91,55 @@ def _dispatch(task: Any, *args: Any) -> None:
     task.delay(*args)
 
 
-def _load_opendata_bill_detail_with_votes(
-    opendata: OpenDataCamaraClient, bulletin_number: str
-) -> tuple[dict[str, Any] | None, int]:
+def _load_opendata_bill_details_with_votes(
+    bulletins: list[str],
+) -> tuple[dict[str, dict[str, Any] | None], int]:
     errors = 0
-    detail = opendata.get_bill_detail(bulletin_number)
-    if detail is None:
-        return None, errors
 
-    requested_vote_ids = [
-        int(voting_id)
-        for raw_vote in detail.get("chamber_votes", [])
-        for voting_id in [raw_vote.get("id")]
-        if voting_id
-    ]
+    details_by_bulletin: dict[str, dict[str, Any] | None] = dict(
+        asyncio.run(fetch_bill_details_parallel(bulletins))
+    )
+
+    all_vote_ids: list[int] = []
+    for detail in details_by_bulletin.values():
+        if detail is None:
+            continue
+        for raw_vote in detail.get("chamber_votes", []):
+            voting_id = raw_vote.get("id")
+            if voting_id:
+                all_vote_ids.append(int(voting_id))
+
     vote_details_by_id: dict[int, dict[str, Any]] = {}
-    if requested_vote_ids:
-        vote_results = asyncio.run(fetch_voting_details_parallel(requested_vote_ids))
+    if all_vote_ids:
+        vote_results = asyncio.run(fetch_voting_details_parallel(all_vote_ids))
         vote_details_by_id = {
             voting_id: vote_detail
             for voting_id, vote_detail in vote_results
             if vote_detail is not None
         }
         errors += sum(
-            1 for voting_id in requested_vote_ids if voting_id not in vote_details_by_id
+            1 for voting_id in all_vote_ids if voting_id not in vote_details_by_id
         )
 
-    enriched_votes: list[dict[str, Any]] = []
-    for raw_vote in detail.get("chamber_votes", []):
-        voting_id = raw_vote.get("id")
-        if not voting_id:
-            enriched_votes.append(raw_vote)
+    for detail in details_by_bulletin.values():
+        if detail is None:
             continue
-        vote_detail = vote_details_by_id.get(int(voting_id))
-        if vote_detail is None:
-            enriched_votes.append(raw_vote)
-            continue
+        enriched_votes: list[dict[str, Any]] = []
+        for raw_vote in detail.get("chamber_votes", []):
+            voting_id = raw_vote.get("id")
+            if not voting_id:
+                enriched_votes.append(raw_vote)
+                continue
+            vote_detail = vote_details_by_id.get(int(voting_id))
+            if vote_detail is None:
+                enriched_votes.append(raw_vote)
+                continue
+            enriched_vote = {**raw_vote, **vote_detail}
+            enriched_vote["individual_votes"] = vote_detail.get("individual_votes", [])
+            enriched_votes.append(enriched_vote)
+        detail["chamber_votes"] = enriched_votes
 
-        enriched_vote = {**raw_vote, **vote_detail}
-        enriched_vote["individual_votes"] = vote_detail.get("individual_votes", [])
-        enriched_votes.append(enriched_vote)
-
-    detail["chamber_votes"] = enriched_votes
-    return detail, errors
+    return details_by_bulletin, errors
 
 
 def run_ingest_bills(
@@ -193,31 +202,29 @@ def run_ingest_bills(
 
         if bulletins:
             results = asyncio.run(fetch_bills_parallel(bulletins))
-            with OpenDataCamaraClient() as opendata:
-                for bulletin_number, raw in results:
-                    try:
-                        if raw is None:
-                            continue
-                        payload = BillParser.parse_bill(raw)
-                        time.sleep(REQUEST_DELAY)
-                        opendata_detail, detail_errors = (
-                            _load_opendata_bill_detail_with_votes(
-                                opendata, bulletin_number
-                            )
+            valid_bulletins = [bn for bn, raw in results if raw is not None]
+            opendata_details, detail_errors = _load_opendata_bill_details_with_votes(
+                valid_bulletins
+            )
+            errors += detail_errors
+            for bulletin_number, raw in results:
+                try:
+                    if raw is None:
+                        continue
+                    payload = BillParser.parse_bill(raw)
+                    opendata_detail = opendata_details.get(bulletin_number)
+                    if opendata_detail is not None:
+                        payload.update(
+                            BillParser.parse_opendata_enrichment(opendata_detail)
                         )
-                        errors += detail_errors
-                        if opendata_detail is not None:
-                            payload.update(
-                                BillParser.parse_opendata_enrichment(opendata_detail)
-                            )
-                        if not dry_run:
-                            _dispatch(sync_bill, payload)
-                        dispatched += 1
-                    except Exception:
-                        logger.exception(
-                            "Failed to ingest bill bulletin=%s", bulletin_number
-                        )
-                        errors += 1
+                    if not dry_run:
+                        _dispatch(sync_bill, payload)
+                    dispatched += 1
+                except Exception:
+                    logger.exception(
+                        "Failed to ingest bill bulletin=%s", bulletin_number
+                    )
+                    errors += 1
     except Exception:
         logger.exception("Failed to fetch bills")
         errors += 1
@@ -500,40 +507,37 @@ def run_ingest_voting_sessions(
         errors += 1
 
     try:
-        with OpenDataCamaraClient() as opendata:
-            for bulletin_number in bulletins:
-                try:
-                    time.sleep(REQUEST_DELAY)
-                    detail, detail_errors = _load_opendata_bill_detail_with_votes(
-                        opendata, bulletin_number
-                    )
-                    errors += detail_errors
-                    if detail is None:
+        all_details, detail_errors = _load_opendata_bill_details_with_votes(bulletins)
+        errors += detail_errors
+        for bulletin_number in bulletins:
+            try:
+                detail = all_details.get(bulletin_number)
+                if detail is None:
+                    continue
+                for raw_vote in detail.get("chamber_votes", []):
+                    voting_id = raw_vote.get("id")
+                    if not voting_id:
                         continue
-                    for raw_vote in detail.get("chamber_votes", []):
-                        voting_id = raw_vote.get("id")
-                        if not voting_id:
-                            continue
-                        try:
-                            payload = VoteParser.parse_chamber_vote(
-                                raw_vote, bulletin=bulletin_number
-                            )
-                            if not dry_run:
-                                _dispatch(sync_voting_session, payload, bulletin_number)
-                            dispatched += 1
-                        except Exception:
-                            logger.exception(
-                                "Failed to parse Chamber vote bulletin=%s voting_id=%s",
-                                bulletin_number,
-                                voting_id,
-                            )
-                            errors += 1
-                except Exception:
-                    logger.exception(
-                        "Failed to fetch Chamber votes for bulletin=%s",
-                        bulletin_number,
-                    )
-                    errors += 1
+                    try:
+                        payload = VoteParser.parse_chamber_vote(
+                            raw_vote, bulletin=bulletin_number
+                        )
+                        if not dry_run:
+                            _dispatch(sync_voting_session, payload, bulletin_number)
+                        dispatched += 1
+                    except Exception:
+                        logger.exception(
+                            "Failed to parse Chamber vote bulletin=%s voting_id=%s",
+                            bulletin_number,
+                            voting_id,
+                        )
+                        errors += 1
+            except Exception:
+                logger.exception(
+                    "Failed to fetch Chamber votes for bulletin=%s",
+                    bulletin_number,
+                )
+                errors += 1
     except Exception:
         logger.exception(
             "Failed to fetch Chamber voting sessions from OpenDataCamaraClient"

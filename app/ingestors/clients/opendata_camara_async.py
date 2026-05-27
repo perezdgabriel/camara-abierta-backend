@@ -14,6 +14,83 @@ BASE_URL = settings.ingestor_base_url_opendata_camara
 MAX_CONCURRENCY = 10
 
 
+async def fetch_bill_details_parallel(
+    bulletins: list[str],
+    max_concurrency: int = MAX_CONCURRENCY,
+) -> list[tuple[str, dict[str, Any] | None]]:
+    """Fetch full bill details for multiple bulletin numbers in parallel."""
+    if not bulletins:
+        return []
+
+    parser = OpenDataCamaraClient()
+    semaphore = asyncio.Semaphore(max_concurrency)
+
+    async def fetch_one(
+        bulletin: str, client: Any
+    ) -> tuple[str, dict[str, Any] | None]:
+        async with semaphore:
+            return await _afetch_and_parse_bill_detail(client, parser, bulletin)
+
+    import httpx
+
+    timeout = httpx.Timeout(60.0, connect=30.0)
+    async with httpx.AsyncClient(
+        timeout=timeout,
+        follow_redirects=True,
+        headers={
+            "User-Agent": "CamaraAbierta/1.0 (+https://camaraabierta.cl)",
+            "Accept": "application/xml, text/xml, */*",
+        },
+    ) as client:
+        tasks = [fetch_one(bulletin, client) for bulletin in bulletins]
+        results = await asyncio.gather(*tasks)
+
+    logger.info(
+        "Parallel-fetched %d bill details (%d succeeded)",
+        len(bulletins),
+        sum(1 for _, result in results if result is not None),
+    )
+    return list(results)
+
+
+async def _afetch_and_parse_bill_detail(
+    client: Any,
+    parser: OpenDataCamaraClient,
+    bulletin: str,
+) -> tuple[str, dict[str, Any] | None]:
+    url = f"{BASE_URL}WSLegislativo.asmx/retornarProyectoLey"
+
+    try:
+        response = await client.get(url, params={"prmNumeroBoletin": bulletin})
+        if response.status_code != 200:
+            logger.warning(
+                "HTTP %d fetching bill detail for bulletin %s",
+                response.status_code,
+                bulletin,
+            )
+            return bulletin, None
+
+        root = fromstring(response.content)
+        proyecto = root
+        if proyecto.tag not in (f"{NS_BRACE}ProyectoLey", "ProyectoLey"):
+            found = parser._find(root, "ProyectoLey")
+            if found is None:
+                return bulletin, None
+            proyecto = found
+
+        detail = parser._parse_bill_detail(proyecto)
+        if not detail.get("bulletin_number"):
+            return bulletin, None
+
+        return bulletin, detail
+    except ET.ParseError:
+        logger.exception("XML parse error for bill detail bulletin %s", bulletin)
+        return bulletin, None
+    except Exception:
+        logger.exception("Failed to fetch bill detail for bulletin %s", bulletin)
+        return bulletin, None
+
+
 async def fetch_voting_details_parallel(
     voting_ids: list[int],
     max_concurrency: int = MAX_CONCURRENCY,
