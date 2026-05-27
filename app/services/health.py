@@ -11,6 +11,7 @@ def get_scrape_health(db: Session) -> dict:
         s.entity_type: s.last_sync_date.isoformat() if s.last_sync_date else None
         for s in states
     }
+    ingestor_cursors = {s.entity_type: s.last_cursor for s in states}
     latest_norma_date = db.execute(
         select(OfficialGazetteNorm.date)
         .order_by(OfficialGazetteNorm.date.desc())
@@ -19,6 +20,7 @@ def get_scrape_health(db: Session) -> dict:
 
     return {
         "ingestors": ingestor_status,
+        "ingestor_cursors": ingestor_cursors,
         "latest_norma_date": latest_norma_date.isoformat()
         if latest_norma_date
         else None,

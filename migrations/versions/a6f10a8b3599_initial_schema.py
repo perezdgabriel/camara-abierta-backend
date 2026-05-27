@@ -1,8 +1,8 @@
 """initial_schema
 
-Revision ID: a57c4c0a7143
+Revision ID: a6f10a8b3599
 Revises: 
-Create Date: 2026-05-27 11:59:10.598131
+Create Date: 2026-05-27 17:02:08.451298
 """
 
 from alembic import op
@@ -11,7 +11,7 @@ from sqlalchemy.dialects import postgresql
 
 
 # revision identifiers, used by Alembic.
-revision = 'a57c4c0a7143'
+revision = 'a6f10a8b3599'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -354,11 +354,13 @@ def upgrade() -> None:
     sa.Column('province_id', sa.BigInteger(), nullable=True),
     sa.Column('region_id', sa.BigInteger(), nullable=False),
     sa.Column('district_id', sa.BigInteger(), nullable=True),
+    sa.Column('circumscription_id', sa.BigInteger(), nullable=True),
     sa.Column('id', sa.BigInteger(), nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.Column('deleted_at', sa.DateTime(timezone=True), nullable=True),
     sa.Column('sync_version', sa.BigInteger(), server_default=sa.text("nextval('global_sync_version_seq')"), nullable=False),
+    sa.ForeignKeyConstraint(['circumscription_id'], ['circumscriptions.id'], name=op.f('fk_communes_circumscription_id_circumscriptions'), ondelete='SET NULL'),
     sa.ForeignKeyConstraint(['district_id'], ['districts.id'], name=op.f('fk_communes_district_id_districts'), ondelete='SET NULL'),
     sa.ForeignKeyConstraint(['province_id'], ['provinces.id'], name=op.f('fk_communes_province_id_provinces'), ondelete='RESTRICT'),
     sa.ForeignKeyConstraint(['region_id'], ['regions.id'], name=op.f('fk_communes_region_id_regions'), ondelete='RESTRICT'),

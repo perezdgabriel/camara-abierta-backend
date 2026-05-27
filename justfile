@@ -25,6 +25,9 @@ worker:
 reference: 
     uv run python -m app.cli ingestors reference-data
 
+geography:
+    uv run python -m app.cli geography
+
 legislature: 
     uv run python -m app.cli ingestors legislature
 
@@ -34,5 +37,5 @@ legislators:
 bills:
     uv run python -m app.cli ingestors bills
 
-seed: reference legislature legislators
+seed: geography reference legislature legislators
     echo "Database has been seeded with initial data"

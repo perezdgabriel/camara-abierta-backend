@@ -1,0 +1,2869 @@
+{
+  "version": "2026-05-27",
+  "source": "Current Chilean legal geography baseline; commune-to-district and commune-to-circumscription composition sourced from SERVEL on 2026-05-27, administrative hierarchy bootstrapped from OpenData Camara on 2026-05-27 and patched for the current Ñuble split plus known catalog omissions.",
+  "effective_from": "2026-05-27",
+  "regions": [
+    {
+      "number": 1,
+      "name": "Tarapacá",
+      "capital": "Iquique",
+      "provinces": [
+        {
+          "number": 3,
+          "name": "Iquique",
+          "communes": [
+            {
+              "number": 4,
+              "name": "Alto Hospicio"
+            },
+            {
+              "number": 113,
+              "name": "Iquique"
+            }
+          ]
+        },
+        {
+          "number": 4,
+          "name": "El Tamarugal",
+          "communes": [
+            {
+              "number": 28,
+              "name": "Camiña"
+            },
+            {
+              "number": 58,
+              "name": "Colchane"
+            },
+            {
+              "number": 108,
+              "name": "Huara"
+            },
+            {
+              "number": 217,
+              "name": "Pica"
+            },
+            {
+              "number": 226,
+              "name": "Pozo Almonte"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": 2,
+      "name": "Antofagasta",
+      "capital": "Antofagasta",
+      "provinces": [
+        {
+          "number": 5,
+          "name": "Antofagasta",
+          "communes": [
+            {
+              "number": 12,
+              "name": "Antofagasta"
+            },
+            {
+              "number": 171,
+              "name": "Mejillones"
+            },
+            {
+              "number": 309,
+              "name": "Sierra Gorda"
+            },
+            {
+              "number": 313,
+              "name": "Taltal"
+            }
+          ]
+        },
+        {
+          "number": 6,
+          "name": "El Loa",
+          "communes": [
+            {
+              "number": 21,
+              "name": "Calama"
+            },
+            {
+              "number": 189,
+              "name": "Ollague"
+            },
+            {
+              "number": 297,
+              "name": "San Pedro De Atacama"
+            }
+          ]
+        },
+        {
+          "number": 7,
+          "name": "Tocopilla",
+          "communes": [
+            {
+              "number": 166,
+              "name": "Maria Elena"
+            },
+            {
+              "number": 321,
+              "name": "Tocopilla"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": 3,
+      "name": "Atacama",
+      "capital": "Copiapó",
+      "provinces": [
+        {
+          "number": 8,
+          "name": "Chañaral",
+          "communes": [
+            {
+              "number": 41,
+              "name": "Chañaral"
+            },
+            {
+              "number": 82,
+              "name": "Diego De Almagro"
+            }
+          ]
+        },
+        {
+          "number": 9,
+          "name": "Copiapó",
+          "communes": [
+            {
+              "number": 23,
+              "name": "Caldera"
+            },
+            {
+              "number": 68,
+              "name": "Copiapó"
+            },
+            {
+              "number": 317,
+              "name": "Tierra Amarilla"
+            }
+          ]
+        },
+        {
+          "number": 10,
+          "name": "Huasco",
+          "communes": [
+            {
+              "number": 7,
+              "name": "Alto Del Carmen"
+            },
+            {
+              "number": 94,
+              "name": "Freirina"
+            },
+            {
+              "number": 109,
+              "name": "Huasco"
+            },
+            {
+              "number": 330,
+              "name": "Vallenar"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": 4,
+      "name": "Coquimbo",
+      "capital": "La Serena",
+      "provinces": [
+        {
+          "number": 11,
+          "name": "Choapa",
+          "communes": [
+            {
+              "number": 29,
+              "name": "Canela"
+            },
+            {
+              "number": 111,
+              "name": "Illapel"
+            },
+            {
+              "number": 157,
+              "name": "Los Vilos"
+            },
+            {
+              "number": 278,
+              "name": "Salamanca"
+            }
+          ]
+        },
+        {
+          "number": 12,
+          "name": "Elqui",
+          "communes": [
+            {
+              "number": 9,
+              "name": "Andacollo"
+            },
+            {
+              "number": 69,
+              "name": "Coquimbo"
+            },
+            {
+              "number": 122,
+              "name": "La Higuera"
+            },
+            {
+              "number": 126,
+              "name": "La Serena"
+            },
+            {
+              "number": 195,
+              "name": "Paihuano"
+            },
+            {
+              "number": 334,
+              "name": "Vicuña"
+            }
+          ]
+        },
+        {
+          "number": 13,
+          "name": "Limarí",
+          "communes": [
+            {
+              "number": 62,
+              "name": "Combarbala"
+            },
+            {
+              "number": 175,
+              "name": "Monte Patria"
+            },
+            {
+              "number": 192,
+              "name": "Ovalle"
+            },
+            {
+              "number": 237,
+              "name": "Punitaqui"
+            },
+            {
+              "number": 271,
+              "name": "Rio Hurtado"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": 5,
+      "name": "Valparaíso",
+      "capital": "Valparaíso",
+      "provinces": [
+        {
+          "number": 14,
+          "name": "Isla De Pascua",
+          "communes": [
+            {
+              "number": 115,
+              "name": "Isla De Pascua"
+            }
+          ]
+        },
+        {
+          "number": 15,
+          "name": "Los Andes",
+          "communes": [
+            {
+              "number": 26,
+              "name": "Calle Larga"
+            },
+            {
+              "number": 152,
+              "name": "Los Andes"
+            },
+            {
+              "number": 268,
+              "name": "Rinconada"
+            },
+            {
+              "number": 283,
+              "name": "San Esteban"
+            }
+          ]
+        },
+        {
+          "number": 16,
+          "name": "Petorca",
+          "communes": [
+            {
+              "number": 19,
+              "name": "Cabildo"
+            },
+            {
+              "number": 123,
+              "name": "La Ligua"
+            },
+            {
+              "number": 202,
+              "name": "Papudo"
+            },
+            {
+              "number": 213,
+              "name": "Petorca"
+            },
+            {
+              "number": 344,
+              "name": "Zapallar"
+            }
+          ]
+        },
+        {
+          "number": 17,
+          "name": "Quillota",
+          "communes": [
+            {
+              "number": 24,
+              "name": "Calera"
+            },
+            {
+              "number": 104,
+              "name": "Hijuelas"
+            },
+            {
+              "number": 118,
+              "name": "La Cruz"
+            },
+            {
+              "number": 139,
+              "name": "Limache"
+            },
+            {
+              "number": 185,
+              "name": "Nogales"
+            },
+            {
+              "number": 190,
+              "name": "Olmue"
+            },
+            {
+              "number": 252,
+              "name": "Quillota"
+            }
+          ]
+        },
+        {
+          "number": 18,
+          "name": "San Antonio",
+          "communes": [
+            {
+              "number": 5,
+              "name": "Algarrobo"
+            },
+            {
+              "number": 31,
+              "name": "Cartagena"
+            },
+            {
+              "number": 87,
+              "name": "El Quisco"
+            },
+            {
+              "number": 88,
+              "name": "El Tabo"
+            },
+            {
+              "number": 279,
+              "name": "San Antonio"
+            },
+            {
+              "number": 308,
+              "name": "Santo Domingo"
+            }
+          ]
+        },
+        {
+          "number": 19,
+          "name": "San Felipe De Aconcagua",
+          "communes": [
+            {
+              "number": 34,
+              "name": "Catemu"
+            },
+            {
+              "number": 143,
+              "name": "Llay-Llay"
+            },
+            {
+              "number": 201,
+              "name": "Panquehue"
+            },
+            {
+              "number": 242,
+              "name": "Putaendo"
+            },
+            {
+              "number": 285,
+              "name": "San Felipe"
+            },
+            {
+              "number": 306,
+              "name": "Santa Maria"
+            }
+          ]
+        },
+        {
+          "number": 20,
+          "name": "Valparaíso",
+          "communes": [
+            {
+              "number": 32,
+              "name": "Casablanca"
+            },
+            {
+              "number": 65,
+              "name": "Concon"
+            },
+            {
+              "number": 116,
+              "name": "Juan Fernandez"
+            },
+            {
+              "number": 229,
+              "name": "Puchuncavi"
+            },
+            {
+              "number": 253,
+              "name": "Quilpue"
+            },
+            {
+              "number": 257,
+              "name": "Quintero"
+            },
+            {
+              "number": 331,
+              "name": "Valparaíso"
+            },
+            {
+              "number": 337,
+              "name": "Villa Alemana"
+            },
+            {
+              "number": 340,
+              "name": "Viña Del Mar"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": 6,
+      "name": "O'Higgins",
+      "capital": "Rancagua",
+      "provinces": [
+        {
+          "number": 27,
+          "name": "Cachapoal",
+          "communes": [
+            {
+              "number": 53,
+              "name": "Codegua"
+            },
+            {
+              "number": 56,
+              "name": "Coinco"
+            },
+            {
+              "number": 61,
+              "name": "Coltauco"
+            },
+            {
+              "number": 83,
+              "name": "Doñihue"
+            },
+            {
+              "number": 102,
+              "name": "Graneros"
+            },
+            {
+              "number": 134,
+              "name": "Las Cabras"
+            },
+            {
+              "number": 160,
+              "name": "Machali"
+            },
+            {
+              "number": 164,
+              "name": "Malloa"
+            },
+            {
+              "number": 176,
+              "name": "Mostazal"
+            },
+            {
+              "number": 188,
+              "name": "Olivar"
+            },
+            {
+              "number": 214,
+              "name": "Peumo"
+            },
+            {
+              "number": 218,
+              "name": "Pichidegua"
+            },
+            {
+              "number": 255,
+              "name": "Quinta De Tilcoco"
+            },
+            {
+              "number": 259,
+              "name": "Rancagua"
+            },
+            {
+              "number": 265,
+              "name": "Rengo"
+            },
+            {
+              "number": 266,
+              "name": "Requinoa"
+            },
+            {
+              "number": 302,
+              "name": "San Vicente"
+            }
+          ]
+        },
+        {
+          "number": 28,
+          "name": "Cardenal Caro",
+          "communes": [
+            {
+              "number": 119,
+              "name": "La Estrella"
+            },
+            {
+              "number": 141,
+              "name": "Litueche"
+            },
+            {
+              "number": 165,
+              "name": "Marchigue"
+            },
+            {
+              "number": 182,
+              "name": "Navidad"
+            },
+            {
+              "number": 203,
+              "name": "Paredones"
+            },
+            {
+              "number": 219,
+              "name": "Pichilemu"
+            }
+          ]
+        },
+        {
+          "number": 29,
+          "name": "Colchagua",
+          "communes": [
+            {
+              "number": 42,
+              "name": "Chepica"
+            },
+            {
+              "number": 47,
+              "name": "Chimbarongo"
+            },
+            {
+              "number": 147,
+              "name": "Lolol"
+            },
+            {
+              "number": 179,
+              "name": "Nancagua"
+            },
+            {
+              "number": 199,
+              "name": "Palmilla"
+            },
+            {
+              "number": 211,
+              "name": "Peralillo"
+            },
+            {
+              "number": 223,
+              "name": "Placilla"
+            },
+            {
+              "number": 236,
+              "name": "Pumanque"
+            },
+            {
+              "number": 286,
+              "name": "San Fernando"
+            },
+            {
+              "number": 304,
+              "name": "Santa Cruz"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": 7,
+      "name": "Maule",
+      "capital": "Talca",
+      "provinces": [
+        {
+          "number": 30,
+          "name": "Cauquenes",
+          "communes": [
+            {
+              "number": 35,
+              "name": "Cauquenes"
+            },
+            {
+              "number": 40,
+              "name": "Chanco"
+            },
+            {
+              "number": 207,
+              "name": "Pelluhue"
+            }
+          ]
+        },
+        {
+          "number": 31,
+          "name": "Curicó",
+          "communes": [
+            {
+              "number": 80,
+              "name": "Curico"
+            },
+            {
+              "number": 106,
+              "name": "Hualañe"
+            },
+            {
+              "number": 138,
+              "name": "Licanten"
+            },
+            {
+              "number": 174,
+              "name": "Molina"
+            },
+            {
+              "number": 261,
+              "name": "Rauco"
+            },
+            {
+              "number": 275,
+              "name": "Romeral"
+            },
+            {
+              "number": 277,
+              "name": "Sagrada Familia"
+            },
+            {
+              "number": 315,
+              "name": "Teno"
+            },
+            {
+              "number": 332,
+              "name": "Vichuquen"
+            }
+          ]
+        },
+        {
+          "number": 32,
+          "name": "Linares",
+          "communes": [
+            {
+              "number": 57,
+              "name": "Colbun"
+            },
+            {
+              "number": 140,
+              "name": "Linares"
+            },
+            {
+              "number": 149,
+              "name": "Longavi"
+            },
+            {
+              "number": 204,
+              "name": "Parral"
+            },
+            {
+              "number": 267,
+              "name": "Retiro"
+            },
+            {
+              "number": 289,
+              "name": "San Javier"
+            },
+            {
+              "number": 336,
+              "name": "Villa Alegre"
+            },
+            {
+              "number": 341,
+              "name": "Yerbas Buenas"
+            }
+          ]
+        },
+        {
+          "number": 33,
+          "name": "Talca",
+          "communes": [
+            {
+              "number": 66,
+              "name": "Constitucion"
+            },
+            {
+              "number": 79,
+              "name": "Curepto"
+            },
+            {
+              "number": 89,
+              "name": "Empedrado"
+            },
+            {
+              "number": 169,
+              "name": "Maule"
+            },
+            {
+              "number": 206,
+              "name": "Pelarco"
+            },
+            {
+              "number": 209,
+              "name": "Pencahue"
+            },
+            {
+              "number": 270,
+              "name": "Rio Claro"
+            },
+            {
+              "number": 282,
+              "name": "San Clemente"
+            },
+            {
+              "number": 299,
+              "name": "San Rafael"
+            },
+            {
+              "number": 311,
+              "name": "Talca"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": 8,
+      "name": "Biobío",
+      "capital": "Concepción",
+      "provinces": [
+        {
+          "number": 34,
+          "name": "Arauco",
+          "communes": [
+            {
+              "number": 14,
+              "name": "Arauco"
+            },
+            {
+              "number": 36,
+              "name": "Cañete"
+            },
+            {
+              "number": 67,
+              "name": "Contulmo"
+            },
+            {
+              "number": 77,
+              "name": "Curanilahue"
+            },
+            {
+              "number": 137,
+              "name": "Lebu"
+            },
+            {
+              "number": 151,
+              "name": "Los Alamos"
+            },
+            {
+              "number": 320,
+              "name": "Tirua"
+            }
+          ]
+        },
+        {
+          "number": 35,
+          "name": "Biobío",
+          "communes": [
+            {
+              "number": 2,
+              "name": "Alto Biobío"
+            },
+            {
+              "number": 13,
+              "name": "Antuco"
+            },
+            {
+              "number": 20,
+              "name": "Cabrero"
+            },
+            {
+              "number": 131,
+              "name": "Laja"
+            },
+            {
+              "number": 153,
+              "name": "Los Angeles"
+            },
+            {
+              "number": 177,
+              "name": "Mulchen"
+            },
+            {
+              "number": 178,
+              "name": "Nacimiento"
+            },
+            {
+              "number": 183,
+              "name": "Negrete"
+            },
+            {
+              "number": 248,
+              "name": "Quilaco"
+            },
+            {
+              "number": 250,
+              "name": "Quilleco"
+            },
+            {
+              "number": 301,
+              "name": "San Rosendo"
+            },
+            {
+              "number": 303,
+              "name": "Santa Barbara"
+            },
+            {
+              "number": 328,
+              "name": "Tucapel"
+            },
+            {
+              "number": 342,
+              "name": "Yumbel"
+            }
+          ]
+        },
+        {
+          "number": 36,
+          "name": "Concepción",
+          "communes": [
+            {
+              "number": 1,
+              "name": "Hualpén"
+            },
+            {
+              "number": 43,
+              "name": "Chiguayante"
+            },
+            {
+              "number": 63,
+              "name": "Concepción"
+            },
+            {
+              "number": 70,
+              "name": "Coronel"
+            },
+            {
+              "number": 92,
+              "name": "Florida"
+            },
+            {
+              "number": 107,
+              "name": "Hualqui"
+            },
+            {
+              "number": 158,
+              "name": "Lota"
+            },
+            {
+              "number": 210,
+              "name": "Penco"
+            },
+            {
+              "number": 298,
+              "name": "San Pedro De La Paz"
+            },
+            {
+              "number": 305,
+              "name": "Santa Juana"
+            },
+            {
+              "number": 312,
+              "name": "Talcahuano"
+            },
+            {
+              "number": 323,
+              "name": "Tome"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": 9,
+      "name": "La Araucanía",
+      "capital": "Temuco",
+      "provinces": [
+        {
+          "number": 38,
+          "name": "Cautín",
+          "communes": [
+            {
+              "number": 3,
+              "name": "Cholchol"
+            },
+            {
+              "number": 30,
+              "name": "Carahue"
+            },
+            {
+              "number": 73,
+              "name": "Cunco"
+            },
+            {
+              "number": 78,
+              "name": "Curarrehue"
+            },
+            {
+              "number": 93,
+              "name": "Freire"
+            },
+            {
+              "number": 99,
+              "name": "Galvarino"
+            },
+            {
+              "number": 101,
+              "name": "Gorbea"
+            },
+            {
+              "number": 136,
+              "name": "Lautaro"
+            },
+            {
+              "number": 148,
+              "name": "Loncoche"
+            },
+            {
+              "number": 172,
+              "name": "Melipeuco"
+            },
+            {
+              "number": 186,
+              "name": "Nueva Imperial"
+            },
+            {
+              "number": 194,
+              "name": "Padre Las Casas"
+            },
+            {
+              "number": 212,
+              "name": "Perquenco"
+            },
+            {
+              "number": 222,
+              "name": "Pitrufquen"
+            },
+            {
+              "number": 230,
+              "name": "Pucon"
+            },
+            {
+              "number": 276,
+              "name": "Saavedra"
+            },
+            {
+              "number": 314,
+              "name": "Temuco"
+            },
+            {
+              "number": 316,
+              "name": "Teodoro Schmidt"
+            },
+            {
+              "number": 322,
+              "name": "Tolten"
+            },
+            {
+              "number": 335,
+              "name": "Vilcun"
+            },
+            {
+              "number": 338,
+              "name": "Villarrica"
+            }
+          ]
+        },
+        {
+          "number": 39,
+          "name": "Malleco",
+          "communes": [
+            {
+              "number": 10,
+              "name": "Angol"
+            },
+            {
+              "number": 60,
+              "name": "Collipulli"
+            },
+            {
+              "number": 74,
+              "name": "Curacautin"
+            },
+            {
+              "number": 90,
+              "name": "Ercilla"
+            },
+            {
+              "number": 150,
+              "name": "Lonquimay"
+            },
+            {
+              "number": 156,
+              "name": "Los Sauces"
+            },
+            {
+              "number": 159,
+              "name": "Lumaco"
+            },
+            {
+              "number": 240,
+              "name": "Puren"
+            },
+            {
+              "number": 263,
+              "name": "Renaico"
+            },
+            {
+              "number": 326,
+              "name": "Traiguen"
+            },
+            {
+              "number": 333,
+              "name": "Victoria"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": 10,
+      "name": "Los Lagos",
+      "capital": "Puerto Montt",
+      "provinces": [
+        {
+          "number": 42,
+          "name": "Chiloé",
+          "communes": [
+            {
+              "number": 8,
+              "name": "Ancud"
+            },
+            {
+              "number": 33,
+              "name": "Castro"
+            },
+            {
+              "number": 48,
+              "name": "Chonchi"
+            },
+            {
+              "number": 76,
+              "name": "Curaco De Velez"
+            },
+            {
+              "number": 81,
+              "name": "Dalcahue"
+            },
+            {
+              "number": 239,
+              "name": "Puqueldon"
+            },
+            {
+              "number": 245,
+              "name": "Queilen"
+            },
+            {
+              "number": 246,
+              "name": "Quellon"
+            },
+            {
+              "number": 247,
+              "name": "Quemchi"
+            },
+            {
+              "number": 254,
+              "name": "Quinchao"
+            }
+          ]
+        },
+        {
+          "number": 43,
+          "name": "Llanquihue",
+          "communes": [
+            {
+              "number": 22,
+              "name": "Calbuco"
+            },
+            {
+              "number": 51,
+              "name": "Cochamo"
+            },
+            {
+              "number": 95,
+              "name": "Fresia"
+            },
+            {
+              "number": 96,
+              "name": "Frutillar"
+            },
+            {
+              "number": 142,
+              "name": "Llanquihue"
+            },
+            {
+              "number": 155,
+              "name": "Los Muermos"
+            },
+            {
+              "number": 170,
+              "name": "Maullin"
+            },
+            {
+              "number": 233,
+              "name": "Puerto Montt"
+            },
+            {
+              "number": 235,
+              "name": "Puerto Varas"
+            }
+          ]
+        },
+        {
+          "number": 44,
+          "name": "Osorno",
+          "communes": [
+            {
+              "number": 191,
+              "name": "Osorno"
+            },
+            {
+              "number": 234,
+              "name": "Puerto Octay"
+            },
+            {
+              "number": 241,
+              "name": "Purranque"
+            },
+            {
+              "number": 244,
+              "name": "Puyehue"
+            },
+            {
+              "number": 273,
+              "name": "Rio Negro"
+            },
+            {
+              "number": 292,
+              "name": "San Juan De La Costa"
+            },
+            {
+              "number": 295,
+              "name": "San Pablo"
+            }
+          ]
+        },
+        {
+          "number": 45,
+          "name": "Palena",
+          "communes": [
+            {
+              "number": 39,
+              "name": "Chaiten"
+            },
+            {
+              "number": 97,
+              "name": "Futaleufu"
+            },
+            {
+              "number": 105,
+              "name": "Hualaihue"
+            },
+            {
+              "number": 198,
+              "name": "Palena"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": 11,
+      "name": "Aysén del General Carlos Ibáñez del Campo",
+      "capital": "Coyhaique",
+      "provinces": [
+        {
+          "number": 46,
+          "name": "Aisén",
+          "communes": [
+            {
+              "number": 16,
+              "name": "Aysén"
+            },
+            {
+              "number": 49,
+              "name": "Cisnes"
+            },
+            {
+              "number": 103,
+              "name": "Guaitecas"
+            }
+          ]
+        },
+        {
+          "number": 47,
+          "name": "Capitán Prat",
+          "communes": [
+            {
+              "number": 52,
+              "name": "Cochrane"
+            },
+            {
+              "number": 187,
+              "name": "O\"Higgins"
+            },
+            {
+              "number": 325,
+              "name": "Tortel"
+            }
+          ]
+        },
+        {
+          "number": 48,
+          "name": "Coihaique",
+          "communes": [
+            {
+              "number": 72,
+              "name": "Coyhaique"
+            },
+            {
+              "number": 129,
+              "name": "Lago Verde"
+            }
+          ]
+        },
+        {
+          "number": 49,
+          "name": "General Carrera",
+          "communes": [
+            {
+              "number": 44,
+              "name": "Chile Chico"
+            },
+            {
+              "number": 272,
+              "name": "Rio Ibañez"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": 12,
+      "name": "Magallanes y de la Antártica Chilena",
+      "capital": "Punta Arenas",
+      "provinces": [
+        {
+          "number": 50,
+          "name": "Antártica Chilena",
+          "communes": [
+            {
+              "number": 11,
+              "name": "Antartica"
+            },
+            {
+              "number": 181,
+              "name": "Cabo De Hornos"
+            }
+          ]
+        },
+        {
+          "number": 51,
+          "name": "Magallanes",
+          "communes": [
+            {
+              "number": 130,
+              "name": "Laguna Blanca"
+            },
+            {
+              "number": 238,
+              "name": "Punta Arenas"
+            },
+            {
+              "number": 274,
+              "name": "Rio Verde"
+            },
+            {
+              "number": 287,
+              "name": "San Gregorio"
+            }
+          ]
+        },
+        {
+          "number": 52,
+          "name": "Tierra Del Fuego",
+          "communes": [
+            {
+              "number": 225,
+              "name": "Porvenir"
+            },
+            {
+              "number": 227,
+              "name": "Primavera"
+            },
+            {
+              "number": 319,
+              "name": "Timaukel"
+            }
+          ]
+        },
+        {
+          "number": 53,
+          "name": "Última Esperanza",
+          "communes": [
+            {
+              "number": 180,
+              "name": "Natales"
+            },
+            {
+              "number": 324,
+              "name": "Torres Del Paine"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": 13,
+      "name": "Metropolitana de Santiago",
+      "capital": "Santiago",
+      "provinces": [
+        {
+          "number": 21,
+          "name": "Chacabuco",
+          "communes": [
+            {
+              "number": 59,
+              "name": "Colina"
+            },
+            {
+              "number": 132,
+              "name": "Lampa"
+            },
+            {
+              "number": 318,
+              "name": "Tiltil"
+            }
+          ]
+        },
+        {
+          "number": 22,
+          "name": "Cordillera",
+          "communes": [
+            {
+              "number": 221,
+              "name": "Pirque"
+            },
+            {
+              "number": 232,
+              "name": "Puente Alto"
+            },
+            {
+              "number": 291,
+              "name": "San Jose De Maipo"
+            }
+          ]
+        },
+        {
+          "number": 23,
+          "name": "Maipo",
+          "communes": [
+            {
+              "number": 17,
+              "name": "Buin"
+            },
+            {
+              "number": 25,
+              "name": "Calera De Tango"
+            },
+            {
+              "number": 197,
+              "name": "Paine"
+            },
+            {
+              "number": 280,
+              "name": "San Bernardo"
+            }
+          ]
+        },
+        {
+          "number": 24,
+          "name": "Melipilla",
+          "communes": [
+            {
+              "number": 6,
+              "name": "Alhue"
+            },
+            {
+              "number": 75,
+              "name": "Curacavi"
+            },
+            {
+              "number": 167,
+              "name": "Maria Pinto"
+            },
+            {
+              "number": 173,
+              "name": "Melipilla"
+            },
+            {
+              "number": 296,
+              "name": "San Pedro"
+            }
+          ]
+        },
+        {
+          "number": 25,
+          "name": "Santiago",
+          "communes": [
+            {
+              "number": 37,
+              "name": "Cerrillos"
+            },
+            {
+              "number": 38,
+              "name": "Cerro Navia"
+            },
+            {
+              "number": 64,
+              "name": "Conchali"
+            },
+            {
+              "number": 84,
+              "name": "El Bosque"
+            },
+            {
+              "number": 91,
+              "name": "Estacion Central"
+            },
+            {
+              "number": 110,
+              "name": "Huechuraba"
+            },
+            {
+              "number": 112,
+              "name": "Independencia"
+            },
+            {
+              "number": 117,
+              "name": "La Cisterna"
+            },
+            {
+              "number": 120,
+              "name": "La Florida"
+            },
+            {
+              "number": 121,
+              "name": "La Granja"
+            },
+            {
+              "number": 124,
+              "name": "La Pintana"
+            },
+            {
+              "number": 125,
+              "name": "La Reina"
+            },
+            {
+              "number": 135,
+              "name": "Las Condes"
+            },
+            {
+              "number": 144,
+              "name": "Lo Barnechea"
+            },
+            {
+              "number": 145,
+              "name": "Lo Espejo"
+            },
+            {
+              "number": 146,
+              "name": "Lo Prado"
+            },
+            {
+              "number": 161,
+              "name": "Macul"
+            },
+            {
+              "number": 163,
+              "name": "Maipu"
+            },
+            {
+              "number": 205,
+              "name": "Pedro Aguirre Cerda"
+            },
+            {
+              "number": 216,
+              "name": "Peñalolén"
+            },
+            {
+              "number": 228,
+              "name": "Providencia"
+            },
+            {
+              "number": 231,
+              "name": "Pudahuel"
+            },
+            {
+              "number": 249,
+              "name": "Quilicura"
+            },
+            {
+              "number": 256,
+              "name": "Quinta Normal"
+            },
+            {
+              "number": 262,
+              "name": "Recoleta"
+            },
+            {
+              "number": 264,
+              "name": "Renca"
+            },
+            {
+              "number": 290,
+              "name": "San Joaquin"
+            },
+            {
+              "number": 293,
+              "name": "San Miguel"
+            },
+            {
+              "number": 300,
+              "name": "San Ramon"
+            },
+            {
+              "number": 307,
+              "name": "Santiago"
+            },
+            {
+              "number": 339,
+              "name": "Vitacura"
+            },
+            {
+              "number": 346,
+              "name": "Ñuñoa"
+            }
+          ]
+        },
+        {
+          "number": 26,
+          "name": "Talagante",
+          "communes": [
+            {
+              "number": 86,
+              "name": "El Monte"
+            },
+            {
+              "number": 114,
+              "name": "Isla De Maipo"
+            },
+            {
+              "number": 193,
+              "name": "Padre Hurtado"
+            },
+            {
+              "number": 215,
+              "name": "Peñaflor"
+            },
+            {
+              "number": 310,
+              "name": "Talagante"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": 14,
+      "name": "Los Ríos",
+      "capital": "Valdivia",
+      "provinces": [
+        {
+          "number": 40,
+          "name": "Valdivia",
+          "communes": [
+            {
+              "number": 71,
+              "name": "Corral"
+            },
+            {
+              "number": 133,
+              "name": "Lanco"
+            },
+            {
+              "number": 154,
+              "name": "Los Lagos"
+            },
+            {
+              "number": 162,
+              "name": "Mafil"
+            },
+            {
+              "number": 168,
+              "name": "Mariquina"
+            },
+            {
+              "number": 196,
+              "name": "Paillaco"
+            },
+            {
+              "number": 200,
+              "name": "Panguipulli"
+            },
+            {
+              "number": 329,
+              "name": "Valdivia"
+            }
+          ]
+        },
+        {
+          "number": 41,
+          "name": "Ranco",
+          "communes": [
+            {
+              "number": 98,
+              "name": "Futrono"
+            },
+            {
+              "number": 127,
+              "name": "La Union"
+            },
+            {
+              "number": 128,
+              "name": "Lago Ranco"
+            },
+            {
+              "number": 269,
+              "name": "Rio Bueno"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": 15,
+      "name": "Arica y Parinacota",
+      "capital": "Arica",
+      "provinces": [
+        {
+          "number": 1,
+          "name": "Arica",
+          "communes": [
+            {
+              "number": 15,
+              "name": "Arica"
+            },
+            {
+              "number": 27,
+              "name": "Camarones"
+            }
+          ]
+        },
+        {
+          "number": 2,
+          "name": "Parinacota",
+          "communes": [
+            {
+              "number": 100,
+              "name": "General Lagos"
+            },
+            {
+              "number": 243,
+              "name": "Putre"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": 16,
+      "name": "Ñuble",
+      "capital": "Chillán",
+      "provinces": [
+        {
+          "number": 1601,
+          "name": "Diguillín",
+          "communes": [
+            {
+              "number": 18,
+              "name": "Bulnes"
+            },
+            {
+              "number": 45,
+              "name": "Chillán"
+            },
+            {
+              "number": 46,
+              "name": "Chillán Viejo"
+            },
+            {
+              "number": 85,
+              "name": "El Carmen"
+            },
+            {
+              "number": 208,
+              "name": "Pemuco"
+            },
+            {
+              "number": 220,
+              "name": "Pinto"
+            },
+            {
+              "number": 251,
+              "name": "Quillón"
+            },
+            {
+              "number": 288,
+              "name": "San Ignacio"
+            },
+            {
+              "number": 343,
+              "name": "Yungay"
+            }
+          ]
+        },
+        {
+          "number": 1602,
+          "name": "Itata",
+          "communes": [
+            {
+              "number": 260,
+              "name": "Ránquil"
+            },
+            {
+              "number": 327,
+              "name": "Treguaco"
+            }
+          ]
+        },
+        {
+          "number": 1603,
+          "name": "Punilla",
+          "communes": [
+            {
+              "number": 50,
+              "name": "Cobquecura"
+            },
+            {
+              "number": 54,
+              "name": "Coelemu"
+            },
+            {
+              "number": 55,
+              "name": "Coihueco"
+            },
+            {
+              "number": 184,
+              "name": "Ninhue"
+            },
+            {
+              "number": 224,
+              "name": "Portezuelo"
+            },
+            {
+              "number": 258,
+              "name": "Quirihue"
+            },
+            {
+              "number": 281,
+              "name": "San Carlos"
+            },
+            {
+              "number": 284,
+              "name": "San Fabián"
+            },
+            {
+              "number": 294,
+              "name": "San Nicolás"
+            },
+            {
+              "number": 345,
+              "name": "Ñiquén"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "districts": [
+    {
+      "number": 1,
+      "name": "Distrito 1",
+      "region_number": 15,
+      "commune_numbers": [
+        15,
+        27,
+        243,
+        100
+      ]
+    },
+    {
+      "number": 2,
+      "name": "Distrito 2",
+      "region_number": 1,
+      "commune_numbers": [
+        113,
+        4,
+        226,
+        28,
+        58,
+        108,
+        217
+      ]
+    },
+    {
+      "number": 3,
+      "name": "Distrito 3",
+      "region_number": 2,
+      "commune_numbers": [
+        12,
+        171,
+        309,
+        313,
+        321,
+        166,
+        21,
+        189,
+        297
+      ]
+    },
+    {
+      "number": 4,
+      "name": "Distrito 4",
+      "region_number": 3,
+      "commune_numbers": [
+        68,
+        23,
+        317,
+        330,
+        7,
+        94,
+        109,
+        41,
+        82
+      ]
+    },
+    {
+      "number": 5,
+      "name": "Distrito 5",
+      "region_number": 4,
+      "commune_numbers": [
+        111,
+        29,
+        157,
+        278,
+        126,
+        69,
+        9,
+        122,
+        195,
+        334,
+        192,
+        62,
+        175,
+        237,
+        271
+      ]
+    },
+    {
+      "number": 6,
+      "name": "Distrito 6",
+      "region_number": 5,
+      "commune_numbers": [
+        152,
+        26,
+        268,
+        283,
+        252,
+        24,
+        104,
+        118,
+        185,
+        229,
+        257,
+        123,
+        19,
+        202,
+        213,
+        344,
+        285,
+        34,
+        143,
+        201,
+        242,
+        306,
+        253,
+        139,
+        190,
+        337
+      ]
+    },
+    {
+      "number": 7,
+      "name": "Distrito 7",
+      "region_number": 5,
+      "commune_numbers": [
+        115,
+        331,
+        32,
+        65,
+        116,
+        340,
+        279,
+        5,
+        31,
+        87,
+        88,
+        308
+      ]
+    },
+    {
+      "number": 8,
+      "name": "Distrito 8",
+      "region_number": 13,
+      "commune_numbers": [
+        163,
+        231,
+        249,
+        37,
+        91,
+        59,
+        132,
+        318
+      ]
+    },
+    {
+      "number": 9,
+      "name": "Distrito 9",
+      "region_number": 13,
+      "commune_numbers": [
+        146,
+        256,
+        262,
+        264,
+        38,
+        64,
+        110,
+        112
+      ]
+    },
+    {
+      "number": 10,
+      "name": "Distrito 10",
+      "region_number": 13,
+      "commune_numbers": [
+        161,
+        346,
+        228,
+        290,
+        307,
+        121
+      ]
+    },
+    {
+      "number": 11,
+      "name": "Distrito 11",
+      "region_number": 13,
+      "commune_numbers": [
+        125,
+        135,
+        144,
+        216,
+        339
+      ]
+    },
+    {
+      "number": 12,
+      "name": "Distrito 12",
+      "region_number": 13,
+      "commune_numbers": [
+        124,
+        120,
+        232,
+        221,
+        291
+      ]
+    },
+    {
+      "number": 13,
+      "name": "Distrito 13",
+      "region_number": 13,
+      "commune_numbers": [
+        145,
+        205,
+        293,
+        300,
+        84,
+        117
+      ]
+    },
+    {
+      "number": 14,
+      "name": "Distrito 14",
+      "region_number": 13,
+      "commune_numbers": [
+        310,
+        86,
+        114,
+        193,
+        215,
+        280,
+        17,
+        25,
+        197,
+        173,
+        6,
+        75,
+        167,
+        296
+      ]
+    },
+    {
+      "number": 15,
+      "name": "Distrito 15",
+      "region_number": 6,
+      "commune_numbers": [
+        259,
+        53,
+        56,
+        61,
+        83,
+        102,
+        160,
+        164,
+        176,
+        188,
+        255,
+        265,
+        266
+      ]
+    },
+    {
+      "number": 16,
+      "name": "Distrito 16",
+      "region_number": 6,
+      "commune_numbers": [
+        134,
+        214,
+        218,
+        302,
+        182,
+        203,
+        219,
+        119,
+        141,
+        165,
+        286,
+        42,
+        47,
+        147,
+        179,
+        199,
+        211,
+        223,
+        236,
+        304
+      ]
+    },
+    {
+      "number": 17,
+      "name": "Distrito 17",
+      "region_number": 7,
+      "commune_numbers": [
+        80,
+        106,
+        138,
+        174,
+        261,
+        275,
+        277,
+        315,
+        332,
+        311,
+        66,
+        79,
+        89,
+        169,
+        206,
+        209,
+        270,
+        282,
+        299
+      ]
+    },
+    {
+      "number": 18,
+      "name": "Distrito 18",
+      "region_number": 7,
+      "commune_numbers": [
+        204,
+        140,
+        57,
+        149,
+        267,
+        289,
+        336,
+        341,
+        35,
+        40,
+        207
+      ]
+    },
+    {
+      "number": 19,
+      "name": "Distrito 19",
+      "region_number": 16,
+      "commune_numbers": [
+        258,
+        50,
+        54,
+        184,
+        224,
+        260,
+        327,
+        281,
+        55,
+        345,
+        284,
+        294,
+        45,
+        18,
+        46,
+        85,
+        208,
+        220,
+        251,
+        288,
+        343
+      ]
+    },
+    {
+      "number": 20,
+      "name": "Distrito 20",
+      "region_number": 8,
+      "commune_numbers": [
+        63,
+        70,
+        43,
+        92,
+        107,
+        210,
+        298,
+        305,
+        312,
+        323,
+        1
+      ]
+    },
+    {
+      "number": 21,
+      "name": "Distrito 21",
+      "region_number": 8,
+      "commune_numbers": [
+        158,
+        137,
+        14,
+        36,
+        67,
+        77,
+        151,
+        320,
+        153,
+        13,
+        20,
+        131,
+        177,
+        178,
+        183,
+        248,
+        250,
+        301,
+        303,
+        328,
+        342,
+        2
+      ]
+    },
+    {
+      "number": 22,
+      "name": "Distrito 22",
+      "region_number": 9,
+      "commune_numbers": [
+        10,
+        60,
+        74,
+        90,
+        150,
+        156,
+        159,
+        240,
+        263,
+        326,
+        333,
+        136,
+        172,
+        212,
+        335,
+        99
+      ]
+    },
+    {
+      "number": 23,
+      "name": "Distrito 23",
+      "region_number": 9,
+      "commune_numbers": [
+        101,
+        148,
+        186,
+        194,
+        222,
+        230,
+        276,
+        316,
+        322,
+        338,
+        3,
+        314,
+        30,
+        73,
+        78,
+        93
+      ]
+    },
+    {
+      "number": 24,
+      "name": "Distrito 24",
+      "region_number": 14,
+      "commune_numbers": [
+        329,
+        71,
+        133,
+        154,
+        162,
+        168,
+        196,
+        200,
+        127,
+        98,
+        128,
+        269
+      ]
+    },
+    {
+      "number": 25,
+      "name": "Distrito 25",
+      "region_number": 10,
+      "commune_numbers": [
+        273,
+        191,
+        234,
+        241,
+        244,
+        292,
+        295,
+        95,
+        96,
+        155,
+        142,
+        235
+      ]
+    },
+    {
+      "number": 26,
+      "name": "Distrito 26",
+      "region_number": 10,
+      "commune_numbers": [
+        254,
+        33,
+        8,
+        48,
+        76,
+        81,
+        239,
+        245,
+        246,
+        247,
+        233,
+        22,
+        51,
+        170,
+        39,
+        97,
+        105,
+        198
+      ]
+    },
+    {
+      "number": 27,
+      "name": "Distrito 27",
+      "region_number": 11,
+      "commune_numbers": [
+        16,
+        49,
+        103,
+        129,
+        72,
+        52,
+        187,
+        325,
+        44,
+        272
+      ]
+    },
+    {
+      "number": 28,
+      "name": "Distrito 28",
+      "region_number": 12,
+      "commune_numbers": [
+        225,
+        227,
+        319,
+        238,
+        130,
+        274,
+        287,
+        180,
+        324,
+        181,
+        11
+      ]
+    }
+  ],
+  "circumscriptions": [
+    {
+      "number": 1,
+      "name": "Circunscripción 1 - Arica y Parinacota",
+      "region_numbers": [
+        15
+      ],
+      "commune_numbers": [
+        15,
+        27,
+        243,
+        100
+      ]
+    },
+    {
+      "number": 2,
+      "name": "Circunscripción 2 - Tarapacá",
+      "region_numbers": [
+        1
+      ],
+      "commune_numbers": [
+        113,
+        4,
+        226,
+        28,
+        58,
+        108,
+        217
+      ]
+    },
+    {
+      "number": 3,
+      "name": "Circunscripción 3 - Antofagasta",
+      "region_numbers": [
+        2
+      ],
+      "commune_numbers": [
+        12,
+        171,
+        309,
+        313,
+        321,
+        166,
+        21,
+        189,
+        297
+      ]
+    },
+    {
+      "number": 4,
+      "name": "Circunscripción 4 - Atacama",
+      "region_numbers": [
+        3
+      ],
+      "commune_numbers": [
+        68,
+        23,
+        317,
+        330,
+        7,
+        94,
+        109,
+        41,
+        82
+      ]
+    },
+    {
+      "number": 5,
+      "name": "Circunscripción 5 - Coquimbo",
+      "region_numbers": [
+        4
+      ],
+      "commune_numbers": [
+        111,
+        29,
+        157,
+        278,
+        126,
+        69,
+        9,
+        122,
+        195,
+        334,
+        192,
+        62,
+        175,
+        237,
+        271
+      ]
+    },
+    {
+      "number": 6,
+      "name": "Circunscripción 6 - Valparaíso",
+      "region_numbers": [
+        5
+      ],
+      "commune_numbers": [
+        115,
+        152,
+        26,
+        268,
+        283,
+        252,
+        24,
+        104,
+        118,
+        185,
+        331,
+        32,
+        65,
+        116,
+        229,
+        257,
+        340,
+        123,
+        19,
+        202,
+        213,
+        344,
+        279,
+        5,
+        31,
+        87,
+        88,
+        308,
+        285,
+        34,
+        143,
+        201,
+        242,
+        306,
+        253,
+        139,
+        190,
+        337
+      ]
+    },
+    {
+      "number": 7,
+      "name": "Circunscripción 7 - Metropolitana de Santiago",
+      "region_numbers": [
+        13
+      ],
+      "commune_numbers": [
+        310,
+        86,
+        114,
+        193,
+        215,
+        124,
+        125,
+        135,
+        144,
+        145,
+        146,
+        161,
+        163,
+        346,
+        205,
+        216,
+        228,
+        231,
+        249,
+        256,
+        262,
+        264,
+        290,
+        293,
+        300,
+        339,
+        307,
+        37,
+        38,
+        64,
+        84,
+        91,
+        110,
+        112,
+        117,
+        120,
+        121,
+        59,
+        132,
+        318,
+        232,
+        221,
+        291,
+        280,
+        17,
+        25,
+        197,
+        173,
+        6,
+        75,
+        167,
+        296
+      ]
+    },
+    {
+      "number": 8,
+      "name": "Circunscripción 8 - O'Higgins",
+      "region_numbers": [
+        6
+      ],
+      "commune_numbers": [
+        259,
+        53,
+        56,
+        61,
+        83,
+        102,
+        134,
+        160,
+        164,
+        176,
+        188,
+        214,
+        218,
+        255,
+        265,
+        266,
+        302,
+        182,
+        203,
+        219,
+        119,
+        141,
+        165,
+        286,
+        42,
+        47,
+        147,
+        179,
+        199,
+        211,
+        223,
+        236,
+        304
+      ]
+    },
+    {
+      "number": 9,
+      "name": "Circunscripción 9 - Maule",
+      "region_numbers": [
+        7
+      ],
+      "commune_numbers": [
+        204,
+        140,
+        57,
+        149,
+        267,
+        289,
+        336,
+        341,
+        80,
+        106,
+        138,
+        174,
+        261,
+        275,
+        277,
+        315,
+        332,
+        35,
+        40,
+        207,
+        311,
+        66,
+        79,
+        89,
+        169,
+        206,
+        209,
+        270,
+        282,
+        299
+      ]
+    },
+    {
+      "number": 10,
+      "name": "Circunscripción 10 - Biobío",
+      "region_numbers": [
+        8
+      ],
+      "commune_numbers": [
+        63,
+        70,
+        43,
+        92,
+        107,
+        158,
+        210,
+        298,
+        305,
+        312,
+        323,
+        1,
+        137,
+        14,
+        36,
+        67,
+        77,
+        151,
+        320,
+        153,
+        13,
+        20,
+        131,
+        177,
+        178,
+        183,
+        248,
+        250,
+        301,
+        303,
+        328,
+        342,
+        2
+      ]
+    },
+    {
+      "number": 11,
+      "name": "Circunscripción 11 - La Araucanía",
+      "region_numbers": [
+        9
+      ],
+      "commune_numbers": [
+        10,
+        60,
+        74,
+        90,
+        150,
+        156,
+        159,
+        240,
+        263,
+        326,
+        333,
+        101,
+        136,
+        148,
+        172,
+        186,
+        194,
+        212,
+        222,
+        230,
+        276,
+        316,
+        322,
+        335,
+        338,
+        3,
+        314,
+        30,
+        73,
+        78,
+        93,
+        99
+      ]
+    },
+    {
+      "number": 12,
+      "name": "Circunscripción 12 - Los Ríos",
+      "region_numbers": [
+        14
+      ],
+      "commune_numbers": [
+        329,
+        71,
+        133,
+        154,
+        162,
+        168,
+        196,
+        200,
+        127,
+        98,
+        128,
+        269
+      ]
+    },
+    {
+      "number": 13,
+      "name": "Circunscripción 13 - Los Lagos",
+      "region_numbers": [
+        10
+      ],
+      "commune_numbers": [
+        254,
+        33,
+        8,
+        48,
+        76,
+        81,
+        239,
+        245,
+        246,
+        247,
+        273,
+        191,
+        234,
+        241,
+        244,
+        292,
+        295,
+        233,
+        22,
+        51,
+        95,
+        96,
+        155,
+        142,
+        170,
+        235,
+        39,
+        97,
+        105,
+        198
+      ]
+    },
+    {
+      "number": 14,
+      "name": "Circunscripción 14 - Aysén del General Carlos Ibáñez del Campo",
+      "region_numbers": [
+        11
+      ],
+      "commune_numbers": [
+        16,
+        49,
+        103,
+        129,
+        72,
+        52,
+        187,
+        325,
+        44,
+        272
+      ]
+    },
+    {
+      "number": 15,
+      "name": "Circunscripción 15 - Magallanes y de la Antártica Chilena",
+      "region_numbers": [
+        12
+      ],
+      "commune_numbers": [
+        225,
+        227,
+        319,
+        238,
+        130,
+        274,
+        287,
+        180,
+        324,
+        181,
+        11
+      ]
+    },
+    {
+      "number": 16,
+      "name": "Circunscripción 16 - Ñuble",
+      "region_numbers": [
+        16
+      ],
+      "commune_numbers": [
+        258,
+        50,
+        54,
+        184,
+        224,
+        260,
+        327,
+        281,
+        55,
+        345,
+        284,
+        294,
+        45,
+        18,
+        46,
+        85,
+        208,
+        220,
+        251,
+        288,
+        343
+      ]
+    }
+  ]
+}

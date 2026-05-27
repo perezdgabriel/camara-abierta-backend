@@ -10,6 +10,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session, selectinload
 
+from app.geography.dataset import GeographyDataset
 from app.models.base import global_sync_version_seq
 from app.models.core import Circumscription, Commune, District, Province, Region, Topic
 from app.models.diario_oficial import OfficialGazetteNorm, Regulation, RegulationStage
@@ -48,60 +49,6 @@ from app.models.votacion import Vote, VotingSession
 
 UNKNOWN_START_DATE = date(1900, 1, 1)
 
-DISTRICT_REGION_MAP: dict[int, int] = {
-    1: 1,
-    2: 1,
-    3: 2,
-    4: 3,
-    5: 4,
-    6: 4,
-    7: 5,
-    8: 5,
-    9: 5,
-    10: 5,
-    11: 5,
-    12: 13,
-    13: 13,
-    14: 13,
-    15: 13,
-    16: 13,
-    17: 13,
-    18: 13,
-    19: 13,
-    20: 6,
-    21: 6,
-    22: 7,
-    23: 7,
-    24: 16,
-    25: 8,
-    26: 8,
-    27: 9,
-    28: 14,
-}
-
-# Circumscription number -> region number. No upstream source exposes this
-# relation, so it is maintained by hand (mirrors DISTRICT_REGION_MAP).
-# Populate this dict, then re-run legislator ingestion to link circumscriptions
-# to regions via the circumscription_regions join table.
-CIRCUMSCRIPTION_REGION_MAP: dict[int, int] = {
-    1: 15,  # 1ª Circunscripción: Región de Arica y Parinacota
-    2: 1,  # 2ª Circunscripción: Región de Tarapacá
-    3: 2,  # 3ª Circunscripción: Región de Antofagasta
-    4: 3,  # 4ª Circunscripción: Región de Atacama
-    5: 4,  # 5ª Circunscripción: Región de Coquimbo
-    6: 5,  # 6ª Circunscripción: Región de Valparaíso
-    7: 13,  # 7ª Circunscripción: Región Metropolitana de Santiago
-    8: 6,  # 8ª Circunscripción: Región de O'Higgins
-    9: 7,  # 9ª Circunscripción: Región del Maule
-    10: 8,  # 10ª Circunscripción: Región del Biobío
-    11: 9,  # 11ª Circunscripción: Región de La Araucanía
-    12: 14,  # 12ª Circunscripción: Región de Los Ríos
-    13: 10,  # 13ª Circunscripción: Región de Los Lagos
-    14: 11,  # 14ª Circunscripción: Región de Aysén
-    15: 12,  # 15ª Circunscripción: Región de Magallanes y de la Antártica Chilena
-    16: 16,  # 16ª Circunscripción: Región de Ñuble
-}
-
 
 def _next_sync_value(db: Session) -> int:
     return db.execute(select(global_sync_version_seq.next_value())).scalar_one()
@@ -115,6 +62,15 @@ def _touch_syncable(db: Session, obj: Any) -> None:
 def _normalize_slug(value: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
     return slug[:100] or "sin-tema"
+
+
+def _set_syncable_attrs(db: Session, obj: Any, **attrs: Any) -> bool:
+    changed = False
+    for key, value in attrs.items():
+        if getattr(obj, key) != value:
+            setattr(obj, key, value)
+            changed = True
+    return changed
 
 
 def _parse_date(value: str | date | None) -> date | None:
@@ -286,29 +242,7 @@ def _get_or_create_circumscription(
         )
         db.add(circumscription)
         db.flush()
-    _link_circumscription_region(db, circumscription)
     return circumscription
-
-
-def _link_circumscription_region(db: Session, circumscription: Circumscription) -> None:
-    """Link a circumscription to its region via the hardcoded map.
-
-    Idempotent: re-running ingestion after editing CIRCUMSCRIPTION_REGION_MAP
-    picks up newly added entries. Circumscriptions with no map entry, or whose
-    target region has not been seeded, are left unlinked (no fabricated rows).
-    """
-    region_number = CIRCUMSCRIPTION_REGION_MAP.get(circumscription.number)
-    if region_number is None:
-        return
-    region = db.execute(
-        select(Region).where(Region.number == region_number)
-    ).scalar_one_or_none()
-    if region is None:
-        return
-    if region not in circumscription.regions:
-        circumscription.regions.append(region)
-        _touch_syncable(db, circumscription)
-        db.flush()
 
 
 def _upsert_topic_record(db: Session, name: str) -> tuple[Topic, bool]:
@@ -1551,148 +1485,185 @@ def upsert_session(db: Session, data: dict[str, Any]) -> LegislativeSession:
     return session
 
 
-def upsert_region(db: Session, data: dict[str, Any]) -> Region:
-    insert_stmt = pg_insert(Region).values(
-        number=int(data["number"]),
-        name=(data.get("name") or "")[:100],
-        capital=(
-            (data.get("provinces") or [{}])[0].get("name") or data.get("name") or ""
-        )[:100],
-    )
-    region_id = db.execute(
-        insert_stmt.on_conflict_do_update(
-            index_elements=["number"],
-            set_={
-                "name": insert_stmt.excluded.name,
-                "capital": insert_stmt.excluded.capital,
-                "updated_at": func.now(),
-                "sync_version": global_sync_version_seq.next_value(),
-            },
-        ).returning(Region.id)
-    ).scalar_one()
-    region = db.get(Region, region_id)
-    if region is None:
-        raise RuntimeError(f"Failed to load region id={region_id}")
-    changed = False
-
-    for province_payload in data.get("provinces") or []:
-        province_number = province_payload.get("number")
-        if not province_number:
-            continue
-        province_insert = pg_insert(Province).values(
-            number=int(province_number),
-            name=(province_payload.get("name") or "")[:200],
-            region_id=region.id,
+def apply_geography_dataset(db: Session, dataset: GeographyDataset) -> dict[str, int]:
+    existing_regions = {
+        region.number: region for region in db.execute(select(Region)).scalars().all()
+    }
+    existing_provinces = {
+        province.number: province
+        for province in db.execute(select(Province)).scalars().all()
+    }
+    existing_districts = {
+        district.number: district
+        for district in db.execute(select(District)).scalars().all()
+    }
+    existing_circumscriptions = {
+        circ.number: circ
+        for circ in db.execute(
+            select(Circumscription).options(selectinload(Circumscription.regions))
         )
-        province_id = db.execute(
-            province_insert.on_conflict_do_update(
-                index_elements=["number"],
-                set_={
-                    "name": province_insert.excluded.name,
-                    "region_id": province_insert.excluded.region_id,
-                    "updated_at": func.now(),
-                    "sync_version": global_sync_version_seq.next_value(),
-                },
-            ).returning(Province.id)
-        ).scalar_one()
-        for commune_payload in province_payload.get("communes") or []:
-            commune_number = commune_payload.get("number")
-            if not commune_number:
-                continue
-            commune_insert = pg_insert(Commune).values(
-                number=int(commune_number),
-                name=(commune_payload.get("name") or "")[:200],
-                province_id=province_id,
-                region_id=region.id,
-            )
-            db.execute(
-                commune_insert.on_conflict_do_update(
-                    index_elements=["number"],
-                    set_={
-                        "name": commune_insert.excluded.name,
-                        "province_id": commune_insert.excluded.province_id,
-                        "region_id": commune_insert.excluded.region_id,
-                        "updated_at": func.now(),
-                        "sync_version": global_sync_version_seq.next_value(),
-                    },
-                )
-            )
-            changed = True
+        .scalars()
+        .all()
+    }
+    existing_communes = {
+        commune.number: commune
+        for commune in db.execute(select(Commune)).scalars().all()
+    }
 
-    if changed:
-        _touch_syncable(db, region)
+    region_by_number: dict[int, Region] = {}
+    province_by_number: dict[int, Province] = {}
+    district_by_number: dict[int, District] = {}
+    circumscription_by_number: dict[int, Circumscription] = {}
+
+    commune_to_district = {
+        commune_number: district.number
+        for district in dataset.districts
+        for commune_number in district.commune_numbers
+    }
+    commune_to_circumscription = {
+        commune_number: circumscription.number
+        for circumscription in dataset.circumscriptions
+        for commune_number in circumscription.commune_numbers
+    }
+
+    for region_data in dataset.regions:
+        region = existing_regions.get(region_data.number)
+        if region is None:
+            region = Region(
+                number=region_data.number,
+                name=region_data.name,
+                capital=region_data.capital,
+            )
+            db.add(region)
+            existing_regions[region.number] = region
+        else:
+            changed = _set_syncable_attrs(
+                db,
+                region,
+                name=region_data.name,
+                capital=region_data.capital,
+            )
+            if changed:
+                _touch_syncable(db, region)
+        region_by_number[region_data.number] = region
+
+    for region_data in dataset.regions:
+        region = region_by_number[region_data.number]
+        for province_data in region_data.provinces:
+            province = existing_provinces.get(province_data.number)
+            if province is None:
+                province = Province(
+                    number=province_data.number,
+                    name=province_data.name,
+                    region=region,
+                )
+                db.add(province)
+                existing_provinces[province.number] = province
+            else:
+                changed = _set_syncable_attrs(db, province, name=province_data.name)
+                if province.region != region:
+                    province.region = region
+                    changed = True
+                if changed:
+                    _touch_syncable(db, province)
+            province_by_number[province_data.number] = province
+
+    for district_data in dataset.districts:
+        region = region_by_number[district_data.region_number]
+        district = existing_districts.get(district_data.number)
+        if district is None:
+            district = District(
+                number=district_data.number,
+                name=district_data.name,
+                region=region,
+            )
+            db.add(district)
+            existing_districts[district.number] = district
+        else:
+            changed = _set_syncable_attrs(db, district, name=district_data.name)
+            if district.region != region:
+                district.region = region
+                changed = True
+            if changed:
+                _touch_syncable(db, district)
+        district_by_number[district_data.number] = district
+
+    for circumscription_data in dataset.circumscriptions:
+        circumscription = existing_circumscriptions.get(circumscription_data.number)
+        if circumscription is None:
+            circumscription = Circumscription(
+                number=circumscription_data.number,
+                name=circumscription_data.name,
+            )
+            db.add(circumscription)
+            existing_circumscriptions[circumscription.number] = circumscription
+        else:
+            _set_syncable_attrs(db, circumscription, name=circumscription_data.name)
+        circumscription_by_number[circumscription_data.number] = circumscription
+
+    for region_data in dataset.regions:
+        region = region_by_number[region_data.number]
+        for province_data in region_data.provinces:
+            province = province_by_number[province_data.number]
+            for commune_data in province_data.communes:
+                district = district_by_number[commune_to_district[commune_data.number]]
+                circumscription = circumscription_by_number[
+                    commune_to_circumscription[commune_data.number]
+                ]
+                commune = existing_communes.get(commune_data.number)
+                if commune is None:
+                    commune = Commune(
+                        number=commune_data.number,
+                        name=commune_data.name,
+                        province=province,
+                        region=region,
+                        district=district,
+                        circumscription=circumscription,
+                    )
+                    db.add(commune)
+                    existing_communes[commune.number] = commune
+                else:
+                    changed = _set_syncable_attrs(db, commune, name=commune_data.name)
+                    if commune.province != province:
+                        commune.province = province
+                        changed = True
+                    if commune.region != region:
+                        commune.region = region
+                        changed = True
+                    if commune.district != district:
+                        commune.district = district
+                        changed = True
+                    if commune.circumscription != circumscription:
+                        commune.circumscription = circumscription
+                        changed = True
+                    if changed:
+                        _touch_syncable(db, commune)
+
+    for circumscription_data in dataset.circumscriptions:
+        circumscription = circumscription_by_number[circumscription_data.number]
+        changed = False
+        for region_number in circumscription_data.region_numbers:
+            region = region_by_number[region_number]
+            if region not in circumscription.regions:
+                circumscription.regions.append(region)
+                changed = True
+        if changed:
+            _touch_syncable(db, circumscription)
+
     db.flush()
-    return region
+    return {
+        "regions": len(dataset.regions),
+        "provinces": sum(len(region.provinces) for region in dataset.regions),
+        "communes": sum(
+            len(province.communes)
+            for region in dataset.regions
+            for province in region.provinces
+        ),
+        "districts": len(dataset.districts),
+        "circumscriptions": len(dataset.circumscriptions),
+    }
 
 
 def upsert_topic(db: Session, data: dict[str, Any]) -> Topic:
     topic, _ = _upsert_topic_record(db, data.get("name") or "")
     return topic
-
-
-def upsert_district(db: Session, data: dict[str, Any]) -> District:
-    number = int(data["number"])
-    region_number = DISTRICT_REGION_MAP.get(number, 13)
-    region = db.execute(
-        select(Region).where(Region.number == region_number)
-    ).scalar_one_or_none()
-    if region is None:
-        region = Region(
-            number=region_number, name=f"Region {region_number}", capital=""
-        )
-        db.add(region)
-        db.flush()
-
-    commune_names = [
-        commune.get("name")
-        for commune in (data.get("communes") or [])
-        if commune.get("name")
-    ]
-    district_name = (
-        ", ".join(commune_names[:5]) if commune_names else f"Distrito {number}"
-    )
-    insert_stmt = pg_insert(District).values(
-        number=number, name=district_name[:200], region_id=region.id
-    )
-    district_id = db.execute(
-        insert_stmt.on_conflict_do_update(
-            index_elements=["number"],
-            set_={
-                "name": insert_stmt.excluded.name,
-                "region_id": insert_stmt.excluded.region_id,
-                "updated_at": func.now(),
-                "sync_version": global_sync_version_seq.next_value(),
-            },
-        ).returning(District.id)
-    ).scalar_one()
-    district = db.get(District, district_id)
-    if district is None:
-        raise RuntimeError(f"Failed to load district id={district_id}")
-    linked = False
-    for commune_payload in data.get("communes") or []:
-        commune_number = commune_payload.get("number")
-        if not commune_number:
-            continue
-        commune_insert = pg_insert(Commune).values(
-            number=int(commune_number),
-            name=(commune_payload.get("name") or "")[:200],
-            region_id=region.id,
-            district_id=district.id,
-        )
-        db.execute(
-            commune_insert.on_conflict_do_update(
-                index_elements=["number"],
-                set_={
-                    "name": commune_insert.excluded.name,
-                    "region_id": commune_insert.excluded.region_id,
-                    "district_id": commune_insert.excluded.district_id,
-                    "updated_at": func.now(),
-                    "sync_version": global_sync_version_seq.next_value(),
-                },
-            )
-        )
-        linked = True
-    if linked:
-        _touch_syncable(db, district)
-    db.flush()
-    return district

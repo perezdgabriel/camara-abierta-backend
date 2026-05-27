@@ -113,10 +113,16 @@ class Commune(SyncableMixin, Base):
     district_id: Mapped[int | None] = mapped_column(
         ForeignKey("districts.id", ondelete="SET NULL")
     )
+    circumscription_id: Mapped[int | None] = mapped_column(
+        ForeignKey("circumscriptions.id", ondelete="SET NULL")
+    )
 
     province: Mapped[Province | None] = relationship(back_populates="communes")
     region: Mapped[Region] = relationship(back_populates="communes")
     district: Mapped[District | None] = relationship(back_populates="communes")
+    circumscription: Mapped["Circumscription | None"] = relationship(
+        back_populates="communes"
+    )
 
     def __str__(self) -> str:
         return self.name
@@ -128,6 +134,7 @@ class Circumscription(SyncableMixin, Base):
     number: Mapped[int] = mapped_column(SmallInteger, nullable=False, unique=True)
     name: Mapped[str] = mapped_column(String(200), nullable=False)
 
+    communes: Mapped[list["Commune"]] = relationship(back_populates="circumscription")
     regions: Mapped[list[Region]] = relationship(
         secondary=circumscription_regions,
         back_populates="circumscriptions",

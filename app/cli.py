@@ -28,6 +28,7 @@ def _list_jobs(_: argparse.Namespace) -> dict[str, list[str]]:
             "reference-data",
             "voting-sessions",
         ],
+        "loaders": ["geography"],
     }
 
 
@@ -90,6 +91,15 @@ def _run_reference_data(args: argparse.Namespace) -> dict[str, Any]:
     return {"job": "reference-data", **result}
 
 
+def _run_geography(args: argparse.Namespace) -> dict[str, Any]:
+    run_load_geography = _load_attr("app.geography.loader", "run_load_geography")
+    result = run_load_geography(
+        dataset_path=args.dataset,
+        dry_run=args.dry_run,
+    )
+    return {"job": "geography", **result}
+
+
 def _run_voting_sessions(args: argparse.Namespace) -> dict[str, Any]:
     run_ingest_voting_sessions = _load_attr(
         "app.tasks.ingestors", "run_ingest_voting_sessions"
@@ -101,7 +111,7 @@ def _run_voting_sessions(args: argparse.Namespace) -> dict[str, Any]:
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="python -m app.cli",
-        description="Run scrapers and legislative ingestors from the backend workspace.",
+        description="Run scrapers, ingestors, and manual data loaders from the backend workspace.",
     )
     parser.add_argument(
         "--log-level",
@@ -114,7 +124,7 @@ def _build_parser() -> argparse.ArgumentParser:
     subparsers.required = True
 
     list_parser = subparsers.add_parser(
-        "list", help="List available scrapers and ingestors."
+        "list", help="List available scrapers, ingestors, and loaders."
     )
     list_parser.set_defaults(runner=_list_jobs)
 
@@ -209,9 +219,23 @@ def _build_parser() -> argparse.ArgumentParser:
     reference_data_parser = ingestor_subparsers.add_parser(
         "reference-data",
         parents=[dry_run_parent],
-        help="Fetch and enqueue reference data sync jobs.",
+        help="Fetch and enqueue topic reference-data sync jobs.",
     )
     reference_data_parser.set_defaults(runner=_run_reference_data)
+
+    geography_parser = subparsers.add_parser(
+        "geography",
+        parents=[dry_run_parent],
+        help="Load the checked-in geography baseline synchronously.",
+    )
+    geography_parser.add_argument(
+        "--dataset",
+        help=(
+            "Optional path to a geography dataset JSON file. "
+            "Defaults to the checked-in baseline."
+        ),
+    )
+    geography_parser.set_defaults(runner=_run_geography)
 
     voting_parser = ingestor_subparsers.add_parser(
         "voting-sessions",

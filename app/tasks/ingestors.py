@@ -16,8 +16,8 @@ from app.ingestors.clients.opendata_camara_async import (
     fetch_voting_details_parallel,
 )
 from app.ingestors.clients.senado import SenadoClient
-from app.ingestors.clients.senado_web import SenadoWebClient
 from app.ingestors.clients.senado_async import fetch_bills_parallel
+from app.ingestors.clients.senado_web import SenadoWebClient
 from app.ingestors.parsers.bills import BillParser
 from app.ingestors.parsers.committees import CommitteeParser
 from app.ingestors.parsers.legislators import LegislatorParser
@@ -29,7 +29,7 @@ from app.tasks.bills import sync_bill
 from app.tasks.committees import sync_committee
 from app.tasks.legislators import sync_legislator
 from app.tasks.legislature import sync_period, sync_session
-from app.tasks.reference import sync_district, sync_region, sync_topic
+from app.tasks.reference import sync_topic
 from app.tasks.voting import sync_voting_session
 
 logger = logging.getLogger(__name__)
@@ -417,30 +417,6 @@ def run_ingest_reference_data(*, dry_run: bool = False) -> dict[str, Any]:
 
     try:
         with OpenDataCamaraClient() as opendata:
-            for region in opendata.get_regiones():
-                try:
-                    if region.get("number"):
-                        if not dry_run:
-                            _dispatch(sync_region, region)
-                        dispatched += 1
-                except Exception:
-                    logger.exception(
-                        "Failed to parse region number=%s", region.get("number")
-                    )
-                    errors += 1
-            time.sleep(REQUEST_DELAY)
-            for district in opendata.get_distritos():
-                try:
-                    if district.get("number"):
-                        if not dry_run:
-                            _dispatch(sync_district, district)
-                        dispatched += 1
-                except Exception:
-                    logger.exception(
-                        "Failed to parse district number=%s", district.get("number")
-                    )
-                    errors += 1
-            time.sleep(REQUEST_DELAY)
             for topic in opendata.get_materias():
                 try:
                     if topic.get("name"):
