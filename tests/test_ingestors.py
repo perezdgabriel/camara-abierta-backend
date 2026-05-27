@@ -461,29 +461,29 @@ def test_run_ingest_bills_merges_opendata_detail_before_dispatch(monkeypatch):
         assert bulletins == ["111-06"]
         return [("111-06", {"bulletin": "111-06", "title": "Uno"})]
 
+    async def fake_fetch_bill_details_parallel(bulletins: list[str]):
+        assert bulletins == ["111-06"]
+        return [
+            (
+                "111-06",
+                {
+                    "sponsoring_ministries": [
+                        {"id": 12, "name": "Ministerio de Hacienda"}
+                    ],
+                    "chamber_votes": [{"id": 88980}],
+                },
+            )
+        ]
+
     async def fake_fetch_voting_details_parallel(voting_ids: list[int]):
         assert voting_ids == [88980]
         return [(88980, {"id": 88980, "individual_votes": [{"deputy_id": 803}]})]
-
-    class FakeOpenDataCamaraClient:
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *args):
-            return None
-
-        def get_bill_detail(self, bulletin_number: str):
-            assert bulletin_number == "111-06"
-            return {
-                "sponsoring_ministries": [{"id": 12, "name": "Ministerio de Hacienda"}],
-                "chamber_votes": [{"id": 88980}],
-            }
 
     monkeypatch.setattr(
         ingestor_tasks, "fetch_bills_parallel", fake_fetch_bills_parallel
     )
     monkeypatch.setattr(
-        ingestor_tasks, "OpenDataCamaraClient", FakeOpenDataCamaraClient
+        ingestor_tasks, "fetch_bill_details_parallel", fake_fetch_bill_details_parallel
     )
     monkeypatch.setattr(
         ingestor_tasks,
@@ -533,6 +533,10 @@ def test_run_ingest_voting_sessions_dispatches_chamber_votes_from_opendata(
 ):
     dispatched: list[tuple[object, dict, str]] = []
 
+    async def fake_fetch_bill_details_parallel(bulletins: list[str]):
+        assert bulletins == ["111-06"]
+        return [("111-06", {"chamber_votes": [{"id": 88980}]})]
+
     async def fake_fetch_voting_details_parallel(voting_ids: list[int]):
         assert voting_ids == [88980]
         return [(88980, {"id": 88980, "individual_votes": [{"deputy_id": 803}]})]
@@ -550,20 +554,9 @@ def test_run_ingest_voting_sessions_dispatches_chamber_votes_from_opendata(
         def get_votes_by_bulletin(self, bulletin: str) -> list[dict]:
             return []
 
-    class FakeOpenDataCamaraClient:
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *args):
-            return None
-
-        def get_bill_detail(self, bulletin_number: str):
-            assert bulletin_number == "111-06"
-            return {"chamber_votes": [{"id": 88980}]}
-
     monkeypatch.setattr(ingestor_tasks, "SenadoClient", FakeSenadoClient)
     monkeypatch.setattr(
-        ingestor_tasks, "OpenDataCamaraClient", FakeOpenDataCamaraClient
+        ingestor_tasks, "fetch_bill_details_parallel", fake_fetch_bill_details_parallel
     )
     monkeypatch.setattr(
         ingestor_tasks,
