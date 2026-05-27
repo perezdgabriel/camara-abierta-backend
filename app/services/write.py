@@ -1241,6 +1241,9 @@ def upsert_legislator(db: Session, data: dict[str, Any]) -> Legislator:
         birth_date=_parse_date(data.get("birth_date")),
         email=(data.get("email") or "")[:255] or None,
         phone=(data.get("phone") or "")[:50] or None,
+        photo_url=(data.get("photo_url") or "")[:500] or None,
+        photo_thumbnail_url=(data.get("photo_thumbnail_url") or "")[:500] or None,
+        profile_url=(data.get("profile_url") or "")[:500] or None,
         chamber_type=_coerce_enum(
             ChamberType,
             data.get("chamber_type"),
@@ -1262,6 +1265,9 @@ def upsert_legislator(db: Session, data: dict[str, Any]) -> Legislator:
                 "birth_date": insert_stmt.excluded.birth_date,
                 "email": insert_stmt.excluded.email,
                 "phone": insert_stmt.excluded.phone,
+                "photo_url": insert_stmt.excluded.photo_url,
+                "photo_thumbnail_url": insert_stmt.excluded.photo_thumbnail_url,
+                "profile_url": insert_stmt.excluded.profile_url,
                 "chamber_type": insert_stmt.excluded.chamber_type,
                 "party_id": insert_stmt.excluded.party_id,
                 "district_id": insert_stmt.excluded.district_id,
@@ -1281,6 +1287,56 @@ def upsert_legislator(db: Session, data: dict[str, Any]) -> Legislator:
     if _reconcile_terms(db, legislator, data.get("_militancias") or []):
         _touch_syncable(db, legislator)
     db.flush()
+    return legislator
+
+
+def enrich_legislator_profile(
+    db: Session, bcn_id: str, fields: dict[str, Any]
+) -> Legislator | None:
+    """Partially update an existing legislator with scraped profile data.
+
+    Matches by ``bcn_id`` and writes ONLY the enrichment columns
+    (``district`` via ``district_number``, ``photo_url``, ``photo_thumbnail_url``,
+    ``biography``, ``profile_url``). Never touches party, name, or is_active, so the
+    OpenData-sourced identity/party data (ADR-0001) is preserved. Returns ``None`` if
+    no legislator matches (caller should log and skip).
+    """
+    legislator = db.execute(
+        select(Legislator).where(Legislator.bcn_id == bcn_id)
+    ).scalar_one_or_none()
+    if legislator is None:
+        return None
+
+    changed = False
+
+    district_number = fields.get("district_number")
+    if district_number:
+        district = db.execute(
+            select(District).where(District.number == district_number)
+        ).scalar_one_or_none()
+        if district is not None and legislator.district_id != district.id:
+            legislator.district_id = district.id
+            changed = True
+
+    for column, max_len in (
+        ("photo_url", 500),
+        ("photo_thumbnail_url", 500),
+        ("profile_url", 500),
+        ("biography", None),
+    ):
+        value = fields.get(column)
+        if not value:
+            continue
+        value = str(value).strip()
+        if max_len is not None:
+            value = value[:max_len]
+        if getattr(legislator, column) != value:
+            setattr(legislator, column, value)
+            changed = True
+
+    if changed:
+        _touch_syncable(db, legislator)
+        db.flush()
     return legislator
 
 

@@ -128,3 +128,44 @@ def test_get_or_create_circumscription_skips_when_unmapped(monkeypatch):
     assert circumscription is not None
     assert circumscription.number == 7
     assert list(circumscription.regions) == []
+
+
+def test_enrich_legislator_profile_sets_district_and_photo_only(monkeypatch):
+    monkeypatch.setattr(write, "_touch_syncable", lambda db_session, obj: None)
+
+    legislator = SimpleNamespace(
+        bcn_id="camara:1254",
+        district_id=None,
+        party_id=77,  # OpenData-sourced; must be left untouched
+        photo_url=None,
+        photo_thumbnail_url=None,
+        profile_url=None,
+        biography=None,
+    )
+    district = SimpleNamespace(id=8, number=8)
+    db = FakeDB(legislator, district)  # legislator lookup, then district lookup
+
+    result = write.enrich_legislator_profile(
+        db,
+        "camara:1254",
+        {
+            "district_number": 8,
+            "photo_url": "https://img/x.jpg",
+            "profile_url": "https://camara.cl/x",
+        },
+    )
+
+    assert result is legislator
+    assert legislator.district_id == 8
+    assert legislator.photo_url == "https://img/x.jpg"
+    assert legislator.profile_url == "https://camara.cl/x"
+    assert legislator.party_id == 77  # untouched (ADR-0001)
+    assert db.flush_count == 1
+
+
+def test_enrich_legislator_profile_returns_none_when_unmatched():
+    db = FakeDB(None)  # no legislator with this bcn_id
+
+    result = write.enrich_legislator_profile(db, "camara:9999", {"district_number": 5})
+
+    assert result is None

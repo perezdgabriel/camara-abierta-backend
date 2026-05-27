@@ -140,6 +140,7 @@ class Legislator(SyncableMixin, Base):
     biography: Mapped[str | None] = mapped_column(Text)
     photo_url: Mapped[str | None] = mapped_column(String(500))
     photo_thumbnail_url: Mapped[str | None] = mapped_column(String(500))
+    profile_url: Mapped[str | None] = mapped_column(String(500))
     email: Mapped[str | None] = mapped_column(String(255))
     phone: Mapped[str | None] = mapped_column(String(50))
     website: Mapped[str | None] = mapped_column(String(500))

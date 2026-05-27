@@ -96,6 +96,8 @@ class LegislatorDetail(LegislatorSummary):
     phone: str | None = None
     website: str | None = None
     photo_url: str | None = None
+    profile_url: str | None = None
+    biography: str | None = None
     terms: list[LegislatorTermItem] = Field(default_factory=list)
     committee_memberships: list[CommitteeMembershipItem] = Field(default_factory=list)
     voting_stats: LegislatorVotingStatsSummary | None = None
