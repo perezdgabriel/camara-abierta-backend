@@ -1,6 +1,7 @@
 from datetime import date
 
 from app.core.celery_app import app
+from app.scrapers.camara_diputados import run_scrape as run_diputados_scrape
 from app.scrapers.cgr_reglamentos import run_scrape as run_reglamentos_scrape
 from app.scrapers.diario_oficial import run_scrape as run_diario_scrape
 from app.tasks.base import DatabaseTask
@@ -27,3 +28,14 @@ def scrape_diario_oficial(self, target_date: str | None = None) -> dict:
 )
 def scrape_cgr_reglamentos(self) -> dict:
     return run_reglamentos_scrape()
+
+
+@app.task(
+    name="app.tasks.scrapers.scrape_camara_diputados",
+    bind=True,
+    base=DatabaseTask,
+    soft_time_limit=600,
+    time_limit=600,
+)
+def scrape_camara_diputados(self) -> dict:
+    return run_diputados_scrape()

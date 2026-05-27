@@ -19,7 +19,7 @@ def _load_attr(module_name: str, attr_name: str) -> Any:
 
 def _list_jobs(_: argparse.Namespace) -> dict[str, list[str]]:
     return {
-        "scrapers": ["diario-oficial", "cgr-reglamentos"],
+        "scrapers": ["diario-oficial", "cgr-reglamentos", "diputados"],
         "ingestors": [
             "bills",
             "legislators",
@@ -46,6 +46,12 @@ def _run_cgr_reglamentos(args: argparse.Namespace) -> dict[str, Any]:
     run_scrape = _load_attr("app.scrapers.cgr_reglamentos", "run_scrape")
     result = run_scrape(engine=args.engine, headed=args.headed, dry_run=args.dry_run)
     return {"job": "cgr-reglamentos", **result}
+
+
+def _run_diputados(args: argparse.Namespace) -> dict[str, Any]:
+    run_scrape = _load_attr("app.scrapers.camara_diputados", "run_scrape")
+    result = run_scrape(engine=args.engine, headed=args.headed, dry_run=args.dry_run)
+    return {"job": "diputados", **result}
 
 
 def _run_bills(args: argparse.Namespace) -> dict[str, Any]:
@@ -153,6 +159,13 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Run the CGR reglamentos scraper.",
     )
     cgr_parser.set_defaults(runner=_run_cgr_reglamentos)
+
+    diputados_parser = scraper_subparsers.add_parser(
+        "diputados",
+        parents=[dry_run_parent, scraper_common_parent],
+        help="Scrape camara.cl to enrich deputies with district + photo.",
+    )
+    diputados_parser.set_defaults(runner=_run_diputados)
 
     ingestor_parsers = subparsers.add_parser("ingestors", help="Run ingestor jobs.")
     ingestor_subparsers = ingestor_parsers.add_subparsers(dest="ingestor")
