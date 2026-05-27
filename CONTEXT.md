@@ -57,7 +57,7 @@ No cross-domain references exist between them.
 A core feature. Legislative language and official gazette content are simplified for the general public. Bills get `ai_summary`. Normas get executive summaries, key points, beneficiaries, and citizen importance ratings. LLM providers (Gemini, OpenWebUI/Ollama) are interchangeable — the strategy is to minimize cost.
 
 **Geography**:
-Chile's administrative and electoral geography: `Region`, `Province`, `Commune` (administrative), `District` (Chamber of Deputies), `Circumscription` (Senate). Users find their representatives by selecting their commune, which maps to a district and circumscription. No upstream source exposes the district→region or circumscription→region links, so both are maintained by hand as the hardcoded `DISTRICT_REGION_MAP` and `CIRCUMSCRIPTION_REGION_MAP` dicts in `app/services/write.py`.
+Chile's administrative and electoral geography: `Region`, `Province`, `Commune` (administrative), `District` (Chamber of Deputies), `Circumscription` (Senate). Users find their representatives by selecting their commune, which maps to both a district and a circumscription. The authoritative current baseline is the checked-in dataset at `app/geography/data/chile_current.json`, loaded manually with `python -m app.cli geography` and applied atomically via `apply_geography_dataset`. The live `reference-data` ingest is topic-only; geography is no longer fetched from OpenData. `IngestorState(entity_type="geography")` stores the applied dataset version in `last_cursor`.
 
 **Search**:
 Elasticsearch indexes bills for full-text search across titles, summaries, and full text. Other domains (normas, reglamentos) use filtered DB queries.

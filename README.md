@@ -94,8 +94,9 @@ celery -A app.core.celery_app worker -Q default,llm -c 4 --loglevel=info
 # Beat scheduler
 celery -A app.core.celery_beat beat --loglevel=info
 
-# CLI manual de scrapers e ingestors
+# CLI manual de scrapers, ingestors y loaders
 python -m app.cli list
+python -m app.cli geography --dry-run
 python -m app.cli scrapers diario-oficial --target-date 2026-05-04 --dry-run
 python -m app.cli scrapers cgr-reglamentos --dry-run
 python -m app.cli ingestors bills --since 2026-05-01 --dry-run
@@ -134,21 +135,30 @@ python scripts/recreate_db.py --yes
 
 Durante esta etapa temprana del proyecto, el flujo recomendado es modificar los modelos SQLAlchemy y volver a ejecutar el script, en lugar de acumular migraciones intermedias. El resultado queda consolidado en una sola revision base `*_initial_schema.py`.
 
-## CLI de scrapers e ingestors
+## CLI de scrapers, ingestors y loaders
 
 ```bash
 # Ver los jobs disponibles
 python -m app.cli list
+
+# Geography baseline manual y versionado
+python -m app.cli geography
+python -m app.cli geography --dry-run
 
 # Scrapers
 python -m app.cli scrapers diario-oficial --target-date 2026-05-04
 python -m app.cli scrapers cgr-reglamentos --dry-run
 
 # Ingestors
+python -m app.cli ingestors reference-data
 python -m app.cli ingestors bills --since 2026-05-01 --dry-run
 python -m app.cli ingestors bills --bulletin 17123-06
 python -m app.cli ingestors voting-sessions --since 2026-05-03
 ```
+
+`python -m app.cli geography` aplica el baseline geográfico versionado desde `app/geography/data/chile_current.json` en una sola transacción y registra la versión cargada en `ingestor_state` con `entity_type="geography"`.
+
+`python -m app.cli ingestors reference-data` ahora sincroniza solo temas (`Topic`). La geografía ya no se toma desde APIs en vivo.
 
 `--dry-run` ejecuta la recoleccion y el parseo, pero no encola tareas downstream ni actualiza `ingestor_state`.
 
