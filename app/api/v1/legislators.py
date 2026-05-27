@@ -19,14 +19,37 @@ router = APIRouter(tags=["Legislators"])
 
 @router.get("", response_model=LegislatorsResponse)
 def list_legislators(
+    q: str | None = Query(
+        None, description="Case-insensitive partial match on legislator full name"
+    ),
     party: str | None = Query(
-        None, description="Partial match on political party name"
+        None,
+        description=(
+            "Exact match on political party abbreviation. Use the sentinel "
+            f"`{legislators_service.PARTY_INDEPENDENT_SENTINEL}` to filter "
+            "independents (party_id IS NULL)."
+        ),
     ),
     district: int | None = Query(None, ge=1, description="District number"),
     circumscription: int | None = Query(
         None, ge=1, description="Circumscription number"
     ),
+    region: int | None = Query(
+        None,
+        ge=1,
+        description=(
+            "Region id. For Deputies matches District.region_id; for Senators "
+            "matches Circumscription↔Region (many-to-many)."
+        ),
+    ),
     chamber_type: ChamberType | None = Query(None, description="Legislative chamber"),
+    include_inactive: bool = Query(
+        False,
+        description=(
+            "If false (default), only active legislators are returned. Set to "
+            "true to include inactive (historical) legislators alongside active."
+        ),
+    ),
     offset: int = Query(legislators_service.DEFAULT_OFFSET, ge=0),
     limit: int = Query(
         legislators_service.DEFAULT_LIMIT, ge=1, le=legislators_service.MAX_LIMIT
@@ -35,10 +58,13 @@ def list_legislators(
 ):
     total, rows = legislators_service.list_legislators(
         db=db,
+        q=q,
         party=party,
         district=district,
         circumscription=circumscription,
+        region=region,
         chamber_type=chamber_type,
+        include_inactive=include_inactive,
         offset=offset,
         limit=limit,
     )

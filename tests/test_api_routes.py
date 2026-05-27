@@ -239,10 +239,62 @@ def test_legislators_endpoint_uses_new_prefix_and_canonical_chamber_filter(
     assert captured["db"] is fake_db
     assert captured["chamber_type"] is ChamberType.SENATE
     assert captured["district"] == 8
+    # Active-only default: include_inactive must be False unless explicitly set
+    assert captured["include_inactive"] is False
     body = response.json()
     assert body["count"] == 1
     assert body["data"][0]["full_name"] == "Ada Demo"
     assert body["data"][0]["chamber_type"] == "senate"
+
+
+def test_legislators_endpoint_forwards_new_filters(client, monkeypatch):
+    captured: dict[str, object] = {}
+
+    def fake_list_legislators(db, **kwargs):
+        captured.update(kwargs)
+        return 0, []
+
+    monkeypatch.setattr(
+        legislators_api.legislators_service, "list_legislators", fake_list_legislators
+    )
+
+    response = client.get(
+        "/api/v1/legislators",
+        params={
+            "q": "ara",
+            "party": "PS",
+            "region": 5,
+            "chamber_type": "deputies",
+            "include_inactive": "true",
+        },
+    )
+
+    assert response.status_code == 200
+    assert captured["q"] == "ara"
+    assert captured["party"] == "PS"
+    assert captured["region"] == 5
+    assert captured["chamber_type"] is ChamberType.DEPUTIES
+    assert captured["include_inactive"] is True
+
+
+def test_legislators_endpoint_forwards_independent_sentinel(client, monkeypatch):
+    captured: dict[str, object] = {}
+
+    def fake_list_legislators(db, **kwargs):
+        captured.update(kwargs)
+        return 0, []
+
+    monkeypatch.setattr(
+        legislators_api.legislators_service, "list_legislators", fake_list_legislators
+    )
+
+    response = client.get(
+        "/api/v1/legislators",
+        params={"party": "__independent__"},
+    )
+
+    assert response.status_code == 200
+    assert captured["party"] == "__independent__"
 
 
 def test_voting_sessions_endpoint_uses_new_prefix_and_serializes_summary(

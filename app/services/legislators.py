@@ -1,7 +1,7 @@
-from sqlalchemy import case, func
+from sqlalchemy import ColumnElement, case, func
 from sqlalchemy.orm import Session, joinedload, selectinload
 
-from app.models.core import Circumscription, District, Topic
+from app.models.core import Circumscription, District, Region, Topic
 from app.models.enums import ChamberType, VoteChoice
 from app.models.legislature import (
     Committee,
@@ -18,6 +18,12 @@ DEFAULT_LIMIT = 50
 MAX_LIMIT = 200
 DEFAULT_RECORD_LIMIT = 60
 TOPIC_AFFINITY_LIMIT = 8
+
+# Sentinel value for `party` query param meaning "Legislator.party_id IS NULL".
+# Independents are not a party (see CONTEXT.md "Independent legislator") so we
+# can't filter them by abbreviation. A sentinel keeps the API contract simple
+# without inventing an Independent party row.
+PARTY_INDEPENDENT_SENTINEL = "__independent__"
 
 
 def _count_choice(choice: VoteChoice):
@@ -114,10 +120,13 @@ def get_legislator_topic_affinity(db: Session, legislator_id: int) -> list[dict]
 def list_legislators(
     db: Session,
     *,
+    q: str | None,
     party: str | None,
     district: int | None,
     circumscription: int | None,
+    region: int | None,
     chamber_type: ChamberType | None,
+    include_inactive: bool,
     offset: int,
     limit: int,
 ) -> tuple[int, list[Legislator]]:
@@ -128,23 +137,48 @@ def list_legislators(
     )
     count_query = db.query(func.count(Legislator.id))
 
-    if party:
-        clause = Legislator.party.has(PoliticalParty.name.ilike(f"%{party}%"))
-        query = query.filter(clause)
-        count_query = count_query.filter(clause)
-    if district is not None:
-        clause = Legislator.district.has(District.number == district)
-        query = query.filter(clause)
-        count_query = count_query.filter(clause)
-    if circumscription is not None:
-        clause = Legislator.circumscription.has(
-            Circumscription.number == circumscription
+    filters: list[ColumnElement[bool]] = []
+    if q:
+        filters.append(Legislator.full_name.ilike(f"%{q}%"))
+    if party == PARTY_INDEPENDENT_SENTINEL:
+        filters.append(Legislator.party_id.is_(None))
+    elif party:
+        filters.append(
+            Legislator.party.has(PoliticalParty.abbreviation == party),
         )
+    if district is not None:
+        filters.append(Legislator.district.has(District.number == district))
+    if circumscription is not None:
+        filters.append(
+            Legislator.circumscription.has(Circumscription.number == circumscription),
+        )
+    if region is not None:
+        if chamber_type == ChamberType.DEPUTIES:
+            filters.append(Legislator.district.has(District.region_id == region))
+        elif chamber_type == ChamberType.SENATE:
+            filters.append(
+                Legislator.circumscription.has(
+                    Circumscription.regions.any(Region.id == region),
+                ),
+            )
+        else:
+            # No chamber selected: match a legislator whose district OR
+            # circumscription is in the region. Senators' circumscriptions are
+            # many-to-many with regions (see app/models/core.py).
+            filters.append(
+                Legislator.district.has(District.region_id == region)
+                | Legislator.circumscription.has(
+                    Circumscription.regions.any(Region.id == region),
+                ),
+            )
+    if chamber_type is not None:
+        filters.append(Legislator.chamber_type == chamber_type)
+    if not include_inactive:
+        filters.append(Legislator.is_active.is_(True))
+
+    for clause in filters:
         query = query.filter(clause)
         count_query = count_query.filter(clause)
-    if chamber_type is not None:
-        query = query.filter(Legislator.chamber_type == chamber_type)
-        count_query = count_query.filter(Legislator.chamber_type == chamber_type)
 
     total = count_query.scalar() or 0
     rows = (
