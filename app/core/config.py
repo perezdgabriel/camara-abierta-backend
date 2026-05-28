@@ -53,6 +53,10 @@ class Settings(BaseSettings):
         default="https://web-back.senado.cl/",
         alias="INGESTOR_BASE_URL_SENADO_WEB",
     )
+    ingestor_base_url_bcn: str = Field(
+        default="https://datos.bcn.cl/",
+        alias="INGESTOR_BASE_URL_BCN",
+    )
     ingestor_bills_start_year: int = Field(
         default=2026,
         alias="INGESTOR_BILLS_START_YEAR",

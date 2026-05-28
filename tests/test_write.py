@@ -147,10 +147,9 @@ def test_get_or_create_circumscription_does_not_fabricate_region_links():
     assert list(circumscription.regions) == []
 
 
-def test_enrich_legislator_profile_sets_district_and_photo_only(monkeypatch):
-    monkeypatch.setattr(write, "_touch_syncable", lambda db_session, obj: None)
-
-    legislator = SimpleNamespace(
+def _enrichment_legislator(**overrides):
+    """A SimpleNamespace pre-populated with every column enrich_legislator_profile touches."""
+    base = dict(
         bcn_id="camara:1254",
         district_id=None,
         party_id=77,  # OpenData-sourced; must be left untouched
@@ -158,7 +157,20 @@ def test_enrich_legislator_profile_sets_district_and_photo_only(monkeypatch):
         photo_thumbnail_url=None,
         profile_url=None,
         biography=None,
+        bcn_uri=None,
+        bcn_wiki_url=None,
+        profession=None,
+        twitter_handle=None,
+        gender=None,
     )
+    base.update(overrides)
+    return SimpleNamespace(**base)
+
+
+def test_enrich_legislator_profile_sets_district_and_photo_only(monkeypatch):
+    monkeypatch.setattr(write, "_touch_syncable", lambda db_session, obj: None)
+
+    legislator = _enrichment_legislator()
     district = SimpleNamespace(id=8, number=8)
     db = FakeDB(legislator, district)  # legislator lookup, then district lookup
 
@@ -186,3 +198,114 @@ def test_enrich_legislator_profile_returns_none_when_unmatched():
     result = write.enrich_legislator_profile(db, "camara:9999", {"district_number": 5})
 
     assert result is None
+
+
+def test_enrich_legislator_profile_writes_bcn_sourced_enrichment_fields(monkeypatch):
+    monkeypatch.setattr(write, "_touch_syncable", lambda db_session, obj: None)
+
+    legislator = _enrichment_legislator()
+    db = FakeDB(legislator)  # no district lookup since district_number is omitted
+
+    result = write.enrich_legislator_profile(
+        db,
+        "camara:1254",
+        {
+            "bcn_uri": "http://datos.bcn.cl/recurso/persona/4558",
+            "bcn_wiki_url": "https://www.bcn.cl/historiapolitica/resenas/Carter",
+            "profession": "Diseñador Industrial",
+            "twitter_handle": "Alvaro_CarterF",
+            "gender": "M",
+            "photo_url": "https://www.bcn.cl/laborparlamentaria/imagen/4558.jpg",
+        },
+    )
+
+    assert result is legislator
+    assert legislator.bcn_uri.endswith("/persona/4558")
+    assert legislator.bcn_wiki_url.startswith("https://www.bcn.cl/historiapolitica/")
+    assert legislator.profession == "Diseñador Industrial"
+    assert legislator.twitter_handle == "Alvaro_CarterF"
+    assert legislator.gender == "M"
+    assert legislator.photo_url.endswith("/4558.jpg")
+    assert legislator.party_id == 77  # ADR-0001 invariant
+
+
+def test_enrich_legislator_profile_truncates_to_column_max_lengths(monkeypatch):
+    monkeypatch.setattr(write, "_touch_syncable", lambda db_session, obj: None)
+
+    legislator = _enrichment_legislator()
+    db = FakeDB(legislator)
+
+    write.enrich_legislator_profile(
+        db,
+        "camara:1254",
+        {
+            "twitter_handle": "x" * 200,  # 50 char column
+            "profession": "y" * 500,  # 200 char column
+        },
+    )
+
+    assert len(legislator.twitter_handle) == 50
+    assert len(legislator.profession) == 200
+
+
+def test_upsert_parliamentary_appointment_creates_when_new(monkeypatch):
+    monkeypatch.setattr(write, "_touch_syncable", lambda db_session, obj: None)
+    chamber = SimpleNamespace(id=42)
+    monkeypatch.setattr(
+        write,
+        "_get_or_create_chamber",
+        lambda db_session, chamber_type: chamber,
+    )
+
+    db = FakeDB(None)  # no existing appointment
+
+    appointment = write.upsert_parliamentary_appointment(
+        db,
+        legislator_id=7,
+        bcn_appointment_uri="http://datos.bcn.cl/recurso/persona/4558/nombramiento/2",
+        chamber_type=ChamberType.SENATE,
+        start_date="2022-03-11",
+        end_date="2030-03-11",
+    )
+
+    assert appointment in db.added
+    assert appointment.legislator_id == 7
+    assert appointment.chamber_id == 42
+    assert appointment.start_date == "2022-03-11"
+    assert appointment.end_date == "2030-03-11"
+
+
+def test_upsert_parliamentary_appointment_updates_existing(monkeypatch):
+    touched: list[object] = []
+    monkeypatch.setattr(
+        write, "_touch_syncable", lambda db_session, obj: touched.append(obj)
+    )
+    chamber = SimpleNamespace(id=42)
+    monkeypatch.setattr(
+        write,
+        "_get_or_create_chamber",
+        lambda db_session, chamber_type: chamber,
+    )
+
+    existing = SimpleNamespace(
+        legislator_id=7,
+        chamber_id=42,
+        bcn_appointment_uri="http://x/y/z",
+        start_date="2022-03-11",
+        end_date="2026-03-11",  # outdated end date
+    )
+    db = FakeDB(existing)
+
+    result = write.upsert_parliamentary_appointment(
+        db,
+        legislator_id=7,
+        bcn_appointment_uri="http://x/y/z",
+        chamber_type=ChamberType.SENATE,
+        start_date="2022-03-11",
+        end_date="2030-03-11",
+    )
+
+    assert result is existing
+    assert existing.end_date == "2030-03-11"
+    assert existing in touched
+    assert db.added == []  # not re-added

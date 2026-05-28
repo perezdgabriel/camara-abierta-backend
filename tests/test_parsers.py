@@ -407,3 +407,133 @@ def test_legislator_parser_maps_female_senator_gender():
         {"ID_PARLAMENTARIO": 1, "SEXO": "1", "SEXO_ETIQUETA": "Mujer"}
     )
     assert payload["gender"] == "F"
+
+
+def test_legislator_parser_bcn_roster_row_for_senator_uses_idsenado_as_bcn_id():
+    row = {
+        "personUri": "http://datos.bcn.cl/recurso/persona/4558",
+        "appointmentUri": "http://datos.bcn.cl/recurso/persona/4558/nombramiento/5",
+        "cargoId": "2",
+        "idSenado": "1234",
+        "idCamara": None,
+        "full_name": "Ana Pérez Soto",
+        "term_start": "2022-03-11",
+        "term_end": "2030-03-11",
+    }
+
+    payload = LegislatorParser.parse_bcn_roster_row(row)
+
+    assert payload is not None
+    assert payload["bcn_id"] == "senado:1234"
+    assert payload["external_id"] == "1234"
+    assert payload["chamber_type"] == ChamberType.SENATE
+    assert payload["bcn_uri"] == "http://datos.bcn.cl/recurso/persona/4558"
+    assert payload["appointment_uri"].endswith("/nombramiento/5")
+    assert payload["term_end"] == "2030-03-11"
+
+
+def test_legislator_parser_bcn_roster_row_for_deputy_uses_idcamara_as_bcn_id():
+    row = {
+        "personUri": "http://datos.bcn.cl/recurso/persona/1017",
+        "appointmentUri": "http://datos.bcn.cl/recurso/persona/1017/nombramiento/3",
+        "cargoId": "1",
+        "idSenado": None,
+        "idCamara": "1017",
+        "full_name": "Álvaro Carter Fernández",
+        "term_start": "2026-03-11",
+        "term_end": "2030-03-11",
+    }
+
+    payload = LegislatorParser.parse_bcn_roster_row(row)
+
+    assert payload is not None
+    assert payload["bcn_id"] == "camara:1017"
+    assert payload["chamber_type"] == ChamberType.DEPUTIES
+
+
+def test_legislator_parser_bcn_roster_row_returns_none_when_bridge_id_missing():
+    row = {
+        "personUri": "http://datos.bcn.cl/recurso/persona/99",
+        "appointmentUri": "http://datos.bcn.cl/recurso/persona/99/nombramiento/1",
+        "cargoId": "2",
+        "idSenado": None,
+        "idCamara": None,
+        "full_name": "Sin IDs",
+        "term_start": "2026-03-11",
+        "term_end": "2030-03-11",
+    }
+    assert LegislatorParser.parse_bcn_roster_row(row) is None
+
+
+def test_legislator_parser_bcn_profile_normalizes_gender_and_collapses_empties():
+    payload = LegislatorParser.parse_bcn_profile(
+        {
+            "personUri": "http://datos.bcn.cl/recurso/persona/4558",
+            "full_name": "Álvaro Jorge Carter Fernández",
+            "profession": "Diseñador Industrial",
+            "twitter": "Alvaro_CarterF",
+            "bcn_wiki_url": "https://www.bcn.cl/historiapolitica/resenas/Carter",
+            "gender": "hombre",
+            "photo_url": "https://www.bcn.cl/laborparlamentaria/imagen/4558.jpg",
+            "photo_thumbnail_url": "",
+        }
+    )
+
+    assert payload["bcn_uri"].endswith("/persona/4558")
+    assert payload["bcn_wiki_url"].startswith("https://www.bcn.cl/historiapolitica/")
+    assert payload["profession"] == "Diseñador Industrial"
+    assert payload["twitter_handle"] == "Alvaro_CarterF"
+    assert payload["gender"] == "M"
+    assert payload["photo_url"].endswith("/4558.jpg")
+    assert payload["photo_thumbnail_url"] is None
+
+
+def test_legislator_parser_bcn_profile_maps_female_gender():
+    payload = LegislatorParser.parse_bcn_profile({"gender": "Mujer"})
+    assert payload["gender"] == "F"
+
+
+def test_legislator_parser_bcn_profile_returns_none_gender_for_unknown_label():
+    payload = LegislatorParser.parse_bcn_profile({"gender": "no binario"})
+    assert payload["gender"] is None
+
+
+def test_legislator_parser_bcn_appointment_for_senator_term():
+    payload = LegislatorParser.parse_bcn_appointment(
+        {
+            "appointmentUri": "http://datos.bcn.cl/recurso/persona/4558/nombramiento/2",
+            "cargoId": "2",
+            "term_start": "2022-03-11",
+            "term_end": "2030-03-11",
+        }
+    )
+
+    assert payload is not None
+    assert payload["bcn_appointment_uri"].endswith("/nombramiento/2")
+    assert payload["chamber_type"] == ChamberType.SENATE
+    assert payload["start_date"] == "2022-03-11"
+    assert payload["end_date"] == "2030-03-11"
+
+
+def test_legislator_parser_bcn_appointment_returns_none_when_dates_missing():
+    payload = LegislatorParser.parse_bcn_appointment(
+        {
+            "appointmentUri": "http://x/y",
+            "cargoId": "1",
+            "term_start": None,
+            "term_end": "2030-03-11",
+        }
+    )
+    assert payload is None
+
+
+def test_legislator_parser_bcn_appointment_returns_none_for_unknown_cargo():
+    payload = LegislatorParser.parse_bcn_appointment(
+        {
+            "appointmentUri": "http://x/y",
+            "cargoId": "9",
+            "term_start": "2022-03-11",
+            "term_end": "2030-03-11",
+        }
+    )
+    assert payload is None

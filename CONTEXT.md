@@ -80,12 +80,20 @@ A legislator with no current party affiliation. `Legislator.party_id` is null. S
 _Avoid_: "Independientes" as a party name; treating null party as missing data
 
 **Active legislator**:
-A legislator currently serving in their chamber. `Legislator.is_active` is the canonical flag. For deputies it is sourced from the OpenData Camara upstream `Estado` element; for senators it is derived from the senado.cl hemicycle seated set (see **Senator roster source**) — every senator returned by the roster fetch is, by definition, currently seated. Used by the dashboard chamber-composition counts and by the `/legisladores` listing endpoint as the default scope. Inactive legislators are historical and are excluded by default from user-facing rosters.
-_Avoid_: deriving "active" from term dates when `is_active` is available
+A legislator currently serving in their chamber. `Legislator.is_active` is the canonical flag. It is derived for both chambers from BCN's `bcnbio:hasParliamentaryAppointment` graph: a person is active iff they have a `PositionPeriod` whose `hasEnd → originalDate` is on or after today. The upstream `Estado` flag and the senado.cl hemicycle seated set are no longer consulted because both proved stale (ADR-0005). Used by the dashboard chamber-composition counts and by the `/legisladores` listing endpoint as the default scope. Inactive legislators are historical and are excluded by default from user-facing rosters.
+_Avoid_: deriving "active" from `Estado` or from senado.cl hemicycle membership
 
 **Senator roster source**:
-The authoritative source for the *list* of sitting senators is the senado.cl web backend JSON API (`web-back.senado.cl/api/hemicycle`), not the wspublico XML. The documented wspublico `senadores_vigentes.php` returns only 31 of 50 senators, so it is no longer used for the roster (it remains the source for bills, votes, and committees). The JSON `ID_PARLAMENTARIO` equals the wspublico `PARLID`, so records reconcile to the same `senado:{id}` `bcn_id`. See ADR-0002.
-_Avoid_: senadores_vigentes.php for the senator roster
+The authoritative source for the *list* of sitting senators is the BCN linked-open-data SPARQL endpoint (`datos.bcn.cl/sparql`), filtering active `PositionPeriod` nodes by `hasEnd >= today`. The senado.cl `web-back` JSON catalog provides only metadata (circumscription, region, party abbreviation, email, phone, photo) joined by `bcnbio:idSenado` == `PARLID`. The hemicycle seated set on senado.cl is not trusted. wspublico XML remains the source for bills, votes, and committees only. See ADR-0005 (which supersedes ADR-0002).
+_Avoid_: senado.cl `api/hemicycle` or `senadores_vigentes.php` for the senator roster
+
+**BCN biographic source**:
+The BCN SPARQL endpoint is the canonical enrichment source for profession, twitter handle, BCN wiki page URL (`bcn_wiki_url`), and authoritative photo across both chambers. Deputy enrichment joins via `bcnbio:idCamaraDeDiputados` == OpenData deputy `Id`; senator enrichment via `bcnbio:idSenado` == senado `PARLID`. BCN never creates `PoliticalParty` records (ADR-0001 unchanged) and never overwrites name, party, district, or circumscription set by the chamber sources. `Legislator.bcn_uri` stores the canonical person URI for re-querying.
+_Avoid_: scraping camara.cl or senado.cl for fields BCN already exposes
+
+**Parliamentary appointment**:
+A formal, dated record that a legislator served in a chamber from a `start_date` to an `end_date`. One row in `parliamentary_appointments` per BCN `PositionPeriod` (the URI stored in `bcn_appointment_uri` is the upsert key). Used to render term history. Distinct from `LegislatorTerm` (party-membership windows from OpenData militancias): a single appointment can contain multiple `LegislatorTerm` rows when the legislator changes party mid-term.
+_Avoid_: conflating with `LegislatorTerm`; treating party-change rows as separate appointments
 
 **Deputy district source**:
 No congress API exposes the deputy→district link, so it is scraped from camara.cl (Cloudflare-protected; via the stealth `ScraperEngine`). The scrape is *enrichment-only*: it matches existing deputies by `camara:{dipid}` and sets `district_id` (plus photo/profile), never creating legislators or touching party data. See ADR-0003.

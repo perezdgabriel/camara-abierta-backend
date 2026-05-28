@@ -9,6 +9,11 @@ from sqlalchemy import select
 from app.core.celery_app import app
 from app.core.config import settings
 from app.core.session import task_session
+from app.ingestors.clients.bcn import (
+    BCNClient,
+    fetch_person_appointments_parallel,
+    fetch_person_profiles_parallel,
+)
 from app.ingestors.clients.camara import CamaraClient
 from app.ingestors.clients.opendata_camara import OpenDataCamaraClient
 from app.ingestors.clients.opendata_camara_async import (
@@ -23,11 +28,16 @@ from app.ingestors.parsers.committees import CommitteeParser
 from app.ingestors.parsers.legislators import LegislatorParser
 from app.ingestors.parsers.legislature import LegislatureParser
 from app.ingestors.parsers.votes import VoteParser
+from app.models.enums import ChamberType
 from app.models.ingestor_state import IngestorState
 from app.tasks.base import DatabaseTask
 from app.tasks.bills import sync_bill
 from app.tasks.committees import sync_committee
-from app.tasks.legislators import sync_legislator
+from app.tasks.legislators import (
+    sync_legislator,
+    sync_legislator_bcn_enrichment,
+    sync_parliamentary_appointment,
+)
 from app.tasks.legislature import sync_period, sync_session
 from app.tasks.reference import sync_topic
 from app.tasks.voting import sync_voting_session
@@ -245,9 +255,27 @@ def run_ingest_bills(
 
 
 def run_ingest_legislators(*, dry_run: bool = False) -> dict[str, Any]:
+    """Refresh the legislator roster + biographic data.
+
+    Per ADR-0005, BCN linked data is the source of truth for *which*
+    legislators are currently seated. The pipeline shape:
+
+    1. **Deputies** stay on OpenData Cámara for identity + party + district
+       number (ADR-0001 / ADR-0003 unchanged); camara.cl district scraping
+       runs separately.
+    2. **Senators** come from BCN's active appointments cross-referenced with
+       the senado.cl metadata catalog (circumscription, region, party
+       abbreviation, email, phone, photo) by ``ID_PARLAMENTARIO``.
+    3. **Both chambers** receive BCN biographic enrichment (profession,
+       twitter handle, BCN wiki page, photo) joined by ``idCamara`` /
+       ``idSenado``.
+    4. **Term history** for both chambers is backfilled into
+       ``ParliamentaryAppointment`` rows via per-URI fan-out.
+    """
     dispatched = 0
     errors = 0
 
+    # 1. Deputies — OpenData stays primary.
     try:
         with OpenDataCamaraClient() as opendata:
             for raw in opendata.get_diputados_periodo_actual():
@@ -265,20 +293,133 @@ def run_ingest_legislators(*, dry_run: bool = False) -> dict[str, Any]:
 
     time.sleep(REQUEST_DELAY)
 
+    # 2. BCN roster — source of truth for who is currently seated (both chambers).
+    bcn_rows: list[dict[str, Any]] = []
+    try:
+        with BCNClient() as bcn:
+            bcn_rows = bcn.get_active_appointments()
+    except Exception:
+        logger.exception("Failed to fetch active appointments from BCN")
+        errors += 1
+
+    # Reduce to one normalized roster entry per bcn_id (latest term wins on
+    # duplicates — should not happen for active legislators, but a defensive
+    # de-dupe keeps the senator/deputy join clean).
+    roster_by_bcn_id: dict[str, dict[str, Any]] = {}
+    for row in bcn_rows:
+        parsed = LegislatorParser.parse_bcn_roster_row(row)
+        if parsed is None:
+            continue
+        roster_by_bcn_id[parsed["bcn_id"]] = parsed
+
+    senator_roster = [
+        entry
+        for entry in roster_by_bcn_id.values()
+        if entry["chamber_type"] == ChamberType.SENATE
+    ]
+    deputy_roster = [
+        entry
+        for entry in roster_by_bcn_id.values()
+        if entry["chamber_type"] == ChamberType.DEPUTIES
+    ]
+    logger.info(
+        "BCN roster: %d senators, %d deputies after de-dupe",
+        len(senator_roster),
+        len(deputy_roster),
+    )
+
+    # 3. Senators — BCN roster merged with senado.cl metadata catalog by PARLID.
+    senate_catalog: dict[int, dict[str, Any]] = {}
     try:
         with SenadoWebClient() as senado_web:
-            for raw in senado_web.get_senators():
-                try:
-                    payload = LegislatorParser.parse_senator(raw)
-                    if not dry_run:
-                        _dispatch(sync_legislator, payload)
-                    dispatched += 1
-                except Exception:
-                    logger.exception("Failed to parse senator from SenadoWebClient")
-                    errors += 1
+            senate_catalog = senado_web.get_full_catalog()
     except Exception:
-        logger.exception("Failed to fetch senators from SenadoWebClient")
+        logger.exception("Failed to fetch senate catalog from SenadoWebClient")
         errors += 1
+
+    for entry in senator_roster:
+        try:
+            try:
+                parlid = int(entry["external_id"])
+            except TypeError, ValueError:
+                parlid = None
+            catalog_row = senate_catalog.get(parlid) if parlid is not None else None
+            if catalog_row is None:
+                logger.warning(
+                    "BCN senator %s has no senado catalog entry (PARLID %s)",
+                    entry["bcn_id"],
+                    entry.get("external_id"),
+                )
+                continue
+            payload = LegislatorParser.parse_senator(catalog_row)
+            payload["bcn_uri"] = entry["bcn_uri"]
+            if not dry_run:
+                _dispatch(sync_legislator, payload)
+            dispatched += 1
+        except Exception:
+            logger.exception("Failed to merge senator %s", entry.get("bcn_id"))
+            errors += 1
+
+    # 4. BCN biographic enrichment — fan-out per URI for both chambers.
+    enrichment_uris = [
+        entry["bcn_uri"] for entry in roster_by_bcn_id.values() if entry.get("bcn_uri")
+    ]
+    profiles: dict[str, dict[str, Any] | None] = {}
+    try:
+        profiles = asyncio.run(fetch_person_profiles_parallel(enrichment_uris))
+    except Exception:
+        logger.exception("Failed to fan-out BCN profile enrichment")
+        errors += 1
+
+    for entry in roster_by_bcn_id.values():
+        try:
+            profile = profiles.get(entry["bcn_uri"])
+            if profile is None:
+                continue
+            payload = LegislatorParser.parse_bcn_profile(profile)
+            # Drop empty entries so enrich_legislator_profile does not touch
+            # already-populated columns with empty strings.
+            cleaned = {k: v for k, v in payload.items() if v}
+            cleaned["bcn_uri"] = entry["bcn_uri"]
+            if not dry_run:
+                _dispatch(sync_legislator_bcn_enrichment, entry["bcn_id"], cleaned)
+            dispatched += 1
+        except Exception:
+            logger.exception(
+                "Failed to dispatch BCN enrichment for %s", entry.get("bcn_id")
+            )
+            errors += 1
+
+    # 5. Term history backfill — every past + present appointment per legislator.
+    appointments_by_uri: dict[str, list[dict[str, Any]]] = {}
+    try:
+        appointments_by_uri = asyncio.run(
+            fetch_person_appointments_parallel(enrichment_uris)
+        )
+    except Exception:
+        logger.exception("Failed to fan-out BCN appointment history")
+        errors += 1
+
+    for entry in roster_by_bcn_id.values():
+        appointments = appointments_by_uri.get(entry["bcn_uri"], [])
+        for appointment in appointments:
+            try:
+                term_payload = LegislatorParser.parse_bcn_appointment(appointment)
+                if term_payload is None:
+                    continue
+                term_payload["chamber_type"] = term_payload["chamber_type"].value
+                if not dry_run:
+                    _dispatch(
+                        sync_parliamentary_appointment,
+                        entry["bcn_id"],
+                        term_payload,
+                    )
+                dispatched += 1
+            except Exception:
+                logger.exception(
+                    "Failed to dispatch appointment for %s", entry.get("bcn_id")
+                )
+                errors += 1
 
     if not dry_run:
         _mark_synced("legislators")

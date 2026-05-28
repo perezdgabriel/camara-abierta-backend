@@ -35,6 +35,7 @@ from app.models.legislature import (
     LegislativeSession,
     Legislator,
     LegislatorTerm,
+    ParliamentaryAppointment,
     PoliticalParty,
 )
 from app.models.proyecto import (
@@ -1327,13 +1328,15 @@ def upsert_legislator(db: Session, data: dict[str, Any]) -> Legislator:
 def enrich_legislator_profile(
     db: Session, bcn_id: str, fields: dict[str, Any]
 ) -> Legislator | None:
-    """Partially update an existing legislator with scraped profile data.
+    """Partially update an existing legislator with scraped/queried profile data.
 
-    Matches by ``bcn_id`` and writes ONLY the enrichment columns
-    (``district`` via ``district_number``, ``photo_url``, ``photo_thumbnail_url``,
-    ``biography``, ``profile_url``). Never touches party, name, or is_active, so the
-    OpenData-sourced identity/party data (ADR-0001) is preserved. Returns ``None`` if
-    no legislator matches (caller should log and skip).
+    Matches by ``bcn_id`` and writes ONLY enrichment columns: district (via
+    ``district_number``), photos, biography, profile URL, plus the BCN-sourced
+    ``bcn_uri``, ``bcn_wiki_url``, ``profession``, ``twitter_handle``, and
+    ``gender``. Never touches party, name, or ``is_active`` — OpenData-sourced
+    identity/party data (ADR-0001) and chamber-sourced active flag stay
+    authoritative. Returns ``None`` if no legislator matches (caller should log
+    and skip).
     """
     legislator = db.execute(
         select(Legislator).where(Legislator.bcn_id == bcn_id)
@@ -1357,6 +1360,10 @@ def enrich_legislator_profile(
         ("photo_thumbnail_url", 500),
         ("profile_url", 500),
         ("biography", None),
+        ("bcn_uri", 500),
+        ("bcn_wiki_url", 500),
+        ("profession", 200),
+        ("twitter_handle", 50),
     ):
         value = fields.get(column)
         if not value:
@@ -1368,10 +1375,67 @@ def enrich_legislator_profile(
             setattr(legislator, column, value)
             changed = True
 
+    gender = fields.get("gender")
+    if gender and legislator.gender != gender:
+        legislator.gender = str(gender)[:1]
+        changed = True
+
     if changed:
         _touch_syncable(db, legislator)
         db.flush()
     return legislator
+
+
+def upsert_parliamentary_appointment(
+    db: Session,
+    *,
+    legislator_id: int,
+    bcn_appointment_uri: str,
+    chamber_type: ChamberType,
+    start_date: date,
+    end_date: date,
+) -> ParliamentaryAppointment:
+    """Idempotently upsert a BCN parliamentary appointment.
+
+    The BCN ``PositionPeriod`` URI (``bcn_appointment_uri``) is the natural
+    upsert key — re-runs over the same appointment update the existing row
+    rather than duplicating it. See ADR-0005.
+    """
+    chamber = _get_or_create_chamber(db, chamber_type)
+    existing = db.execute(
+        select(ParliamentaryAppointment).where(
+            ParliamentaryAppointment.bcn_appointment_uri == bcn_appointment_uri
+        )
+    ).scalar_one_or_none()
+    if existing is None:
+        appointment = ParliamentaryAppointment(
+            legislator_id=legislator_id,
+            chamber_id=chamber.id,
+            bcn_appointment_uri=bcn_appointment_uri,
+            start_date=start_date,
+            end_date=end_date,
+        )
+        db.add(appointment)
+        db.flush()
+        return appointment
+
+    changed = False
+    if existing.legislator_id != legislator_id:
+        existing.legislator_id = legislator_id
+        changed = True
+    if existing.chamber_id != chamber.id:
+        existing.chamber_id = chamber.id
+        changed = True
+    if existing.start_date != start_date:
+        existing.start_date = start_date
+        changed = True
+    if existing.end_date != end_date:
+        existing.end_date = end_date
+        changed = True
+    if changed:
+        _touch_syncable(db, existing)
+        db.flush()
+    return existing
 
 
 def upsert_committee(db: Session, data: dict[str, Any]) -> Committee:

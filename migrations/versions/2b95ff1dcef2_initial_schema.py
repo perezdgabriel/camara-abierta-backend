@@ -1,8 +1,8 @@
 """initial_schema
 
-Revision ID: 1515b6728c24
+Revision ID: 2b95ff1dcef2
 Revises: 
-Create Date: 2026-05-27 20:27:40.454964
+Create Date: 2026-05-28 14:08:31.696369
 """
 
 from alembic import op
@@ -11,7 +11,7 @@ from sqlalchemy.dialects import postgresql
 
 
 # revision identifiers, used by Alembic.
-revision = '1515b6728c24'
+revision = '2b95ff1dcef2'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -371,6 +371,7 @@ def upgrade() -> None:
     op.create_index(op.f('ix_communes_sync_version'), 'communes', ['sync_version'], unique=False)
     op.create_table('legislators',
     sa.Column('bcn_id', sa.String(length=50), nullable=True),
+    sa.Column('bcn_uri', sa.String(length=500), nullable=True),
     sa.Column('first_name', sa.String(length=100), nullable=False),
     sa.Column('last_name', sa.String(length=100), nullable=False),
     sa.Column('full_name', sa.String(length=200), nullable=False),
@@ -381,6 +382,7 @@ def upgrade() -> None:
     sa.Column('photo_url', sa.String(length=500), nullable=True),
     sa.Column('photo_thumbnail_url', sa.String(length=500), nullable=True),
     sa.Column('profile_url', sa.String(length=500), nullable=True),
+    sa.Column('bcn_wiki_url', sa.String(length=500), nullable=True),
     sa.Column('email', sa.String(length=255), nullable=True),
     sa.Column('phone', sa.String(length=50), nullable=True),
     sa.Column('website', sa.String(length=500), nullable=True),
@@ -401,7 +403,8 @@ def upgrade() -> None:
     sa.ForeignKeyConstraint(['district_id'], ['districts.id'], name=op.f('fk_legislators_district_id_districts'), ondelete='SET NULL'),
     sa.ForeignKeyConstraint(['party_id'], ['political_parties.id'], name=op.f('fk_legislators_party_id_political_parties'), ondelete='SET NULL'),
     sa.PrimaryKeyConstraint('id', name=op.f('pk_legislators')),
-    sa.UniqueConstraint('bcn_id', name=op.f('uq_legislators_bcn_id'))
+    sa.UniqueConstraint('bcn_id', name=op.f('uq_legislators_bcn_id')),
+    sa.UniqueConstraint('bcn_uri', name=op.f('uq_legislators_bcn_uri'))
     )
     op.create_index(op.f('ix_legislators_deleted_at'), 'legislators', ['deleted_at'], unique=False)
     op.create_index(op.f('ix_legislators_sync_version'), 'legislators', ['sync_version'], unique=False)
@@ -542,6 +545,24 @@ def upgrade() -> None:
     )
     op.create_index(op.f('ix_legislator_voting_stats_deleted_at'), 'legislator_voting_stats', ['deleted_at'], unique=False)
     op.create_index(op.f('ix_legislator_voting_stats_sync_version'), 'legislator_voting_stats', ['sync_version'], unique=False)
+    op.create_table('parliamentary_appointments',
+    sa.Column('legislator_id', sa.BigInteger(), nullable=False),
+    sa.Column('chamber_id', sa.BigInteger(), nullable=False),
+    sa.Column('bcn_appointment_uri', sa.String(length=500), nullable=False),
+    sa.Column('start_date', sa.Date(), nullable=False),
+    sa.Column('end_date', sa.Date(), nullable=False),
+    sa.Column('id', sa.BigInteger(), nullable=False),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.Column('deleted_at', sa.DateTime(timezone=True), nullable=True),
+    sa.Column('sync_version', sa.BigInteger(), server_default=sa.text("nextval('global_sync_version_seq')"), nullable=False),
+    sa.ForeignKeyConstraint(['chamber_id'], ['chambers.id'], name=op.f('fk_parliamentary_appointments_chamber_id_chambers'), ondelete='RESTRICT'),
+    sa.ForeignKeyConstraint(['legislator_id'], ['legislators.id'], name=op.f('fk_parliamentary_appointments_legislator_id_legislators'), ondelete='CASCADE'),
+    sa.PrimaryKeyConstraint('id', name=op.f('pk_parliamentary_appointments')),
+    sa.UniqueConstraint('bcn_appointment_uri', name=op.f('uq_parliamentary_appointments_bcn_appointment_uri'))
+    )
+    op.create_index(op.f('ix_parliamentary_appointments_deleted_at'), 'parliamentary_appointments', ['deleted_at'], unique=False)
+    op.create_index(op.f('ix_parliamentary_appointments_sync_version'), 'parliamentary_appointments', ['sync_version'], unique=False)
     op.create_table('bill_documents',
     sa.Column('bill_id', sa.BigInteger(), nullable=False),
     sa.Column('bill_stage_id', sa.BigInteger(), nullable=True),
@@ -652,6 +673,9 @@ def downgrade() -> None:
     op.drop_index(op.f('ix_bill_documents_sync_version'), table_name='bill_documents')
     op.drop_index(op.f('ix_bill_documents_deleted_at'), table_name='bill_documents')
     op.drop_table('bill_documents')
+    op.drop_index(op.f('ix_parliamentary_appointments_sync_version'), table_name='parliamentary_appointments')
+    op.drop_index(op.f('ix_parliamentary_appointments_deleted_at'), table_name='parliamentary_appointments')
+    op.drop_table('parliamentary_appointments')
     op.drop_index(op.f('ix_legislator_voting_stats_sync_version'), table_name='legislator_voting_stats')
     op.drop_index(op.f('ix_legislator_voting_stats_deleted_at'), table_name='legislator_voting_stats')
     op.drop_table('legislator_voting_stats')

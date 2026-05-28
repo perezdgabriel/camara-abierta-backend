@@ -218,7 +218,7 @@ def test_run_ingest_bills_falls_back_to_full_scan_when_state_lookup_fails(monkey
 
 
 def test_run_ingest_legislators_dispatches_both_sources_with_geography(monkeypatch):
-    dispatched: list[tuple[object, dict]] = []
+    dispatched: list[tuple[object, tuple]] = []
 
     class FakeSenadoWebClient:
         def __enter__(self):
@@ -227,9 +227,9 @@ def test_run_ingest_legislators_dispatches_both_sources_with_geography(monkeypat
         def __exit__(self, *args):
             return None
 
-        def get_senators(self) -> list[dict]:
-            return [
-                {
+        def get_full_catalog(self) -> dict[int, dict]:
+            return {
+                42: {
                     "ID_PARLAMENTARIO": 42,
                     "NOMBRE": "Ada",
                     "APELLIDO_PATERNO": "Demo",
@@ -244,7 +244,7 @@ def test_run_ingest_legislators_dispatches_both_sources_with_geography(monkeypat
                     "SEXO_ETIQUETA": "Mujer",
                     "SLUG": "ada-demo-senadora-sen",
                 }
-            ]
+            }
 
     class FakeOpenDataCamaraClient:
         def __enter__(self):
@@ -276,27 +276,135 @@ def test_run_ingest_legislators_dispatches_both_sources_with_geography(monkeypat
                 }
             ]
 
+    class FakeBCNClient:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def get_active_appointments(self) -> list[dict]:
+            return [
+                {
+                    "personUri": "http://datos.bcn.cl/recurso/persona/4558",
+                    "appointmentUri": "http://datos.bcn.cl/recurso/persona/4558/nombramiento/2",
+                    "cargoId": "2",
+                    "idSenado": "42",
+                    "idCamara": None,
+                    "full_name": "Ada Demo Senadora",
+                    "term_start": "2022-03-11",
+                    "term_end": "2030-03-11",
+                },
+                {
+                    "personUri": "http://datos.bcn.cl/recurso/persona/1254",
+                    "appointmentUri": "http://datos.bcn.cl/recurso/persona/1254/nombramiento/1",
+                    "cargoId": "1",
+                    "idSenado": None,
+                    "idCamara": "1254",
+                    "full_name": "Ignacio Urcullú Clèment-Lund",
+                    "term_start": "2026-03-11",
+                    "term_end": "2030-03-11",
+                },
+            ]
+
+    profiles_by_uri = {
+        "http://datos.bcn.cl/recurso/persona/4558": {
+            "personUri": "http://datos.bcn.cl/recurso/persona/4558",
+            "full_name": "Ada Demo Senadora",
+            "profession": "Abogada",
+            "twitter": "ada_demo",
+            "bcn_wiki_url": "https://www.bcn.cl/historiapolitica/Demo",
+            "gender": "mujer",
+        },
+        "http://datos.bcn.cl/recurso/persona/1254": {
+            "personUri": "http://datos.bcn.cl/recurso/persona/1254",
+            "full_name": "Ignacio Urcullú Clèment-Lund",
+            "profession": "Ingeniero",
+            "twitter": "iurcullu",
+            "gender": "hombre",
+        },
+    }
+    appointments_by_uri = {
+        "http://datos.bcn.cl/recurso/persona/4558": [
+            {
+                "appointmentUri": "http://datos.bcn.cl/recurso/persona/4558/nombramiento/2",
+                "cargoId": "2",
+                "term_start": "2022-03-11",
+                "term_end": "2030-03-11",
+            }
+        ],
+        "http://datos.bcn.cl/recurso/persona/1254": [
+            {
+                "appointmentUri": "http://datos.bcn.cl/recurso/persona/1254/nombramiento/1",
+                "cargoId": "1",
+                "term_start": "2026-03-11",
+                "term_end": "2030-03-11",
+            }
+        ],
+    }
+
+    async def fake_fetch_profiles(uris):
+        return {uri: profiles_by_uri.get(uri) for uri in uris}
+
+    async def fake_fetch_appointments(uris):
+        return {uri: appointments_by_uri.get(uri, []) for uri in uris}
+
     monkeypatch.setattr(ingestor_tasks, "SenadoWebClient", FakeSenadoWebClient)
     monkeypatch.setattr(
         ingestor_tasks, "OpenDataCamaraClient", FakeOpenDataCamaraClient
     )
+    monkeypatch.setattr(ingestor_tasks, "BCNClient", FakeBCNClient)
+    monkeypatch.setattr(
+        ingestor_tasks, "fetch_person_profiles_parallel", fake_fetch_profiles
+    )
+    monkeypatch.setattr(
+        ingestor_tasks,
+        "fetch_person_appointments_parallel",
+        fake_fetch_appointments,
+    )
     monkeypatch.setattr(
         ingestor_tasks,
         "_dispatch",
-        lambda task, payload: dispatched.append((task, payload)),
+        lambda task, *args: dispatched.append((task, args)),
     )
     monkeypatch.setattr(ingestor_tasks, "_mark_synced", lambda entity_type: None)
     monkeypatch.setattr(ingestor_tasks.time, "sleep", lambda _: None)
 
     result = ingestor_tasks.run_ingest_legislators(dry_run=False)
 
-    assert result == {"errors": 0, "dry_run": False, "dispatched": 2}
-    assert dispatched[0][1]["bcn_id"] == "camara:1254"
-    assert dispatched[0][1]["_party_name"] == "Partido Republicano"
-    assert dispatched[0][1]["_district_number"] == 8
-    assert dispatched[1][1]["bcn_id"] == "senado:42"
-    assert dispatched[1][1]["_party_name"] == "Partido Demo"
-    assert dispatched[1][1]["_circumscription_number"] == 7
+    # 2 sync_legislator (deputy + senator) + 2 BCN enrichment + 2 appointment.
+    assert result == {"errors": 0, "dry_run": False, "dispatched": 6}
+
+    by_task: dict[str, list[tuple]] = {}
+    for task, args in dispatched:
+        by_task.setdefault(task.name, []).append(args)
+
+    legislator_dispatches = by_task[ingestor_tasks.sync_legislator.name]
+    enrichment_dispatches = by_task[ingestor_tasks.sync_legislator_bcn_enrichment.name]
+    appointment_dispatches = by_task[ingestor_tasks.sync_parliamentary_appointment.name]
+
+    deputy_payload = legislator_dispatches[0][0]
+    senator_payload = legislator_dispatches[1][0]
+    assert deputy_payload["bcn_id"] == "camara:1254"
+    assert deputy_payload["_party_name"] == "Partido Republicano"
+    assert deputy_payload["_district_number"] == 8
+    assert senator_payload["bcn_id"] == "senado:42"
+    assert senator_payload["_party_name"] == "Partido Demo"
+    assert senator_payload["_circumscription_number"] == 7
+    assert senator_payload["bcn_uri"].endswith("/persona/4558")
+
+    enrichment_by_bcn_id = {args[0]: args[1] for args in enrichment_dispatches}
+    assert enrichment_by_bcn_id["camara:1254"]["profession"] == "Ingeniero"
+    assert enrichment_by_bcn_id["camara:1254"]["twitter_handle"] == "iurcullu"
+    assert enrichment_by_bcn_id["senado:42"]["gender"] == "F"
+    assert enrichment_by_bcn_id["senado:42"]["bcn_wiki_url"].startswith(
+        "https://www.bcn.cl/historiapolitica/"
+    )
+
+    appointment_by_bcn_id = {args[0]: args[1] for args in appointment_dispatches}
+    assert appointment_by_bcn_id["senado:42"]["chamber_type"] == "senate"
+    assert appointment_by_bcn_id["senado:42"]["end_date"] == "2030-03-11"
+    assert appointment_by_bcn_id["camara:1254"]["chamber_type"] == "deputies"
 
 
 def test_run_ingest_reference_data_dispatches_topics_only(monkeypatch):

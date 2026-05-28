@@ -131,6 +131,7 @@ class Legislator(SyncableMixin, Base):
     __tablename__ = "legislators"
 
     bcn_id: Mapped[str | None] = mapped_column(String(50), unique=True)
+    bcn_uri: Mapped[str | None] = mapped_column(String(500), unique=True)
     first_name: Mapped[str] = mapped_column(String(100), nullable=False)
     last_name: Mapped[str] = mapped_column(String(100), nullable=False)
     full_name: Mapped[str] = mapped_column(String(200), nullable=False)
@@ -141,6 +142,7 @@ class Legislator(SyncableMixin, Base):
     photo_url: Mapped[str | None] = mapped_column(String(500))
     photo_thumbnail_url: Mapped[str | None] = mapped_column(String(500))
     profile_url: Mapped[str | None] = mapped_column(String(500))
+    bcn_wiki_url: Mapped[str | None] = mapped_column(String(500))
     email: Mapped[str | None] = mapped_column(String(255))
     phone: Mapped[str | None] = mapped_column(String(50))
     website: Mapped[str | None] = mapped_column(String(500))
@@ -173,6 +175,9 @@ class Legislator(SyncableMixin, Base):
         back_populates="legislators"
     )
     terms: Mapped[list["LegislatorTerm"]] = relationship(back_populates="legislator")
+    appointments: Mapped[list["ParliamentaryAppointment"]] = relationship(
+        back_populates="legislator"
+    )
     committee_memberships: Mapped[list["CommitteeMembership"]] = relationship(
         back_populates="legislator"
     )
@@ -211,6 +216,34 @@ class LegislatorTerm(SyncableMixin, Base):
     period: Mapped[LegislativePeriod] = relationship(back_populates="terms")
     chamber: Mapped[Chamber] = relationship()
     party: Mapped[PoliticalParty | None] = relationship()
+
+
+class ParliamentaryAppointment(SyncableMixin, Base):
+    """A single parliamentary appointment (BCN ``PositionPeriod``).
+
+    One row per ``bcnbio:hasParliamentaryAppointment`` triple in the BCN graph:
+    the formal, dated record that legislator X served in chamber Y from
+    ``start_date`` to ``end_date``. Distinct from :class:`LegislatorTerm`, which
+    tracks party-membership windows derived from OpenData militancias and may
+    record several rows per appointment (one per party change). See ADR-0005.
+    """
+
+    __tablename__ = "parliamentary_appointments"
+
+    legislator_id: Mapped[int] = mapped_column(
+        ForeignKey("legislators.id", ondelete="CASCADE"), nullable=False
+    )
+    chamber_id: Mapped[int] = mapped_column(
+        ForeignKey("chambers.id", ondelete="RESTRICT"), nullable=False
+    )
+    bcn_appointment_uri: Mapped[str] = mapped_column(
+        String(500), nullable=False, unique=True
+    )
+    start_date: Mapped[date] = mapped_column(Date, nullable=False)
+    end_date: Mapped[date] = mapped_column(Date, nullable=False)
+
+    legislator: Mapped[Legislator] = relationship(back_populates="appointments")
+    chamber: Mapped[Chamber] = relationship()
 
 
 class Committee(SyncableMixin, Base):
