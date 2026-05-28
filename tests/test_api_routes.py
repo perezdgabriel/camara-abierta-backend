@@ -153,8 +153,18 @@ def make_voting_session() -> SimpleNamespace:
         votes_for=23,
         votes_against=10,
         abstentions=1,
+        dispensed_count=0,
         absences=0,
+        paired_count=2,
         quorum_type="simple",
+        session_ref="42",
+        stage_label="Primer trámite constitucional",
+        article_text=None,
+        constitutional_procedure_id=None,
+        constitutional_procedure_label=None,
+        regulatory_procedure_id=None,
+        regulatory_procedure_label=None,
+        votes=[],
         created_at=now,
         updated_at=now,
         sync_version=202,
@@ -325,3 +335,26 @@ def test_voting_sessions_endpoint_uses_new_prefix_and_serializes_summary(
     assert body["data"][0]["bcn_id"] == "senado:vot:123-06:1"
     assert body["data"][0]["voting_type"] == "general"
     assert body["data"][0]["result"] == "approved"
+
+
+def test_voting_session_detail_serializes_senado_metadata(client, fake_db, monkeypatch):
+    captured: dict[str, object] = {}
+
+    def fake_get_voting_session(db, voting_session_id):
+        captured["db"] = db
+        captured["voting_session_id"] = voting_session_id
+        return make_voting_session()
+
+    monkeypatch.setattr(
+        voting_api.voting_service, "get_voting_session", fake_get_voting_session
+    )
+
+    response = client.get("/api/v1/voting-sessions/30")
+
+    assert response.status_code == 200
+    assert captured["db"] is fake_db
+    assert captured["voting_session_id"] == 30
+    body = response.json()
+    assert body["paired_count"] == 2
+    assert body["session_ref"] == "42"
+    assert body["stage_label"] == "Primer trámite constitucional"

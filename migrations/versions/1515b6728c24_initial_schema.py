@@ -1,8 +1,8 @@
 """initial_schema
 
-Revision ID: a6f10a8b3599
+Revision ID: 1515b6728c24
 Revises: 
-Create Date: 2026-05-27 17:02:08.451298
+Create Date: 2026-05-27 20:27:40.454964
 """
 
 from alembic import op
@@ -11,7 +11,7 @@ from sqlalchemy.dialects import postgresql
 
 
 # revision identifiers, used by Alembic.
-revision = 'a6f10a8b3599'
+revision = '1515b6728c24'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -595,8 +595,11 @@ def upgrade() -> None:
     sa.Column('abstentions', sa.Integer(), nullable=False),
     sa.Column('dispensed_count', sa.Integer(), nullable=False),
     sa.Column('absences', sa.Integer(), nullable=False),
+    sa.Column('paired_count', sa.Integer(), nullable=False),
     sa.Column('quorum_required', sa.Integer(), nullable=True),
     sa.Column('quorum_type', sa.String(length=100), nullable=True),
+    sa.Column('session_ref', sa.String(length=100), nullable=True),
+    sa.Column('stage_label', sa.String(length=200), nullable=True),
     sa.Column('article_text', sa.Text(), nullable=True),
     sa.Column('constitutional_procedure_id', sa.Integer(), nullable=True),
     sa.Column('constitutional_procedure_label', sa.String(length=100), nullable=True),

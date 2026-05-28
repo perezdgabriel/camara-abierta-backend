@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import unicodedata
 from datetime import date, datetime, timezone
 from typing import Any
 
@@ -62,6 +63,15 @@ def _touch_syncable(db: Session, obj: Any) -> None:
 def _normalize_slug(value: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
     return slug[:100] or "sin-tema"
+
+
+def _normalize_person_name(value: str) -> str:
+    decomposed = unicodedata.normalize("NFKD", value or "")
+    without_accents = "".join(
+        char for char in decomposed if not unicodedata.combining(char)
+    )
+    normalized = re.sub(r"[^a-z0-9\s]", " ", without_accents.lower())
+    return re.sub(r"\s+", " ", normalized).strip()
 
 
 def _set_syncable_attrs(db: Session, obj: Any, **attrs: Any) -> bool:
@@ -779,6 +789,11 @@ def _find_legislator_by_name(
     if not normalized_name:
         return None
 
+    if chamber_type == ChamberType.SENATE:
+        legislator = _find_legislator_by_senado_vote_name(db, normalized_name)
+        if legislator is not None:
+            return legislator
+
     stmt = select(Legislator).where(
         func.lower(Legislator.full_name) == normalized_name.lower()
     )
@@ -786,6 +801,91 @@ def _find_legislator_by_name(
         stmt = stmt.where(Legislator.chamber_type == chamber_type)
     stmt = stmt.limit(1)
     return db.execute(stmt).scalar_one_or_none()
+
+
+def _parse_senado_vote_display_name(display_name: str) -> dict[str, str] | None:
+    normalized_display = (display_name or "").strip()
+    if not normalized_display or "," not in normalized_display:
+        return None
+
+    surname_part, first_name_part = [
+        part.strip() for part in normalized_display.split(",", maxsplit=1)
+    ]
+    if not surname_part or not first_name_part:
+        return None
+
+    surname_tokens = surname_part.split()
+    if not surname_tokens:
+        return None
+
+    maternal_initial = ""
+    paternal_tokens = surname_tokens
+    trailing_token = surname_tokens[-1].rstrip(".")
+    if re.fullmatch(r"[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]", trailing_token or ""):
+        maternal_initial = trailing_token.upper()
+        paternal_tokens = surname_tokens[:-1]
+
+    paternal_last_name = " ".join(paternal_tokens).strip()
+    first_name = first_name_part.strip()
+    if not paternal_last_name or not first_name:
+        return None
+
+    return {
+        "first_name": first_name,
+        "paternal_last_name": paternal_last_name,
+        "maternal_initial": maternal_initial,
+    }
+
+
+def _senado_vote_name_matches_legislator(
+    display_name: str,
+    legislator: Legislator,
+) -> bool:
+    parsed = _parse_senado_vote_display_name(display_name)
+    if parsed is None:
+        return False
+
+    stored_first_name = _normalize_person_name(legislator.first_name or "")
+    parsed_first_name = _normalize_person_name(parsed["first_name"])
+    if stored_first_name != parsed_first_name:
+        stored_first_token = stored_first_name.split()[0] if stored_first_name else ""
+        parsed_first_token = parsed_first_name.split()[0] if parsed_first_name else ""
+        if not stored_first_token or stored_first_token != parsed_first_token:
+            return False
+
+    stored_last_name = _normalize_person_name(legislator.last_name or "")
+    paternal_last_name = _normalize_person_name(parsed["paternal_last_name"])
+    if not stored_last_name.startswith(paternal_last_name):
+        return False
+
+    maternal_initial = _normalize_person_name(parsed["maternal_initial"])
+    if not maternal_initial:
+        return True
+
+    remaining_last_name = stored_last_name[len(paternal_last_name) :].strip()
+    return bool(remaining_last_name) and remaining_last_name[0] == maternal_initial
+
+
+def _find_legislator_by_senado_vote_name(
+    db: Session, display_name: str
+) -> Legislator | None:
+    parsed = _parse_senado_vote_display_name(display_name)
+    if parsed is None:
+        return None
+
+    candidates = (
+        db.execute(
+            select(Legislator)
+            .where(Legislator.chamber_type == ChamberType.SENATE)
+            .order_by(Legislator.is_active.desc(), Legislator.id.asc())
+        )
+        .scalars()
+        .all()
+    )
+    for legislator in candidates:
+        if _senado_vote_name_matches_legislator(display_name, legislator):
+            return legislator
+    return None
 
 
 def _resolve_vote_legislator(
@@ -1352,7 +1452,10 @@ def upsert_voting_session(
         abstentions=int(data.get("abstentions", 0) or 0),
         dispensed_count=int(data.get("dispensed_count", 0) or 0),
         absences=int(data.get("absences", 0) or 0),
+        paired_count=int(data.get("paired_count", data.get("paired", 0)) or 0),
         quorum_type=(data.get("quorum") or data.get("quorum_type") or "")[:100] or None,
+        session_ref=(data.get("session_ref") or "")[:100] or None,
+        stage_label=(data.get("stage_label") or data.get("stage") or "")[:200] or None,
         article_text=(data.get("article_text") or "")[:5000] or None,
         constitutional_procedure_id=_parse_int(data.get("constitutional_procedure_id")),
         constitutional_procedure_label=(
@@ -1378,7 +1481,10 @@ def upsert_voting_session(
                 "abstentions": insert_stmt.excluded.abstentions,
                 "dispensed_count": insert_stmt.excluded.dispensed_count,
                 "absences": insert_stmt.excluded.absences,
+                "paired_count": insert_stmt.excluded.paired_count,
                 "quorum_type": insert_stmt.excluded.quorum_type,
+                "session_ref": insert_stmt.excluded.session_ref,
+                "stage_label": insert_stmt.excluded.stage_label,
                 "article_text": insert_stmt.excluded.article_text,
                 "constitutional_procedure_id": insert_stmt.excluded.constitutional_procedure_id,
                 "constitutional_procedure_label": insert_stmt.excluded.constitutional_procedure_label,

@@ -126,7 +126,10 @@ class VotingResult(ORMModel):
     abstentions: int
     dispensed_count: int
     absences: int
+    paired_count: int
     quorum_type: str | None = None
+    session_ref: str | None = None
+    stage_label: str | None = None
     article_text: str | None = None
     constitutional_procedure_id: int | None = None
     constitutional_procedure_label: str | None = None

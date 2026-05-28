@@ -59,6 +59,9 @@ class VotingSessionSummary(ORMModel):
 
 class VotingSessionDetail(VotingSessionSummary):
     dispensed_count: int
+    paired_count: int
+    session_ref: str | None = None
+    stage_label: str | None = None
     article_text: str | None = None
     constitutional_procedure_id: int | None = None
     constitutional_procedure_label: str | None = None

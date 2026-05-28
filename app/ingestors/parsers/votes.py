@@ -113,14 +113,16 @@ class VoteParser:
         return {
             "bcn_id": ext_id,
             "_chamber_type": ChamberType.SENATE,
+            "session_ref": session_ref,
             "voting_type": voting_type,
+            "stage_label": (raw.get("stage") or "").strip() or None,
             "subject": raw.get("subject", ""),
             "voting_date": raw.get("date"),
             "result": result,
             "votes_for": votes_for,
             "votes_against": votes_against,
             "abstentions": raw.get("abstentions", 0),
-            "paired": raw.get("paired", 0),
+            "paired_count": int(raw.get("paired", 0) or 0),
             "quorum": raw.get("quorum", ""),
             "individual_votes": [
                 {

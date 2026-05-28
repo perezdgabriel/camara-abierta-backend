@@ -103,6 +103,40 @@ def test_resolve_vote_legislator_creates_placeholder_from_chamber_external_id():
     assert placeholder.is_active is False
 
 
+def test_parse_senado_vote_display_name_extracts_structured_name_parts():
+    parsed = write._parse_senado_vote_display_name("Araya G., Pedro")
+
+    assert parsed == {
+        "first_name": "Pedro",
+        "paternal_last_name": "Araya",
+        "maternal_initial": "G",
+    }
+
+
+def test_senado_vote_name_matches_legislator_shorthand_display_name():
+    legislator = SimpleNamespace(
+        first_name="Pedro",
+        last_name="Araya Guerrero",
+        full_name="Pedro Araya Guerrero",
+        chamber_type=ChamberType.SENATE,
+    )
+
+    assert (
+        write._senado_vote_name_matches_legislator(
+            "Araya G., Pedro",
+            legislator,
+        )
+        is True
+    )
+    assert (
+        write._senado_vote_name_matches_legislator(
+            "Bianchi R., Karim",
+            legislator,
+        )
+        is False
+    )
+
+
 def test_get_or_create_circumscription_does_not_fabricate_region_links():
     db = FakeDB(None)
 

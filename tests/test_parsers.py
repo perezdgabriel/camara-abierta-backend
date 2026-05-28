@@ -71,6 +71,7 @@ def test_vote_parser_maps_votes_and_result_to_canonical_enums():
         {
             "voting_type": "Discusión general",
             "session": "42",
+            "stage": "Primer trámite constitucional",
             "subject": "Votación del proyecto",
             "date": "2026-05-12",
             "votes_for": 20,
@@ -90,6 +91,9 @@ def test_vote_parser_maps_votes_and_result_to_canonical_enums():
     assert payload["_chamber_type"] is ChamberType.SENATE
     assert payload["voting_type"] is VotingType.GENERAL
     assert payload["result"] is VotingResult.APPROVED
+    assert payload["session_ref"] == "42"
+    assert payload["stage_label"] == "Primer trámite constitucional"
+    assert payload["paired_count"] == 2
     assert payload["individual_votes"][0]["vote"] is VoteChoice.FOR
     assert payload["individual_votes"][1]["vote"] is VoteChoice.ABSENT
 
@@ -275,6 +279,9 @@ def test_senado_bill_xml_maps_through_bill_and_vote_parsers():
     assert vote_payload["bcn_id"] == "senado:vot:555-06:42"
     assert vote_payload["voting_type"] is VotingType.GENERAL
     assert vote_payload["result"] is VotingResult.APPROVED
+    assert vote_payload["session_ref"] == "42"
+    assert vote_payload["stage_label"] == "Primer trámite constitucional"
+    assert vote_payload["paired_count"] == 2
     assert vote_payload["individual_votes"][0]["vote"] is VoteChoice.FOR
 
 
