@@ -35,4 +35,9 @@ app.conf.beat_schedule = {
         "task": "app.tasks.ingestors.ingest_reference_data",
         "schedule": crontab(hour=3, minute=30),
     },
+    "refresh-voting-window-aggregate": {
+        "task": "app.tasks.voting.refresh_voting_window_aggregate",
+        "schedule": crontab(hour=4, minute=0),
+        "kwargs": {"window_days": 30},
+    },
 }

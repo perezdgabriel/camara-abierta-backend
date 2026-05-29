@@ -587,7 +587,7 @@ def run_ingest_voting_sessions(
     bulletins: list[str] = []
     since_date = datetime.date.fromisoformat(since) if since else None
     if since_date is None:
-        since_date = _resolve_since_date("voting", fallback_days=1)
+        since_date = _resolve_since_date("voting", fallback_days=30)
 
     try:
         with SenadoClient() as senado:

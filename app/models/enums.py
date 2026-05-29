@@ -70,3 +70,19 @@ class CommitteeType(str, Enum):
     SPECIAL = "special"
     INVESTIGATIVE = "investigative"
     MIXED = "mixed"
+
+
+class SignalType(str, Enum):
+    """Behavior-revealing signal flagged on a voting session.
+
+    See CONTEXT.md in the web repo for the editorial meaning. Definitions:
+    - QUIEBRE_BLOQUE: a party's cohesion dropped below threshold in this session
+    - DIVERGENCIA_CAMARAS: same bill voted differently in Cámara vs Senado
+    - VOTACION_DIVIDIDA: narrow margin with high participation
+    - ALTO_AUSENTISMO: absence rate unusually high vs chamber baseline
+    """
+
+    QUIEBRE_BLOQUE = "quiebre_bloque"
+    DIVERGENCIA_CAMARAS = "divergencia_camaras"
+    VOTACION_DIVIDIDA = "votacion_dividida"
+    ALTO_AUSENTISMO = "alto_ausentismo"

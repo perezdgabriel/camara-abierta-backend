@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 
+from sqlalchemy import JSON
 from sqlalchemy import Enum as SqlEnum
 from sqlalchemy import ForeignKey, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
 from app.models.base import SyncableMixin
-from app.models.enums import VoteChoice, VotingResult, VotingType
+from app.models.enums import SignalType, VoteChoice, VotingResult, VotingType
 from app.models.legislature import Chamber, LegislativeSession, Legislator
 from app.models.proyecto import Bill, BillStage
 
@@ -100,6 +102,67 @@ class Vote(SyncableMixin, Base):
 
     def __str__(self) -> str:
         return f"{self.vote} - legislador {self.legislator_id}"
+
+
+class VotingSessionSignal(SyncableMixin, Base):
+    """A behavior-revealing signal fired on a single voting session.
+
+    Precomputed by Celery after each vote ingestion. Multiple signals can fire
+    on the same session (a session may be both a *quiebre de bloque* and a
+    *votación dividida*); uniqueness is on (voting_session_id, signal_type).
+    """
+
+    __tablename__ = "voting_session_signals"
+    __table_args__ = (
+        UniqueConstraint(
+            "voting_session_id",
+            "signal_type",
+            name="uq_voting_session_signals_session_type",
+        ),
+    )
+
+    voting_session_id: Mapped[int] = mapped_column(
+        ForeignKey("voting_sessions.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    signal_type: Mapped[SignalType] = mapped_column(
+        SqlEnum(
+            SignalType,
+            name="signal_type",
+            native_enum=False,
+            validate_strings=True,
+        ),
+        nullable=False,
+        index=True,
+    )
+    severity: Mapped[float] = mapped_column(Numeric(10, 4), nullable=False, default=0)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+
+    voting_session: Mapped[VotingSession] = relationship()
+
+    def __str__(self) -> str:
+        return f"{self.signal_type.value} on session {self.voting_session_id}"
+
+
+class VotingWindowAggregate(SyncableMixin, Base):
+    """Rolling-window aggregates over voting sessions.
+
+    Single row per ``window_days`` value, replaced wholesale by a daily Celery
+    beat task. Read by ``GET /voting-sessions/aggregates`` to feed the
+    permanent stats band on the /votaciones page.
+    """
+
+    __tablename__ = "voting_window_aggregates"
+    __table_args__ = (
+        UniqueConstraint("window_days", name="uq_voting_window_aggregates_window"),
+    )
+
+    window_days: Mapped[int] = mapped_column(nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+
+    def __str__(self) -> str:
+        return f"VotingWindowAggregate window_days={self.window_days}"
 
 
 class LegislatorVotingStats(SyncableMixin, Base):

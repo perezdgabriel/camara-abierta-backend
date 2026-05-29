@@ -6,7 +6,9 @@ import logging
 import sys
 from datetime import date
 from importlib import import_module
-from typing import Any, Callable
+from typing import Any, Callable, TypeVar
+
+R = TypeVar("R")
 
 LOGGER = logging.getLogger(__name__)
 SCRAPER_ENGINES = ("playwright", "camoufox", "patchright")
@@ -29,6 +31,7 @@ def _list_jobs(_: argparse.Namespace) -> dict[str, list[str]]:
             "voting-sessions",
         ],
         "loaders": ["geography"],
+        "voting-signals": ["backfill", "refresh-aggregate", "seed-fixtures"],
     }
 
 
@@ -106,6 +109,47 @@ def _run_voting_sessions(args: argparse.Namespace) -> dict[str, Any]:
     )
     result = run_ingest_voting_sessions(since=args.since, dry_run=args.dry_run)
     return {"job": "voting-sessions", **result}
+
+
+def _with_session(fn: Callable[[Any], R]) -> R:
+    """Open a SQLAlchemy session, run ``fn(db)``, commit, return its result."""
+    SessionLocal = _load_attr("app.core.database", "SessionLocal")
+    db = SessionLocal()
+    try:
+        result = fn(db)
+        db.commit()
+        return result
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
+
+def _run_voting_signals_backfill(args: argparse.Namespace) -> dict[str, Any]:
+    backfill_signals = _load_attr("app.services.voting_signals", "backfill_signals")
+    since = date.fromisoformat(args.since) if args.since else None
+    result = _with_session(lambda db: backfill_signals(db, since=since))
+    return {"job": "voting-signals-backfill", **result}
+
+
+def _run_voting_signals_refresh_aggregate(args: argparse.Namespace) -> dict[str, Any]:
+    refresh = _load_attr("app.services.voting_signals", "refresh_window_aggregate")
+    payload = _with_session(
+        lambda db: dict(refresh(db, window_days=args.window_days).payload)
+    )
+    return {
+        "job": "voting-signals-refresh-aggregate",
+        "window_days": args.window_days,
+        "payload": payload,
+    }
+
+
+def _run_voting_signals_seed_fixtures(args: argparse.Namespace) -> dict[str, Any]:
+    seed = _load_attr("app.services.voting_signals", "seed_signal_fixtures")
+    base = date.fromisoformat(args.base_date) if args.base_date else None
+    result = _with_session(lambda db: seed(db, base_date=base))
+    return {"job": "voting-signals-seed-fixtures", **result}
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -246,6 +290,42 @@ def _build_parser() -> argparse.ArgumentParser:
         "--since", help="Only fetch voting sessions since this ISO date."
     )
     voting_parser.set_defaults(runner=_run_voting_sessions)
+
+    signals_parser = subparsers.add_parser(
+        "voting-signals",
+        help="Compute behavior-revealing signals for /votaciones.",
+    )
+    signals_subparsers = signals_parser.add_subparsers(dest="signals_command")
+    signals_subparsers.required = True
+
+    backfill_parser = signals_subparsers.add_parser(
+        "backfill",
+        help="Recompute signals for historical voting sessions.",
+    )
+    backfill_parser.add_argument(
+        "--since",
+        help="ISO date floor; if omitted, all sessions are scanned.",
+    )
+    backfill_parser.set_defaults(runner=_run_voting_signals_backfill)
+
+    refresh_agg_parser = signals_subparsers.add_parser(
+        "refresh-aggregate",
+        help="Refresh the rolling-window aggregates row.",
+    )
+    refresh_agg_parser.add_argument(
+        "--window-days", type=int, default=30, help="Window size in days."
+    )
+    refresh_agg_parser.set_defaults(runner=_run_voting_signals_refresh_aggregate)
+
+    seed_parser = signals_subparsers.add_parser(
+        "seed-fixtures",
+        help="Insert hand-crafted sessions that fire each signal type (local dev).",
+    )
+    seed_parser.add_argument(
+        "--base-date",
+        help="Anchor date for the fixture sessions (defaults to yesterday).",
+    )
+    seed_parser.set_defaults(runner=_run_voting_signals_seed_fixtures)
 
     return parser
 

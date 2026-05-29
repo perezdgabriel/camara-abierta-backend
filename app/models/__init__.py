@@ -24,7 +24,13 @@ from app.models.proyecto import (
     BillUrgency,
 )
 from app.models.sync import ChangeLog, ClientSyncState
-from app.models.votacion import LegislatorVotingStats, Vote, VotingSession
+from app.models.votacion import (
+    LegislatorVotingStats,
+    Vote,
+    VotingSession,
+    VotingSessionSignal,
+    VotingWindowAggregate,
+)
 
 __all__ = [
     "Bill",
@@ -60,4 +66,6 @@ __all__ = [
     "Topic",
     "Vote",
     "VotingSession",
+    "VotingSessionSignal",
+    "VotingWindowAggregate",
 ]

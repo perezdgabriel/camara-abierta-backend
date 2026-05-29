@@ -1,8 +1,15 @@
 from datetime import datetime
+from typing import Any
 
 from pydantic import Field
 
-from app.models.enums import ChamberType, VoteChoice, VotingResult, VotingType
+from app.models.enums import (
+    ChamberType,
+    SignalType,
+    VoteChoice,
+    VotingResult,
+    VotingType,
+)
 from app.schemas.common import CountResponse, ORMModel
 
 
@@ -72,3 +79,46 @@ class VotingSessionDetail(VotingSessionSummary):
 
 class VotingSessionsResponse(CountResponse[VotingSessionSummary]):
     data: list[VotingSessionSummary] = Field(default_factory=list)
+
+
+# ── Behavior-revealing signals ─────────────────────────────────────────────
+
+
+class VotingSignal(ORMModel):
+    """One fired signal on a single voting session.
+
+    ``payload`` is signal-type-specific; the frontend has fully typed
+    discriminated-union payloads keyed on ``signal_type``. The API keeps it
+    as a free-form object for v1 to avoid coupling schema versioning to four
+    parallel payload types.
+    """
+
+    signal_type: SignalType
+    severity: float
+    session: VotingSessionSummary = Field(..., alias="voting_session")
+    payload: dict[str, Any]
+
+    model_config = {"from_attributes": True, "populate_by_name": True}
+
+
+class VotingAggregates(ORMModel):
+    window_days: int
+    computed_at: datetime
+    approval_rate: float
+    avg_cohesion: float | None = None
+    avg_attendance: float
+    volume: int
+    signals_active: int
+
+
+class HighlightedResponse(ORMModel):
+    """Driver payload for the ``/votaciones`` editorial section.
+
+    ``primary`` is the hero; ``grid`` is the strip below it; ``fallback_high_turnout``
+    is always populated so the UI can render *Mayor convocatoria* when no
+    signal fires in the window.
+    """
+
+    primary: VotingSignal | None = None
+    grid: list[VotingSignal] = Field(default_factory=list)
+    fallback_high_turnout: list[VotingSessionSummary] = Field(default_factory=list)

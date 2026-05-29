@@ -3,9 +3,9 @@ from datetime import date, datetime, time
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload, selectinload
 
-from app.models.enums import ChamberType
+from app.models.enums import ChamberType, SignalType, VotingResult
 from app.models.legislature import Chamber, Legislator
-from app.models.votacion import Vote, VotingSession
+from app.models.votacion import Vote, VotingSession, VotingSessionSignal
 
 DEFAULT_OFFSET = 0
 DEFAULT_LIMIT = 50
@@ -27,6 +27,9 @@ def list_voting_sessions(
     date_to: date | None,
     chamber: ChamberType | None,
     bill_id: int | None,
+    signal_type: SignalType | None = None,
+    result: VotingResult | None = None,
+    q: str | None = None,
     offset: int,
     limit: int,
 ) -> tuple[int, list[VotingSession]]:
@@ -51,6 +54,26 @@ def list_voting_sessions(
     if bill_id is not None:
         query = query.filter(VotingSession.bill_id == bill_id)
         count_query = count_query.filter(VotingSession.bill_id == bill_id)
+    if result is not None:
+        query = query.filter(VotingSession.result == result)
+        count_query = count_query.filter(VotingSession.result == result)
+    if q:
+        clause = VotingSession.subject.ilike(f"%{q}%")
+        query = query.filter(clause)
+        count_query = count_query.filter(clause)
+    if signal_type is not None:
+        # EXISTS subquery against the signal table — covers "any session that
+        # fired this signal type." Index on signal_type makes this cheap.
+        sig_clause = (
+            db.query(VotingSessionSignal.id)
+            .filter(
+                VotingSessionSignal.voting_session_id == VotingSession.id,
+                VotingSessionSignal.signal_type == signal_type,
+            )
+            .exists()
+        )
+        query = query.filter(sig_clause)
+        count_query = count_query.filter(sig_clause)
 
     total = count_query.scalar() or 0
     rows = (
