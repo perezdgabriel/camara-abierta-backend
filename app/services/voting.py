@@ -36,6 +36,7 @@ def list_voting_sessions(
     query = db.query(VotingSession).options(
         joinedload(VotingSession.chamber),
         joinedload(VotingSession.bill),
+        selectinload(VotingSession.signals),
     )
     count_query = db.query(func.count(VotingSession.id))
 
@@ -91,6 +92,7 @@ def get_voting_session(db: Session, voting_session_id: int) -> VotingSession | N
         .options(
             joinedload(VotingSession.chamber),
             joinedload(VotingSession.bill),
+            selectinload(VotingSession.signals),
             selectinload(VotingSession.votes).options(
                 joinedload(Vote.legislator).joinedload(Legislator.party),
             ),

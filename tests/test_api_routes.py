@@ -16,6 +16,7 @@ from app.models.enums import (
     BillStatus,
     BillType,
     ChamberType,
+    SignalType,
     StageType,
     UrgencyType,
     VotingResult,
@@ -137,7 +138,7 @@ def make_legislator() -> SimpleNamespace:
     )
 
 
-def make_voting_session() -> SimpleNamespace:
+def make_voting_session(signals=None) -> SimpleNamespace:
     now = datetime(2026, 5, 22, 12, 0, 0)
     chamber = ns(id=1, chamber_type=ChamberType.SENATE, name="Senado de la Republica")
     bill = ns(id=10, bulletin_number="123-06", title="Proyecto de prueba")
@@ -164,10 +165,25 @@ def make_voting_session() -> SimpleNamespace:
         constitutional_procedure_label=None,
         regulatory_procedure_id=None,
         regulatory_procedure_label=None,
+        signals=signals if signals is not None else [],
         votes=[],
         created_at=now,
         updated_at=now,
         sync_version=202,
+    )
+
+
+def make_voting_signal(
+    signal_type: SignalType = SignalType.VOTACION_DIVIDIDA,
+    severity: float = 0.95,
+    payload: dict | None = None,
+) -> SimpleNamespace:
+    return ns(
+        signal_type=signal_type,
+        severity=severity,
+        payload=payload
+        if payload is not None
+        else {"margin": 2, "participation": 0.97},
     )
 
 
@@ -311,11 +327,16 @@ def test_voting_sessions_endpoint_uses_new_prefix_and_serializes_summary(
     client, fake_db, monkeypatch
 ):
     captured: dict[str, object] = {}
+    signal = make_voting_signal(
+        signal_type=SignalType.QUIEBRE_BLOQUE,
+        severity=0.42,
+        payload={"parties_below_threshold": [], "threshold": 0.8},
+    )
 
     def fake_list_voting_sessions(db, **kwargs):
         captured["db"] = db
         captured.update(kwargs)
-        return 1, [make_voting_session()]
+        return 1, [make_voting_session(signals=[signal])]
 
     monkeypatch.setattr(
         voting_api.voting_service, "list_voting_sessions", fake_list_voting_sessions
@@ -335,15 +356,24 @@ def test_voting_sessions_endpoint_uses_new_prefix_and_serializes_summary(
     assert body["data"][0]["bcn_id"] == "senado:vot:123-06:1"
     assert body["data"][0]["voting_type"] == "general"
     assert body["data"][0]["result"] == "approved"
+    # Light SignalRef shape on list responses: type + severity, no payload.
+    assert body["data"][0]["signals"] == [
+        {"signal_type": "quiebre_bloque", "severity": 0.42}
+    ]
 
 
 def test_voting_session_detail_serializes_senado_metadata(client, fake_db, monkeypatch):
     captured: dict[str, object] = {}
+    signal = make_voting_signal(
+        signal_type=SignalType.VOTACION_DIVIDIDA,
+        severity=0.95,
+        payload={"margin": 2, "margin_ratio": 0.013, "participation": 0.97},
+    )
 
     def fake_get_voting_session(db, voting_session_id):
         captured["db"] = db
         captured["voting_session_id"] = voting_session_id
-        return make_voting_session()
+        return make_voting_session(signals=[signal])
 
     monkeypatch.setattr(
         voting_api.voting_service, "get_voting_session", fake_get_voting_session
@@ -358,3 +388,11 @@ def test_voting_session_detail_serializes_senado_metadata(client, fake_db, monke
     assert body["paired_count"] == 2
     assert body["session_ref"] == "42"
     assert body["stage_label"] == "Primer trámite constitucional"
+    # Full BareSignal shape on detail responses: type + severity + payload.
+    assert body["signals"] == [
+        {
+            "signal_type": "votacion_dividida",
+            "severity": 0.95,
+            "payload": {"margin": 2, "margin_ratio": 0.013, "participation": 0.97},
+        }
+    ]

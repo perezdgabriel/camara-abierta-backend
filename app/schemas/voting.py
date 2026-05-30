@@ -45,6 +45,31 @@ class VoteDetail(ORMModel):
     legislator: LegislatorBrief
 
 
+class SignalRef(ORMModel):
+    """Lightweight signal marker embedded in list responses.
+
+    Carries only what archive UIs need to render tags (type + severity for
+    ordering). The full signal ``payload`` ships only on the detail response
+    via ``BareSignal`` to keep list payloads lean.
+    """
+
+    signal_type: SignalType
+    severity: float
+
+
+class BareSignal(ORMModel):
+    """Full signal payload embedded in the detail response.
+
+    Distinct from ``VotingSignal`` (used by ``/voting-sessions/highlighted``)
+    which embeds the ``voting_session`` — here the session is the parent, so
+    we omit it to avoid recursive nesting.
+    """
+
+    signal_type: SignalType
+    severity: float
+    payload: dict[str, Any]
+
+
 class VotingSessionSummary(ORMModel):
     id: int
     bcn_id: str | None = None
@@ -59,6 +84,7 @@ class VotingSessionSummary(ORMModel):
     abstentions: int
     absences: int
     quorum_type: str | None = None
+    signals: list[SignalRef] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
     sync_version: int
@@ -74,6 +100,8 @@ class VotingSessionDetail(VotingSessionSummary):
     constitutional_procedure_label: str | None = None
     regulatory_procedure_id: int | None = None
     regulatory_procedure_label: str | None = None
+    # Override: detail responses include full signal payloads.
+    signals: list[BareSignal] = Field(default_factory=list)  # type: ignore[assignment]
     votes: list[VoteDetail] = Field(default_factory=list)
 
 

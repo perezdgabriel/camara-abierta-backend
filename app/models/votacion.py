@@ -70,6 +70,12 @@ class VotingSession(SyncableMixin, Base):
         back_populates="voting_sessions"
     )
     votes: Mapped[list["Vote"]] = relationship(back_populates="voting_session")
+    signals: Mapped[list["VotingSessionSignal"]] = relationship(
+        back_populates="voting_session",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="VotingSessionSignal.severity.desc()",
+    )
 
     def __str__(self) -> str:
         subject = self.subject if len(self.subject) <= 80 else f"{self.subject[:77]}..."
@@ -139,7 +145,7 @@ class VotingSessionSignal(SyncableMixin, Base):
     severity: Mapped[float] = mapped_column(Numeric(10, 4), nullable=False, default=0)
     payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
 
-    voting_session: Mapped[VotingSession] = relationship()
+    voting_session: Mapped[VotingSession] = relationship(back_populates="signals")
 
     def __str__(self) -> str:
         return f"{self.signal_type.value} on session {self.voting_session_id}"
