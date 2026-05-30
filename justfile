@@ -8,13 +8,13 @@ format:
     uv run ruff format
 
 typecheck:
-    uv run mypy app/
+    uv run ty check
 
 test:
     uv run pytest
 
 test-integration:
-    uv run pytest -m integration --integration
+    TEST_DATABASE_URL=postgresql://postgres@localhost:5432/camara_abierta_test uv run pytest -m integration --integration
 
 recreate-db:
     uv run python scripts/recreate_db.py -y

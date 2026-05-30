@@ -34,9 +34,9 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-    "mypy>=2.1.0",
     "pytest>=9.0.3",
     "ruff>=0.15.14",
+    "ty>=0.0.40",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -46,10 +46,11 @@ packages = ["app"]
 line-length = 88
 target-version = "py314"
 
-[tool.mypy]
-python_version = "3.14"
-files = ["app", "tests"]
-warn_unused_configs = true
+[tool.ty.environment]
+python-version = "3.14"
+
+[tool.ty.src]
+exclude = ["tests/"]
 
 [tool.pytest.ini_options]
 minversion = "9.0"

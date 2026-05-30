@@ -14,7 +14,7 @@ just dev              # or: uv run uvicorn app.main:app --reload
 # Quality checks (run all after every change)
 just format           # uv run ruff format
 just check            # uv run ruff check
-just typecheck        # uv run mypy app/
+just typecheck        # uv run ty check
 just test             # uv run pytest
 
 # Run a single test file
