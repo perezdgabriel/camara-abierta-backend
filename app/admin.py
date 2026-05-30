@@ -541,7 +541,7 @@ def setup_admin(app) -> Admin:
                 return str(view._build_url_for("admin:details", request, obj))
         return None
 
-    admin.templates.env.globals["admin_details_url"] = admin_details_url
+    admin.templates.env.globals["admin_details_url"] = admin_details_url  # ty: ignore[invalid-assignment]
 
     for view in _ALL_VIEWS:
         admin.add_view(view)

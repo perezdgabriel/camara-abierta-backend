@@ -5,14 +5,14 @@ import random
 from typing import Any, cast
 
 try:
-    from playwright_stealth import stealth_async  # type: ignore
+    from playwright_stealth import stealth_async
 
     HAS_STEALTH = True
 except ImportError:
     HAS_STEALTH = False
 
 try:
-    from camoufox.async_api import AsyncCamoufox  # type: ignore
+    from camoufox.async_api import AsyncCamoufox
 
     HAS_CAMOUFOX = True
 except ImportError:

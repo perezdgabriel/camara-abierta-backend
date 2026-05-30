@@ -252,12 +252,12 @@ class SenadoClient(BaseCongresoClient):
         return 0
 
     @staticmethod
-    def _parse_date_dmy(date_str: str | None) -> str | None:
-        if not date_str or date_str.strip() in {"", "/"}:
+    def _parse_date_dmy(value: str) -> str | None:
+        if not value or value.strip() in {"", "/"}:
             return None
         import re
 
-        match = re.match(r"(\d{2})/(\d{2})/(\d{4})", date_str.strip())
+        match = re.match(r"(\d{2})/(\d{2})/(\d{4})", value.strip())
         if match:
             return f"{match.group(3)}-{match.group(2)}-{match.group(1)}"
         return None

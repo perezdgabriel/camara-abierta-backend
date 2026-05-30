@@ -376,7 +376,7 @@ class OpenDataCamaraClient(BaseCongresoClient):
         return detail
 
     def _parse_vote_detail(self, voting: ET.Element) -> dict[str, Any]:
-        payload = {
+        payload: dict[str, Any] = {
             "id": self._int_val(voting, "Id"),
             "description": self._txt(voting, "Descripcion"),
             "date": self._parse_dt(self._txt(voting, "Fecha")),

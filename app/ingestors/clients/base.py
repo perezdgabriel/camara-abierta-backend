@@ -25,7 +25,7 @@ DEFAULT_TIMEOUT = _httpx().Timeout(connect=30.0, read=60.0, write=30.0, pool=30.
 def _log_retry(retry_state: RetryCallState) -> None:
     logger.warning(
         "Retrying %s (attempt %d) after %s",
-        retry_state.fn.__name__ if retry_state.fn else "unknown",
+        getattr(retry_state.fn, "__name__", "unknown"),
         retry_state.attempt_number,
         retry_state.outcome.exception() if retry_state.outcome else "unknown",
     )

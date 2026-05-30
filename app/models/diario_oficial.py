@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date as date_, datetime
 
 from sqlalchemy import (
     BigInteger,
@@ -20,7 +20,7 @@ from app.models.base import SyncableMixin
 class OfficialGazetteNorm(SyncableMixin, Base):
     __tablename__ = "official_gazette_norms"
 
-    date: Mapped[date] = mapped_column(Date, nullable=False)
+    date: Mapped[date_] = mapped_column(Date, nullable=False)
     edition: Mapped[str | None] = mapped_column(Text)
     branch: Mapped[str | None] = mapped_column(Text)
     ministry: Mapped[str | None] = mapped_column(Text)
@@ -54,7 +54,7 @@ class Regulation(SyncableMixin, Base):
     ministerio: Mapped[str] = mapped_column(Text, nullable=False)
     subsecretaria: Mapped[str | None] = mapped_column(Text)
     materia: Mapped[str | None] = mapped_column(Text)
-    fecha_ingreso: Mapped[date | None] = mapped_column(Date)
+    fecha_ingreso: Mapped[date_ | None] = mapped_column(Date)
     estado: Mapped[str | None] = mapped_column(Text)
     categoria: Mapped[str] = mapped_column(Text, nullable=False)
     reingresado: Mapped[bool] = mapped_column(
@@ -80,7 +80,7 @@ class RegulationStage(Base):
         nullable=False,
     )
     etapa: Mapped[str | None] = mapped_column(Text)
-    fecha: Mapped[date | None] = mapped_column(Date)
+    fecha: Mapped[date_ | None] = mapped_column(Date)
     accion: Mapped[str | None] = mapped_column(Text)
     sector: Mapped[str | None] = mapped_column(Text)
     observaciones: Mapped[str | None] = mapped_column(Text)
