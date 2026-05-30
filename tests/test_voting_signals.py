@@ -69,17 +69,13 @@ class TestVotacionDividida:
 
     def test_returns_none_when_no_decisive_votes(self):
         assert (
-            vs.compute_votacion_dividida(
-                _session(for_=0, against=0, abstentions=100)
-            )
+            vs.compute_votacion_dividida(_session(for_=0, against=0, abstentions=100))
             is None
         )
 
     def test_returns_none_when_chamber_seats_zero(self):
         assert (
-            vs.compute_votacion_dividida(
-                _session(for_=78, against=73, total_seats=0)
-            )
+            vs.compute_votacion_dividida(_session(for_=78, against=73, total_seats=0))
             is None
         )
 

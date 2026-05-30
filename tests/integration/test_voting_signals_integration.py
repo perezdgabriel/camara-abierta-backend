@@ -40,9 +40,7 @@ pytestmark = pytest.mark.integration
 def _make_chamber(
     db: Session, chamber_type: ChamberType, name: str, total_seats: int = 155
 ) -> Chamber:
-    chamber = Chamber(
-        chamber_type=chamber_type, name=name, total_seats=total_seats
-    )
+    chamber = Chamber(chamber_type=chamber_type, name=name, total_seats=total_seats)
     db.add(chamber)
     db.flush()
     return chamber
