@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.core.database import get_db
 from app.models.core import Region
@@ -14,6 +14,7 @@ router = APIRouter(tags=["Reference"])
 def list_parties(db: Session = Depends(get_db)):
     rows = (
         db.query(PoliticalParty)
+        .options(selectinload(PoliticalParty.bloc_affiliations))
         .filter(PoliticalParty.is_active.is_(True))
         .order_by(PoliticalParty.name.asc())
         .all()

@@ -2,7 +2,7 @@ from datetime import date, datetime
 
 from pydantic import Field
 
-from app.models.enums import ChamberType, CommitteeType, VoteChoice
+from app.models.enums import Bloc, ChamberType, CommitteeType, VoteChoice
 from app.models.enums import VotingResult as VotingResultEnum
 from app.schemas.common import CountResponse, ORMModel
 
@@ -19,6 +19,9 @@ class PartyBrief(ORMModel):
     name: str
     abbreviation: str
     color: str | None = None
+    # Editorial structural alignment as of today; null when unassigned.
+    # Read from PoliticalParty.current_bloc (eager-load bloc_affiliations).
+    current_bloc: Bloc | None = None
 
 
 class DistrictBrief(ORMModel):
@@ -84,6 +87,10 @@ class LegislatorSummary(ORMModel):
     district: DistrictBrief | None = None
     circumscription: CircumscriptionBrief | None = None
     is_active: bool
+    # Editorial bloc override, used mainly to align independents in the majority
+    # simulator. Null for party members (they inherit party.current_bloc) and for
+    # unaligned independents (the "sin alinear" tray). See ADR-0006.
+    default_bloc: Bloc | None = None
     created_at: datetime
     updated_at: datetime
     sync_version: int

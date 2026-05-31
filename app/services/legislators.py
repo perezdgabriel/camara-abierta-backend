@@ -131,7 +131,7 @@ def list_legislators(
     limit: int,
 ) -> tuple[int, list[Legislator]]:
     query = db.query(Legislator).options(
-        joinedload(Legislator.party),
+        joinedload(Legislator.party).selectinload(PoliticalParty.bloc_affiliations),
         joinedload(Legislator.district),
         joinedload(Legislator.circumscription),
     )
@@ -194,7 +194,7 @@ def get_legislator(db: Session, legislator_id: int) -> Legislator | None:
     return (
         db.query(Legislator)
         .options(
-            joinedload(Legislator.party),
+            joinedload(Legislator.party).selectinload(PoliticalParty.bloc_affiliations),
             joinedload(Legislator.district),
             joinedload(Legislator.circumscription),
             selectinload(Legislator.terms).options(
