@@ -37,5 +37,8 @@ legislators:
 bills:
     uv run python -m app.cli ingestors bills
 
-seed: geography legislature legislators
+seed-blocs:
+    uv run python scripts/seed_blocs.py
+
+seed: geography legislature legislators seed-blocs
     echo "Database has been seeded with initial data"

@@ -11,6 +11,7 @@ from app.core.database import engine
 from app.models.core import Circumscription, District, Region, Topic
 from app.models.diario_oficial import OfficialGazetteNorm, Regulation, RegulationStage
 from app.models.legislature import (
+    BlocAffiliation,
     Chamber,
     Coalition,
     Committee,
@@ -152,6 +153,7 @@ class LegislatorAdmin(ModelView, model=Legislator):
         Legislator.district,
         Legislator.circumscription,
         Legislator.is_active,
+        Legislator.default_bloc,
     ]
     column_details_list = "__all__"
     column_searchable_list = [
@@ -205,6 +207,28 @@ class CoalitionAdmin(ModelView, model=Coalition):
         Coalition.is_active,
     ]
     column_searchable_list = [Coalition.name, Coalition.abbreviation]
+
+
+class BlocAffiliationAdmin(ModelView, model=BlocAffiliation):
+    name = "Afiliación a bloque"
+    name_plural = "Afiliaciones a bloque"
+    icon = "fa-solid fa-arrows-left-right"
+    category = "Parlamento"
+
+    column_list = [
+        BlocAffiliation.id,
+        BlocAffiliation.party,
+        BlocAffiliation.bloc,
+        BlocAffiliation.start_date,
+        BlocAffiliation.end_date,
+        BlocAffiliation.sync_version,
+    ]
+    column_sortable_list = [
+        BlocAffiliation.id,
+        BlocAffiliation.start_date,
+        BlocAffiliation.end_date,
+    ]
+    page_size = 50
 
 
 class ChamberAdmin(ModelView, model=Chamber):
@@ -493,6 +517,7 @@ _ALL_VIEWS = [
     LegislatorAdmin,
     PoliticalPartyAdmin,
     CoalitionAdmin,
+    BlocAffiliationAdmin,
     ChamberAdmin,
     LegislativePeriodAdmin,
     LegislativeSessionAdmin,
