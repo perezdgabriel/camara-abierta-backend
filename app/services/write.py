@@ -19,6 +19,7 @@ from app.models.enums import (
     BillOrigin,
     BillStatus,
     BillType,
+    Bloc,
     ChamberType,
     CommitteeType,
     StageType,
@@ -28,6 +29,7 @@ from app.models.enums import (
     VotingType,
 )
 from app.models.legislature import (
+    BlocAffiliation,
     Chamber,
     Committee,
     CommitteeMembership,
@@ -1436,6 +1438,77 @@ def upsert_parliamentary_appointment(
         _touch_syncable(db, existing)
         db.flush()
     return existing
+
+
+def upsert_bloc_affiliation(
+    db: Session,
+    *,
+    party_id: int,
+    bloc: Bloc | str,
+    start_date: date,
+    end_date: date | None = None,
+) -> BlocAffiliation:
+    """Idempotently upsert a party's bloc affiliation, keyed on (party, start).
+
+    Editorial data with no upstream source (see ADR-0006). Re-running with the
+    same ``start_date`` updates the existing row's ``bloc``/``end_date`` rather
+    than duplicating it. To record a change of government, close the current row
+    (set its ``end_date``) and call this again with a new ``start_date``.
+    """
+    normalized_bloc = _coerce_enum(Bloc, bloc)
+    if normalized_bloc is None:
+        raise ValueError(f"Invalid bloc value: {bloc!r}")
+
+    existing = db.execute(
+        select(BlocAffiliation)
+        .where(BlocAffiliation.party_id == party_id)
+        .where(BlocAffiliation.start_date == start_date)
+    ).scalar_one_or_none()
+    if existing is None:
+        affiliation = BlocAffiliation(
+            party_id=party_id,
+            bloc=normalized_bloc,
+            start_date=start_date,
+            end_date=end_date,
+        )
+        db.add(affiliation)
+        db.flush()
+        return affiliation
+
+    changed = False
+    if existing.bloc != normalized_bloc:
+        existing.bloc = normalized_bloc
+        changed = True
+    if existing.end_date != end_date:
+        existing.end_date = end_date
+        changed = True
+    if changed:
+        _touch_syncable(db, existing)
+        db.flush()
+    return existing
+
+
+def update_legislator_default_bloc(
+    db: Session, legislator_id: int, bloc: Bloc | str | None
+) -> Legislator | None:
+    """Set (or clear) a legislator's editorial ``default_bloc`` override.
+
+    Used primarily to align independents (``party_id IS NULL``) in the majority
+    simulator, where the party's bloc is unavailable. Pass ``None`` to clear,
+    sending the legislator back to the "sin alinear" tray. See ADR-0006.
+    """
+    legislator = db.execute(
+        select(Legislator).where(Legislator.id == legislator_id).with_for_update()
+    ).scalar_one_or_none()
+    if legislator is None:
+        return None
+
+    normalized = _coerce_enum(Bloc, bloc) if bloc is not None else None
+    if legislator.default_bloc != normalized:
+        legislator.default_bloc = normalized
+        _touch_syncable(db, legislator)
+        db.flush()
+    return legislator
 
 
 def upsert_committee(db: Session, data: dict[str, Any]) -> Committee:

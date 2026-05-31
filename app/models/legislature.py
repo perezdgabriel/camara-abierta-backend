@@ -10,7 +10,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.database import Base
 from app.models.base import SyncableMixin
 from app.models.core import Circumscription, District
-from app.models.enums import ChamberType, CommitteeType
+from app.models.enums import Bloc, ChamberType, CommitteeType
 
 if TYPE_CHECKING:
     from app.models.proyecto import Bill, BillAuthorship
@@ -33,11 +33,70 @@ class PoliticalParty(SyncableMixin, Base):
     coalitions: Mapped[list["CoalitionMembership"]] = relationship(
         back_populates="party"
     )
+    bloc_affiliations: Mapped[list["BlocAffiliation"]] = relationship(
+        back_populates="party",
+        cascade="all, delete-orphan",
+        order_by="BlocAffiliation.start_date.desc()",
+    )
+
+    @property
+    def current_bloc(self) -> Bloc | None:
+        """The party's bloc as of today, from the active ``BlocAffiliation`` row.
+
+        Reads from the (ideally eager-loaded) ``bloc_affiliations`` relationship;
+        callers should ``selectinload`` it to avoid N+1. Returns ``None`` when the
+        party has no editorial bloc assignment. See ADR-0006.
+        """
+        today = date.today()
+        active = [
+            affiliation
+            for affiliation in self.bloc_affiliations
+            if affiliation.start_date <= today
+            and (affiliation.end_date is None or affiliation.end_date > today)
+        ]
+        if not active:
+            return None
+        return max(active, key=lambda affiliation: affiliation.start_date).bloc
 
     def __str__(self) -> str:
         if self.abbreviation and self.abbreviation != self.name:
             return f"{self.name} ({self.abbreviation})"
         return self.name
+
+
+class BlocAffiliation(SyncableMixin, Base):
+    """A dated assignment of a political party to a structural bloc.
+
+    Editorial data (oficialismo/oposición) with no upstream source. Modeled
+    temporally — one row per (party, start_date) — so a change of government can
+    be recorded by closing the old row (``end_date``) and opening a new one. v1
+    UI consumes only the current row via :attr:`PoliticalParty.current_bloc`.
+    See ADR-0006.
+    """
+
+    __tablename__ = "bloc_affiliations"
+    __table_args__ = (
+        UniqueConstraint(
+            "party_id",
+            "start_date",
+            name="uq_bloc_affiliations_party_start",
+        ),
+    )
+
+    party_id: Mapped[int] = mapped_column(
+        ForeignKey("political_parties.id", ondelete="CASCADE"), nullable=False
+    )
+    bloc: Mapped[Bloc] = mapped_column(
+        SqlEnum(Bloc, name="bloc", native_enum=False, validate_strings=True),
+        nullable=False,
+    )
+    start_date: Mapped[date] = mapped_column(Date, nullable=False)
+    end_date: Mapped[date | None] = mapped_column(Date)
+
+    party: Mapped[PoliticalParty] = relationship(back_populates="bloc_affiliations")
+
+    def __str__(self) -> str:
+        return f"{self.party_id} → {self.bloc.value} ({self.start_date})"
 
 
 class Coalition(SyncableMixin, Base):
@@ -168,6 +227,14 @@ class Legislator(SyncableMixin, Base):
         ForeignKey("circumscriptions.id", ondelete="SET NULL")
     )
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    default_bloc: Mapped[Bloc | None] = mapped_column(
+        SqlEnum(
+            Bloc,
+            name="legislator_default_bloc",
+            native_enum=False,
+            validate_strings=True,
+        )
+    )
 
     party: Mapped[PoliticalParty | None] = relationship(back_populates="legislators")
     district: Mapped[District | None] = relationship(back_populates="legislators")

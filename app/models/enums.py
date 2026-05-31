@@ -72,6 +72,18 @@ class CommitteeType(str, Enum):
     MIXED = "mixed"
 
 
+class Bloc(str, Enum):
+    """Structural political alignment of a party (or independent legislator).
+
+    Editorial, not upstream-sourced: there is no congress API for this. Modeled
+    temporally via ``BlocAffiliation`` (party-scoped) and ``Legislator.default_bloc``
+    (independent/override). See CONTEXT.md "Bloque" and ADR-0006.
+    """
+
+    OFICIALISMO = "oficialismo"
+    OPOSICION = "oposicion"
+
+
 class SignalType(str, Enum):
     """Behavior-revealing signal flagged on a voting session.
 

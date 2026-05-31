@@ -2,6 +2,7 @@ from app.models.core import Circumscription, Commune, District, Province, Region
 from app.models.diario_oficial import OfficialGazetteNorm, Regulation, RegulationStage
 from app.models.ingestor_state import IngestorState
 from app.models.legislature import (
+    BlocAffiliation,
     Chamber,
     Coalition,
     CoalitionMembership,
@@ -40,6 +41,7 @@ __all__ = [
     "BillSponsoringMinistry",
     "BillStage",
     "BillUrgency",
+    "BlocAffiliation",
     "Chamber",
     "ChangeLog",
     "ClientSyncState",
