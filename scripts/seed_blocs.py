@@ -46,26 +46,27 @@ PERIOD_START = date(2022, 3, 11)
 # Abbreviations mirror PoliticalParty.abbreviation (set from OpenData `Alias`).
 PARTY_BLOC: dict[str, Bloc] = {
     # ── Oficialismo (governing coalition) ──
-    "PC": Bloc.OFICIALISMO,  # Partido Comunista
-    "FA": Bloc.OFICIALISMO,  # Frente Amplio
-    "RD": Bloc.OFICIALISMO,  # Revolución Democrática (now within FA)
-    "COMUNES": Bloc.OFICIALISMO,  # Comunes (within FA)
-    "PCS": Bloc.OFICIALISMO,  # Convergencia Social (within FA)
-    "PS": Bloc.OFICIALISMO,  # Partido Socialista
-    "PPD": Bloc.OFICIALISMO,  # Partido Por la Democracia
-    "PR": Bloc.OFICIALISMO,  # Partido Radical
-    "FRVS": Bloc.OFICIALISMO,  # Federación Regionalista Verde Social
-    "PL": Bloc.OFICIALISMO,  # Partido Liberal
-    "PAH": Bloc.OFICIALISMO,  # Acción Humanista
+    "PC": Bloc.OPOSICION,  # Partido Comunista
+    "FA": Bloc.OPOSICION,  # Frente Amplio
+    "RD": Bloc.OPOSICION,  # Revolución Democrática (now within FA)
+    "COMUNES": Bloc.OPOSICION,  # Comunes (within FA)
+    "PCS": Bloc.OPOSICION,  # Convergencia Social (within FA)
+    "PS": Bloc.OPOSICION,  # Partido Socialista
+    "PPD": Bloc.OPOSICION,  # Partido Por la Democracia
+    "PR": Bloc.OPOSICION,  # Partido Radical
+    "FRVS": Bloc.OPOSICION,  # Federación Regionalista Verde Social
+    "PL": Bloc.OPOSICION,  # Partido Liberal
+    "PAH": Bloc.OPOSICION,  # Acción Humanista
     # ── Oposición ──
-    "UDI": Bloc.OPOSICION,  # Unión Demócrata Independiente
-    "RN": Bloc.OPOSICION,  # Renovación Nacional
-    "EVOP": Bloc.OPOSICION,  # Evópoli
-    "PREP": Bloc.OPOSICION,  # Partido Republicano
-    "PSC": Bloc.OPOSICION,  # Partido Social Cristiano
-    "PDG": Bloc.OPOSICION,  # Partido de la Gente
-    "DEM": Bloc.OPOSICION,  # Demócratas
-    "PNL": Bloc.OPOSICION,  # Partido Nacional Libertario
+    "UDI": Bloc.OFICIALISMO,  # Unión Demócrata Independiente
+    "RN": Bloc.OFICIALISMO,  # Renovación Nacional
+    "EVOP": Bloc.OFICIALISMO,  # Evópoli
+    "PREP": Bloc.OFICIALISMO,  # Partido Republicano
+    "PSC": Bloc.OFICIALISMO,  # Partido Social Cristiano
+    "PNL": Bloc.OFICIALISMO,  # Partido Nacional Libertario
+    "PCC": Bloc.OFICIALISMO,
+    # "DEM": Bloc.OFICIALISMO,  # Demócratas
+    # "PDG" : Bloc.OFICIALISMO,  # Partido de la Gente
     # Deliberately unmapped (ambiguous / unclassified → "sin alinear" tray):
     # DC (Demócrata Cristiano), PH (Partido Humanista), PRI, PRO, PCC, PRSD…
 }
