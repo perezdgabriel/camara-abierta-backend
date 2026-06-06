@@ -88,12 +88,12 @@ The default test suite (`uv run pytest`) uses SQLite in-memory (`sqlite+pysqlite
 
 | Entity | Source |
 |--------|--------|
-| Bills (list) | OpenData Camara (`get_mensajes_x_anno`, `get_mociones_x_anno`) |
+| Bills (list / discovery) | OpenData Camara (`get_mensajes_x_anno`, `get_mociones_x_anno`) — bounded year-scan from `start_year`; no Senado date query (ADR-0008) |
 | Bills (detail) | Senado (`get_bill_by_bulletin`) |
 | Deputies (roster) | OpenData Camara (`get_diputados_periodo_actual`) |
 | Deputies (district + photo) | camara.cl scraper (`scrapers/camara_diputados.py`) — no API exposes district (ADR-0003) |
 | Senators (roster) | senado.cl web JSON API (`SenadoWebClient.get_senators`) — wspublico returns only 31/50 (ADR-0002) |
-| Voting sessions | Senado (`get_votes_by_bulletin`) |
+| Voting sessions | Captured during bill ingest — Senate votes from Senado `votaciones.php` (`fetch_votes_parallel`; the embedded bill-detail votes are often absent), Chamber votes from OpenData enrichment; no separate voting-ingestion task (ADR-0008) |
 
 ## Domain language
 

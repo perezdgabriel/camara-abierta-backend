@@ -45,6 +45,8 @@ packages = ["app"]
 [tool.ruff]
 line-length = 88
 target-version = "py314"
+exclude = ["migrations/"]
+
 
 [tool.ty.environment]
 python-version = "3.14"

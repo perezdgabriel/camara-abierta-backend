@@ -93,10 +93,10 @@ app/
 
 | Entity | Source API | Client method |
 |--------|-----------|---------------|
-| Bills (list) | OpenData Camara | `get_mensajes_x_anno()`, `get_mociones_x_anno()` |
+| Bills (list / discovery) | OpenData Camara | `get_mensajes_x_anno()`, `get_mociones_x_anno()` — bounded year-scan from `start_year`, no Senado date query (ADR-0008) |
 | Bills (detail) | Senado | `get_bill_by_bulletin()` |
 | Legislators | Senado + OpenData Camara | `get_senadores_vigentes()`, `get_diputados_periodo_actual()` |
-| Voting sessions | Senado | `get_votes_by_bulletin()` |
+| Voting sessions | Captured during bill ingest | Senado `votaciones.php` (`fetch_votes_parallel`) for Senate + OpenData Chamber-vote enrichment; no separate task (ADR-0008) |
 
 ### Three subdomains (independent)
 

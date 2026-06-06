@@ -28,7 +28,6 @@ def _list_jobs(_: argparse.Namespace) -> dict[str, list[str]]:
             "committees",
             "legislature",
             "reference-data",
-            "voting-sessions",
         ],
         "loaders": ["geography"],
         "voting-signals": ["backfill", "refresh-aggregate", "seed-fixtures"],
@@ -102,14 +101,6 @@ def _run_geography(args: argparse.Namespace) -> dict[str, Any]:
         dry_run=args.dry_run,
     )
     return {"job": "geography", **result}
-
-
-def _run_voting_sessions(args: argparse.Namespace) -> dict[str, Any]:
-    run_ingest_voting_sessions = _load_attr(
-        "app.tasks.ingestors", "run_ingest_voting_sessions"
-    )
-    result = run_ingest_voting_sessions(since=args.since, dry_run=args.dry_run)
-    return {"job": "voting-sessions", **result}
 
 
 def _with_session(fn: Callable[[Any], R]) -> R:
@@ -244,7 +235,10 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     bills_parser.add_argument(
         "--since",
-        help="Only fetch bill bulletins modified since this ISO date.",
+        help=(
+            "Re-scan bills from this ISO date's year onward (coarsened to the "
+            "year). Defaults to the last sync; full backfill when never synced."
+        ),
     )
     bills_parser.set_defaults(runner=_run_bills)
 
@@ -289,16 +283,6 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     geography_parser.set_defaults(runner=_run_geography)
-
-    voting_parser = ingestor_subparsers.add_parser(
-        "voting-sessions",
-        parents=[dry_run_parent],
-        help="Fetch and enqueue voting session sync jobs.",
-    )
-    voting_parser.add_argument(
-        "--since", help="Only fetch voting sessions since this ISO date."
-    )
-    voting_parser.set_defaults(runner=_run_voting_sessions)
 
     signals_parser = subparsers.add_parser(
         "voting-signals",

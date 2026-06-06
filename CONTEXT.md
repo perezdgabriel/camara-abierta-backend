@@ -98,3 +98,7 @@ _Avoid_: conflating with `LegislatorTerm`; treating party-change rows as separat
 **Deputy district source**:
 No congress API exposes the deputy→district link, so it is scraped from camara.cl (Cloudflare-protected; via the stealth `ScraperEngine`). The scrape is *enrichment-only*: it matches existing deputies by `camara:{dipid}` and sets `district_id` (plus photo/profile), never creating legislators or touching party data. See ADR-0003.
 _Avoid_: expecting district from OpenData/wscamaradiputados (always empty)
+
+**Voting session source**:
+Voting sessions are captured as part of bill ingest, not by a separate collector. When a bill is (re)fetched, its Senate votes (from Senado's dedicated `votaciones.php` endpoint, the complete source — the votes embedded in the bill detail are often absent) and Chamber votes (from OpenData enrichment) are upserted alongside it. So vote freshness follows bill discovery, which is a bounded re-scan of recent years. There is no standalone "fetch votes since a date" path. See ADR-0008.
+_Avoid_: a dedicated voting-ingestion collector; relying on the votes embedded in the bill detail; querying Congress for "votes by date"

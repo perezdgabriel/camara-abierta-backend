@@ -21,13 +21,15 @@ from app.ingestors.clients.opendata_camara_async import (
     fetch_voting_details_parallel,
 )
 from app.ingestors.clients.senado import SenadoClient
-from app.ingestors.clients.senado_async import fetch_bills_parallel
+from app.ingestors.clients.senado_async import (
+    fetch_bills_parallel,
+    fetch_votes_parallel,
+)
 from app.ingestors.clients.senado_web import SenadoWebClient
 from app.ingestors.parsers.bills import BillParser
 from app.ingestors.parsers.committees import CommitteeParser
 from app.ingestors.parsers.legislators import LegislatorParser
 from app.ingestors.parsers.legislature import LegislatureParser
-from app.ingestors.parsers.votes import VoteParser
 from app.models.enums import ChamberType
 from app.models.ingestor_state import IngestorState
 from app.tasks.base import DatabaseTask
@@ -40,7 +42,6 @@ from app.tasks.legislators import (
 )
 from app.tasks.legislature import sync_period, sync_session
 from app.tasks.reference import sync_topic
-from app.tasks.voting import sync_voting_session
 
 logger = logging.getLogger(__name__)
 
@@ -81,14 +82,6 @@ def _get_last_sync_date(entity_type: str) -> datetime.date | None:
             "Failed to load ingestor state for %s", entity_type, exc_info=True
         )
     return None
-
-
-def _resolve_since_date(entity_type: str, *, fallback_days: int) -> datetime.date:
-    fallback = datetime.date.today() - datetime.timedelta(days=fallback_days)
-    last_sync_date = _get_last_sync_date(entity_type)
-    if last_sync_date is not None:
-        return last_sync_date
-    return fallback
 
 
 def _mark_synced(entity_type: str) -> None:
@@ -175,41 +168,40 @@ def run_ingest_bills(
             if since_date is None:
                 since_date = _get_last_sync_date("bills")
 
-            seen: set[str] = set()
+            # Bulletin discovery is a bounded re-scan of OpenData's per-year bill
+            # lists. ``since_date`` (from ``--since`` or the last sync) is coarsened
+            # to its year: we re-scan from that year to the current one and re-fetch
+            # each bill's full Senado detail. With no prior sync we backfill from the
+            # configured start year. OpenData exposes no "modified since" field, so
+            # late activity on bills older than the window is not picked up.
+            current_year = datetime.date.today().year
             if since_date is not None:
                 mode = "incremental"
-                with SenadoClient() as senado:
-                    for bulletin_number in senado.get_bills_by_date(since_date):
-                        if bulletin_number and bulletin_number not in seen:
-                            seen.add(bulletin_number)
-                            bulletins.append(bulletin_number)
+                start_year = since_date.year
             else:
                 start_year = settings.ingestor_bills_start_year
-                current_year = datetime.date.today().year
-                with OpenDataCamaraClient() as opendata:
-                    for year in range(start_year, current_year + 1):
-                        try:
-                            for proyecto in opendata.get_mensajes_x_anno(year):
-                                bn = proyecto["bulletin_number"]
-                                if bn and bn not in seen:
-                                    seen.add(bn)
-                                    bulletins.append(bn)
-                        except Exception:
-                            logger.exception(
-                                "Failed to fetch mensajes for year %d", year
-                            )
-                            errors += 1
-                        try:
-                            for proyecto in opendata.get_mociones_x_anno(year):
-                                bn = proyecto["bulletin_number"]
-                                if bn and bn not in seen:
-                                    seen.add(bn)
-                                    bulletins.append(bn)
-                        except Exception:
-                            logger.exception(
-                                "Failed to fetch mociones for year %d", year
-                            )
-                            errors += 1
+
+            seen: set[str] = set()
+            with OpenDataCamaraClient() as opendata:
+                for year in range(start_year, current_year + 1):
+                    try:
+                        for proyecto in opendata.get_mensajes_x_anno(year):
+                            bn = proyecto["bulletin_number"]
+                            if bn and bn not in seen:
+                                seen.add(bn)
+                                bulletins.append(bn)
+                    except Exception:
+                        logger.exception("Failed to fetch mensajes for year %d", year)
+                        errors += 1
+                    try:
+                        for proyecto in opendata.get_mociones_x_anno(year):
+                            bn = proyecto["bulletin_number"]
+                            if bn and bn not in seen:
+                                seen.add(bn)
+                                bulletins.append(bn)
+                    except Exception:
+                        logger.exception("Failed to fetch mociones for year %d", year)
+                        errors += 1
 
         if bulletins:
             results = asyncio.run(fetch_bills_parallel(bulletins))
@@ -218,11 +210,18 @@ def run_ingest_bills(
                 valid_bulletins
             )
             errors += detail_errors
+            # Senate votes come from the dedicated votaciones.php endpoint, which is
+            # the complete source — the <votacion> nodes embedded in the bill detail
+            # (tramitacion.php) are frequently absent (ADR-0008).
+            senate_votes = dict(asyncio.run(fetch_votes_parallel(valid_bulletins)))
             for bulletin_number, raw in results:
                 try:
                     if raw is None:
                         continue
                     payload = BillParser.parse_bill(raw)
+                    fetched_votes = senate_votes.get(bulletin_number)
+                    if fetched_votes is not None:
+                        payload["_votaciones"] = fetched_votes
                     opendata_detail = opendata_details.get(bulletin_number)
                     if opendata_detail is not None:
                         payload.update(
@@ -579,97 +578,6 @@ def run_ingest_reference_data(*, dry_run: bool = False) -> dict[str, Any]:
     return _build_dispatch_result(dispatched, errors, dry_run)
 
 
-def run_ingest_voting_sessions(
-    since: str | None = None, *, dry_run: bool = False
-) -> dict[str, Any]:
-    dispatched = 0
-    errors = 0
-    bulletins: list[str] = []
-    since_date = datetime.date.fromisoformat(since) if since else None
-    if since_date is None:
-        since_date = _resolve_since_date("voting", fallback_days=30)
-
-    try:
-        with SenadoClient() as senado:
-            seen: set[str] = set()
-            for bulletin_number in senado.get_bills_by_date(since_date):
-                if not bulletin_number or bulletin_number in seen:
-                    continue
-                seen.add(bulletin_number)
-                bulletins.append(bulletin_number)
-                try:
-                    time.sleep(REQUEST_DELAY)
-                    for raw_vote in senado.get_votes_by_bulletin(bulletin_number):
-                        try:
-                            payload = VoteParser.parse_senate_vote(
-                                raw_vote, bulletin=bulletin_number
-                            )
-                            if not dry_run:
-                                _dispatch(sync_voting_session, payload, bulletin_number)
-                            dispatched += 1
-                        except Exception:
-                            logger.exception(
-                                "Failed to parse vote for bulletin=%s", bulletin_number
-                            )
-                            errors += 1
-                except Exception:
-                    logger.exception(
-                        "Failed to fetch votes for bulletin=%s", bulletin_number
-                    )
-                    errors += 1
-    except Exception:
-        logger.exception(
-            "Failed to fetch bill bulletins for voting from SenadoClient since=%s",
-            since_date,
-        )
-        errors += 1
-
-    try:
-        all_details, detail_errors = _load_opendata_bill_details_with_votes(bulletins)
-        errors += detail_errors
-        for bulletin_number in bulletins:
-            try:
-                detail = all_details.get(bulletin_number)
-                if detail is None:
-                    continue
-                for raw_vote in detail.get("chamber_votes", []):
-                    voting_id = raw_vote.get("id")
-                    if not voting_id:
-                        continue
-                    try:
-                        payload = VoteParser.parse_chamber_vote(
-                            raw_vote, bulletin=bulletin_number
-                        )
-                        if not dry_run:
-                            _dispatch(sync_voting_session, payload, bulletin_number)
-                        dispatched += 1
-                    except Exception:
-                        logger.exception(
-                            "Failed to parse Chamber vote bulletin=%s voting_id=%s",
-                            bulletin_number,
-                            voting_id,
-                        )
-                        errors += 1
-            except Exception:
-                logger.exception(
-                    "Failed to fetch Chamber votes for bulletin=%s",
-                    bulletin_number,
-                )
-                errors += 1
-    except Exception:
-        logger.exception(
-            "Failed to fetch Chamber voting sessions from OpenDataCamaraClient"
-        )
-        errors += 1
-
-    if not dry_run:
-        _mark_synced("voting")
-
-    return _build_dispatch_result(
-        dispatched, errors, dry_run, since=since_date.isoformat()
-    )
-
-
 @app.task(name="app.tasks.ingestors.ingest_bills", bind=True, base=DatabaseTask)
 def ingest_bills(self, bulletin: str | None = None, since: str | None = None) -> dict:
     return run_ingest_bills(bulletin=bulletin, since=since)
@@ -695,10 +603,3 @@ def ingest_legislature(self) -> dict:
 )
 def ingest_reference_data(self) -> dict:
     return run_ingest_reference_data()
-
-
-@app.task(
-    name="app.tasks.ingestors.ingest_voting_sessions", bind=True, base=DatabaseTask
-)
-def ingest_voting_sessions(self, since: str | None = None) -> dict:
-    return run_ingest_voting_sessions(since=since)

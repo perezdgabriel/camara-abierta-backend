@@ -27,10 +27,6 @@ app.conf.beat_schedule = {
         "task": "app.tasks.ingestors.ingest_legislature",
         "schedule": crontab(hour=3, minute=0),
     },
-    "ingest-voting-sessions": {
-        "task": "app.tasks.ingestors.ingest_voting_sessions",
-        "schedule": crontab(hour=3, minute=15),
-    },
     "ingest-reference-data": {
         "task": "app.tasks.ingestors.ingest_reference_data",
         "schedule": crontab(hour=3, minute=30),

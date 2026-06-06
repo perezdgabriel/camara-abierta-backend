@@ -1,4 +1,3 @@
-import datetime
 import logging
 from typing import Any
 from xml.etree import ElementTree as ET
@@ -99,24 +98,6 @@ class SenadoClient(BaseCongresoClient):
         ]
         return bill
 
-    def get_bills_by_date(self, since: datetime.date) -> list[str]:
-        fecha = since.strftime("%d/%m/%Y")
-        root = self._get_xml("tramitacion.php", params={"fecha": fecha})
-        bulletins = [
-            boletin
-            for proyecto in root.iter("proyecto")
-            for desc in [proyecto.find("descripcion")]
-            for boletin in [self._text(desc, "boletin")]
-            if boletin
-        ]
-        logger.info("Found %d bills modified since %s", len(bulletins), fecha)
-        return bulletins
-
-    def get_votes_by_bulletin(self, bulletin: str) -> list[dict[str, Any]]:
-        boletin_num = bulletin.split("-")[0]
-        root = self._get_xml("votaciones.php", params={"boletin": boletin_num})
-        return SenadoClient._parse_votaciones_from_root(root)
-
     @staticmethod
     def _parse_authors(proyecto: ET.Element) -> list[dict[str, Any]]:
         return [
@@ -170,32 +151,10 @@ class SenadoClient(BaseCongresoClient):
 
     @staticmethod
     def _parse_votaciones_from_root(root: ET.Element) -> list[dict[str, Any]]:
-        return [
-            {
-                "session": BaseCongresoClient._text(vot, "SESION"),
-                "date": SenadoClient._parse_date_dmy(
-                    BaseCongresoClient._text(vot, "FECHA")
-                ),
-                "subject": BaseCongresoClient._text(vot, "TEMA"),
-                "votes_for": SenadoClient._int(vot, "SI"),
-                "votes_against": SenadoClient._int(vot, "NO"),
-                "abstentions": SenadoClient._int(vot, "ABSTENCION"),
-                "paired": SenadoClient._int(vot, "PAREO"),
-                "quorum": BaseCongresoClient._text(vot, "QUORUM"),
-                "voting_type": BaseCongresoClient._text(vot, "TIPOVOTACION"),
-                "stage": BaseCongresoClient._text(vot, "ETAPA"),
-                "detail": [
-                    {
-                        "legislator_name": BaseCongresoClient._text(v, "PARLAMENTARIO"),
-                        "vote": BaseCongresoClient._text(v, "SELECCION"),
-                    }
-                    for detalle in [vot.find("DETALLE_VOTACION")]
-                    if detalle is not None
-                    for v in detalle.iter("VOTO")
-                ],
-            }
-            for vot in root.iter("votacion")
-        ]
+        # The dedicated votaciones.php endpoint returns <votacion> nodes at the
+        # document root. Parsing is identical to the embedded case — both walk
+        # ``.iter("votacion")`` — so reuse the same logic.
+        return SenadoClient._parse_votaciones(root)
 
     @staticmethod
     def _parse_informes(proyecto: ET.Element) -> list[dict[str, Any]]:
