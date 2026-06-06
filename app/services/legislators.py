@@ -134,6 +134,8 @@ def list_legislators(
         joinedload(Legislator.party).selectinload(PoliticalParty.bloc_affiliations),
         joinedload(Legislator.district),
         joinedload(Legislator.circumscription),
+        # voting_lean (on LegislatorSummary) reads this; eager-load to avoid N+1.
+        selectinload(Legislator.voting_stats),
     )
     count_query = db.query(func.count(Legislator.id))
 

@@ -3,14 +3,14 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import JSON
+from sqlalchemy import JSON, Boolean
 from sqlalchemy import Enum as SqlEnum
 from sqlalchemy import ForeignKey, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
 from app.models.base import SyncableMixin
-from app.models.enums import SignalType, VoteChoice, VotingResult, VotingType
+from app.models.enums import Bloc, SignalType, VoteChoice, VotingResult, VotingType
 from app.models.legislature import Chamber, LegislativeSession, Legislator
 from app.models.proyecto import Bill, BillStage
 
@@ -172,6 +172,14 @@ class VotingWindowAggregate(SyncableMixin, Base):
 
 
 class LegislatorVotingStats(SyncableMixin, Base):
+    """Precomputed per-legislator voting stats, refreshed out-of-band.
+
+    Mixed windows by design (see ADR-0007): the base aggregates
+    (``total_sessions`` … ``participation_rate``) are **career-wide** — matching
+    the on-the-fly ``get_legislator_voting_summary`` — while the lean/discipline
+    fields are scoped to the **current legislative period**.
+    """
+
     __tablename__ = "legislator_voting_stats"
 
     legislator_id: Mapped[int] = mapped_column(
@@ -188,6 +196,29 @@ class LegislatorVotingStats(SyncableMixin, Base):
     participation_rate: Mapped[float] = mapped_column(
         Numeric(5, 2), nullable=False, default=0
     )
+
+    # ── Inclinación de voto (current period) — see ADR-0007 ────────────────
+    # The bloc whose modal vote the legislator matched most often across
+    # contested, decisive sessions. ``lean_seats`` marks a lean strong enough to
+    # seed an independent in the simulator. Null bloc = insufficient data or tie.
+    inferred_bloc: Mapped[Bloc | None] = mapped_column(
+        SqlEnum(
+            Bloc,
+            name="legislator_inferred_bloc",
+            native_enum=False,
+            validate_strings=True,
+        )
+    )
+    lean_agreed: Mapped[int] = mapped_column(nullable=False, default=0)
+    lean_contested: Mapped[int] = mapped_column(nullable=False, default=0)
+    lean_seats: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    # ── Disciplina partidaria (current period, party members) ──────────────
+    # ``discipline_rate`` is a percentage (0–100), mirroring attendance_percentage.
+    discipline_rate: Mapped[float | None] = mapped_column(Numeric(5, 2))
+    discipline_with: Mapped[int] = mapped_column(nullable=False, default=0)
+    discipline_decided: Mapped[int] = mapped_column(nullable=False, default=0)
+
     stats_updated_at: Mapped[datetime] = mapped_column(nullable=False)
 
     legislator: Mapped[Legislator] = relationship(back_populates="voting_stats")

@@ -77,6 +77,27 @@ class CommitteeMembershipItem(ORMModel):
     committee: CommitteeBrief
 
 
+class VotingLean(ORMModel):
+    """Inclinación de voto: the bloc whose modal vote the legislator matched most
+    often across contested, decisive sessions of the current period. ``bloc`` is
+    null on an exact split; ``seats`` marks a lean strong enough to seed an
+    independent in the simulator. See ADR-0007."""
+
+    bloc: Bloc | None = None
+    agreed: int
+    contested: int
+    seats: bool
+
+
+class PartyDiscipline(ORMModel):
+    """Disciplina partidaria: how often a party member voted with their party's
+    modal this period. ``rate`` is a percentage (0–100). Party members only."""
+
+    rate: float | None = None
+    with_party: int
+    decided: int
+
+
 class LegislatorSummary(ORMModel):
     id: int
     bcn_id: str | None = None
@@ -91,6 +112,9 @@ class LegislatorSummary(ORMModel):
     # simulator. Null for party members (they inherit party.current_bloc) and for
     # unaligned independents (the "sin alinear" tray). See ADR-0006.
     default_bloc: Bloc | None = None
+    # Observed lean from voting behavior (computed, not editorial — see ADR-0007).
+    # The simulator reads it from the list endpoint to seed independents.
+    voting_lean: VotingLean | None = None
     created_at: datetime
     updated_at: datetime
     sync_version: int
@@ -108,6 +132,8 @@ class LegislatorDetail(LegislatorSummary):
     terms: list[LegislatorTermItem] = Field(default_factory=list)
     committee_memberships: list[CommitteeMembershipItem] = Field(default_factory=list)
     voting_stats: LegislatorVotingStatsSummary | None = None
+    # Per-person party-unity rate this period; null for independents. See ADR-0007.
+    party_discipline: PartyDiscipline | None = None
 
 
 class LegislatorsResponse(CountResponse[LegislatorSummary]):

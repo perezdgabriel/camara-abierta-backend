@@ -1,8 +1,8 @@
 """initial_schema
 
-Revision ID: 444122710a92
+Revision ID: 3cea8a7c3e9b
 Revises: 
-Create Date: 2026-05-31 10:35:10.221791
+Create Date: 2026-06-05 23:20:44.873403
 """
 
 from alembic import op
@@ -11,7 +11,7 @@ from sqlalchemy.dialects import postgresql
 
 
 # revision identifiers, used by Alembic.
-revision = '444122710a92'
+revision = '3cea8a7c3e9b'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -563,6 +563,13 @@ def upgrade() -> None:
     sa.Column('absences', sa.Integer(), nullable=False),
     sa.Column('attendance_percentage', sa.Numeric(precision=5, scale=2), nullable=False),
     sa.Column('participation_rate', sa.Numeric(precision=5, scale=2), nullable=False),
+    sa.Column('inferred_bloc', sa.Enum('OFICIALISMO', 'OPOSICION', name='legislator_inferred_bloc', native_enum=False), nullable=True),
+    sa.Column('lean_agreed', sa.Integer(), nullable=False),
+    sa.Column('lean_contested', sa.Integer(), nullable=False),
+    sa.Column('lean_seats', sa.Boolean(), nullable=False),
+    sa.Column('discipline_rate', sa.Numeric(precision=5, scale=2), nullable=True),
+    sa.Column('discipline_with', sa.Integer(), nullable=False),
+    sa.Column('discipline_decided', sa.Integer(), nullable=False),
     sa.Column('stats_updated_at', sa.DateTime(), nullable=False),
     sa.Column('id', sa.BigInteger(), nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),

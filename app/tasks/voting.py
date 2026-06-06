@@ -1,6 +1,6 @@
 from app.core.celery_app import app
 from app.core.session import task_session
-from app.services import voting_signals
+from app.services import legislator_stats, voting_signals
 from app.services.write import upsert_voting_session
 from app.tasks.base import DatabaseTask
 
@@ -45,3 +45,18 @@ def refresh_voting_window_aggregate(self, window_days: int = 30) -> dict:
         row = voting_signals.refresh_window_aggregate(db, window_days=window_days)
         payload = dict(row.payload)
     return {"window_days": window_days, "payload": payload}
+
+
+@app.task(
+    name="app.tasks.voting.refresh_legislator_voting_stats",
+    bind=True,
+    base=DatabaseTask,
+)
+def refresh_legislator_voting_stats(self) -> dict:
+    """Recompute per-legislator voting stats: base aggregates plus inclinación de
+    voto and disciplina partidaria. Feeds the simulator seed (/legisladores) and
+    the legislator detail page. Wired to a daily beat schedule in celery_beat.py.
+    """
+    with task_session() as db:
+        updated = legislator_stats.refresh_legislator_voting_stats(db)
+    return {"legislators_updated": updated}

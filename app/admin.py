@@ -464,11 +464,15 @@ class LegislatorVotingStatsAdmin(ModelView, model=LegislatorVotingStats):
         LegislatorVotingStats.total_sessions,
         LegislatorVotingStats.votes_for,
         LegislatorVotingStats.votes_against,
+        LegislatorVotingStats.inferred_bloc,
+        LegislatorVotingStats.lean_seats,
+        LegislatorVotingStats.discipline_rate,
     ]
     column_sortable_list = [
         LegislatorVotingStats.id,
         LegislatorVotingStats.total_sessions,
         LegislatorVotingStats.votes_for,
+        LegislatorVotingStats.discipline_rate,
     ]
     can_delete = False
 

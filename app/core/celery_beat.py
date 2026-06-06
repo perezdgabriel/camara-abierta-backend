@@ -40,4 +40,8 @@ app.conf.beat_schedule = {
         "schedule": crontab(hour=4, minute=0),
         "kwargs": {"window_days": 30},
     },
+    "refresh-legislator-voting-stats": {
+        "task": "app.tasks.voting.refresh_legislator_voting_stats",
+        "schedule": crontab(hour=4, minute=20),
+    },
 }

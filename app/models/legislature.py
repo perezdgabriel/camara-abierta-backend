@@ -256,6 +256,41 @@ class Legislator(SyncableMixin, Base):
         back_populates="legislator", uselist=False
     )
 
+    @property
+    def voting_lean(self) -> dict | None:
+        """Inclinación de voto for the API, projected from ``voting_stats``.
+
+        Null when there is no stats row or too few contested sessions (*datos
+        insuficientes*). ``bloc`` may still be null on an exact split. Callers
+        should eager-load ``voting_stats`` to avoid N+1. See ADR-0007.
+        """
+        stats = self.voting_stats
+        if stats is None or stats.lean_contested == 0:
+            return None
+        return {
+            "bloc": stats.inferred_bloc,
+            "agreed": stats.lean_agreed,
+            "contested": stats.lean_contested,
+            "seats": stats.lean_seats,
+        }
+
+    @property
+    def party_discipline(self) -> dict | None:
+        """Disciplina partidaria for the API. Only for current party members —
+        an independent has no party to measure against (see web CONTEXT.md)."""
+        stats = self.voting_stats
+        if stats is None or self.party_id is None or stats.discipline_decided == 0:
+            return None
+        return {
+            "rate": (
+                float(stats.discipline_rate)
+                if stats.discipline_rate is not None
+                else None
+            ),
+            "with_party": stats.discipline_with,
+            "decided": stats.discipline_decided,
+        }
+
     def __str__(self) -> str:
         return self.full_name
 

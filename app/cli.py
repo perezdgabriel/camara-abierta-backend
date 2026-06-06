@@ -32,6 +32,7 @@ def _list_jobs(_: argparse.Namespace) -> dict[str, list[str]]:
         ],
         "loaders": ["geography"],
         "voting-signals": ["backfill", "refresh-aggregate", "seed-fixtures"],
+        "legislator-stats": ["refresh"],
     }
 
 
@@ -150,6 +151,14 @@ def _run_voting_signals_seed_fixtures(args: argparse.Namespace) -> dict[str, Any
     base = date.fromisoformat(args.base_date) if args.base_date else None
     result = _with_session(lambda db: seed(db, base_date=base))
     return {"job": "voting-signals-seed-fixtures", **result}
+
+
+def _run_legislator_stats_refresh(_args: argparse.Namespace) -> dict[str, Any]:
+    refresh = _load_attr(
+        "app.services.legislator_stats", "refresh_legislator_voting_stats"
+    )
+    updated = _with_session(lambda db: refresh(db))
+    return {"job": "legislator-stats-refresh", "legislators_updated": updated}
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -326,6 +335,21 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Anchor date for the fixture sessions (defaults to yesterday).",
     )
     seed_parser.set_defaults(runner=_run_voting_signals_seed_fixtures)
+
+    legislator_stats_parser = subparsers.add_parser(
+        "legislator-stats",
+        help="Recompute per-legislator voting stats, inclinación de voto, disciplina.",
+    )
+    legislator_stats_subparsers = legislator_stats_parser.add_subparsers(
+        dest="legislator_stats_command"
+    )
+    legislator_stats_subparsers.required = True
+
+    refresh_stats_parser = legislator_stats_subparsers.add_parser(
+        "refresh",
+        help="Recompute and upsert the legislator_voting_stats table.",
+    )
+    refresh_stats_parser.set_defaults(runner=_run_legislator_stats_refresh)
 
     return parser
 
