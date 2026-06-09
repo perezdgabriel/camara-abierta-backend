@@ -105,9 +105,26 @@ def _parse_date(value: str | date | None) -> date | None:
 
 def _parse_datetime(value: str | datetime | date | None) -> datetime:
     if isinstance(value, datetime):
-        return value
+        return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
     if isinstance(value, date):
         return datetime.combine(value, datetime.min.time(), tzinfo=timezone.utc)
+    if isinstance(value, str):
+        text = value.strip()
+        if text:
+            # ISO datetime first — upstream sources that include a time (e.g.
+            # restsil ``FECHA_VOTACION`` after normalization) must round-trip
+            # to the same moment, not fall back to ``now()``. Tag naive
+            # values as UTC to match the date-only path below.
+            try:
+                parsed = datetime.fromisoformat(text)
+            except ValueError:
+                parsed = None
+            if parsed is not None:
+                return (
+                    parsed
+                    if parsed.tzinfo is not None
+                    else parsed.replace(tzinfo=timezone.utc)
+                )
     parsed_date = _parse_date(value)
     if parsed_date is not None:
         return datetime.combine(parsed_date, datetime.min.time(), tzinfo=timezone.utc)

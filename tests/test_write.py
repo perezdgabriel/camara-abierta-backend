@@ -1,3 +1,4 @@
+from datetime import date, datetime, timezone
 from types import SimpleNamespace
 
 from app.models.enums import ChamberType, VoteChoice
@@ -309,3 +310,45 @@ def test_upsert_parliamentary_appointment_updates_existing(monkeypatch):
     assert existing.end_date == "2030-03-11"
     assert existing in touched
     assert db.added == []  # not re-added
+
+
+def test_parse_datetime_round_trips_iso_datetime_string_instead_of_returning_now():
+    # Regression: prior to this fix ``_parse_datetime`` only knew how to parse
+    # date strings (``date.fromisoformat`` via ``_parse_date``), so handing it
+    # an ISO datetime string (e.g. from the restsil ``FECHA_VOTACION`` parser)
+    # silently fell through to ``datetime.now(utc)`` and ``voting_date`` ended
+    # up stamped at ingestion time. The restsil senate-vote ingest depends on
+    # the round-trip.
+    result = write._parse_datetime("2026-06-03T18:33:55")
+
+    assert result == datetime(2026, 6, 3, 18, 33, 55, tzinfo=timezone.utc)
+
+
+def test_parse_datetime_preserves_explicit_offset_on_iso_datetime_string():
+    result = write._parse_datetime("2026-06-03T18:33:55-04:00")
+
+    assert result.utcoffset() is not None
+    assert result.hour == 18
+    assert result.day == 3
+
+
+def test_parse_datetime_still_handles_date_only_strings_at_utc_midnight():
+    # Existing wspublico / opendata parsers feed naked date strings; that
+    # path must still produce UTC midnight.
+    result = write._parse_datetime("2026-05-12")
+
+    assert result == datetime(2026, 5, 12, tzinfo=timezone.utc)
+
+
+def test_parse_datetime_attaches_utc_to_naive_datetime_object():
+    naive = datetime(2026, 6, 3, 18, 33, 55)
+
+    result = write._parse_datetime(naive)
+
+    assert result == datetime(2026, 6, 3, 18, 33, 55, tzinfo=timezone.utc)
+
+
+def test_parse_datetime_promotes_date_object_to_utc_midnight():
+    result = write._parse_datetime(date(2026, 6, 3))
+
+    assert result == datetime(2026, 6, 3, tzinfo=timezone.utc)
