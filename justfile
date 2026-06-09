@@ -37,6 +37,9 @@ legislators:
 bills:
     uv run python -m app.cli ingestors bills
 
+senate-votes:
+    uv run python -m app.cli ingestors senate-votes
+
 seed-blocs:
     uv run python scripts/seed_blocs.py
 

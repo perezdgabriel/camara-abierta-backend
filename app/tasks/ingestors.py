@@ -20,6 +20,7 @@ from app.ingestors.clients.opendata_camara_async import (
     fetch_bill_details_parallel,
     fetch_voting_details_parallel,
 )
+from app.ingestors.clients.restsil_senado import RestsilSenadoClient
 from app.ingestors.clients.senado import SenadoClient
 from app.ingestors.clients.senado_async import (
     fetch_bills_parallel,
@@ -30,6 +31,7 @@ from app.ingestors.parsers.bills import BillParser
 from app.ingestors.parsers.committees import CommitteeParser
 from app.ingestors.parsers.legislators import LegislatorParser
 from app.ingestors.parsers.legislature import LegislatureParser
+from app.ingestors.parsers.votes import VoteParser
 from app.models.enums import ChamberType
 from app.models.ingestor_state import IngestorState
 from app.tasks.base import DatabaseTask
@@ -42,6 +44,7 @@ from app.tasks.legislators import (
 )
 from app.tasks.legislature import sync_period, sync_session
 from app.tasks.reference import sync_topic
+from app.tasks.voting import sync_voting_session
 
 logger = logging.getLogger(__name__)
 
@@ -146,17 +149,169 @@ def _load_opendata_bill_details_with_votes(
     return details_by_bulletin, errors
 
 
+def _discover_bulletins_opendata(
+    start_year: int, current_year: int
+) -> tuple[list[str], int]:
+    """Legacy OpenData year-scan discovery (ADR-0008).
+
+    Iterates ``get_mensajes_x_anno`` + ``get_mociones_x_anno`` across the
+    requested year range. Kept in tree as the failover path per ADR-0009 —
+    activated when ``settings.ingestor_bills_source == "opendata"``.
+    """
+    seen: set[str] = set()
+    bulletins: list[str] = []
+    errors = 0
+    with OpenDataCamaraClient() as opendata:
+        for year in range(start_year, current_year + 1):
+            try:
+                for proyecto in opendata.get_mensajes_x_anno(year):
+                    bn = proyecto["bulletin_number"]
+                    if bn and bn not in seen:
+                        seen.add(bn)
+                        bulletins.append(bn)
+            except Exception:
+                logger.exception("Failed to fetch mensajes for year %d", year)
+                errors += 1
+            try:
+                for proyecto in opendata.get_mociones_x_anno(year):
+                    bn = proyecto["bulletin_number"]
+                    if bn and bn not in seen:
+                        seen.add(bn)
+                        bulletins.append(bn)
+            except Exception:
+                logger.exception("Failed to fetch mociones for year %d", year)
+                errors += 1
+    return bulletins, errors
+
+
+def _discover_bulletins_restsil(
+    start_year: int, current_year: int, *, full_backfill: bool
+) -> tuple[list[str], int, bool]:
+    """Restsil desc-paged discovery (ADR-0009).
+
+    Policy (also documented in the ADR):
+
+    - Always scan the **current year**, all statuses — picks up newly filed
+      bills and anything just-changed via the re-fetch loop in
+      ``run_ingest_bills``.
+    - Past years are scanned only when ``full_backfill`` is true (cold start
+      or daily gate elapsed). In daily mode we restrict the past-years scan
+      to ``estado=T`` (~7,000 rows globally vs ~18,000 unfiltered), since
+      terminal bills won't get new activity that the existing
+      ``upsert_bill`` reconciliation cares about.
+
+    Returns ``(bulletins, errors, scanned_past_years)`` so the caller can
+    update the ``last_full_year_scan_date`` cursor only after a successful
+    past-years sweep.
+    """
+    seen: set[str] = set()
+    bulletins: list[str] = []
+    errors = 0
+    scanned_past_years = False
+    with RestsilSenadoClient() as restsil:
+        # Current year — always, all statuses.
+        try:
+            for row in restsil.iter_bills_desc(
+                fecha_desde=current_year, fecha_hasta=current_year
+            ):
+                summary = BillParser.parse_restsil_summary(row)
+                bn = summary["bulletin_number"]
+                if bn and bn not in seen:
+                    seen.add(bn)
+                    bulletins.append(bn)
+        except Exception:
+            logger.exception("Failed restsil current-year scan year=%d", current_year)
+            errors += 1
+
+        # Past years — gated.
+        if full_backfill and start_year < current_year:
+            past_filters: dict[str, Any] = {
+                "fecha_desde": start_year,
+                "fecha_hasta": current_year - 1,
+            }
+            # Cold-start backfill: keep all statuses so we seed the full
+            # history. Daily refresh: restrict to active bills.
+            if _restsil_bills_has_cursor():
+                past_filters["estado"] = "T"
+            try:
+                for row in restsil.iter_bills_desc(**past_filters):
+                    summary = BillParser.parse_restsil_summary(row)
+                    bn = summary["bulletin_number"]
+                    if bn and bn not in seen:
+                        seen.add(bn)
+                        bulletins.append(bn)
+                scanned_past_years = True
+            except Exception:
+                logger.exception(
+                    "Failed restsil past-years scan %d-%d",
+                    start_year,
+                    current_year - 1,
+                )
+                errors += 1
+    return bulletins, errors, scanned_past_years
+
+
+def _restsil_bills_has_cursor() -> bool:
+    """True iff a prior full-backfill cursor exists on the bills state row.
+
+    Used by ``_discover_bulletins_restsil`` to distinguish cold start (no
+    cursor → backfill all statuses) from steady-state daily refresh (cursor
+    set → past-years scan restricts to ``estado=T``).
+    """
+    try:
+        with task_session() as db:
+            state = _get_state(db, "bills", create=False)
+            return state is not None and bool(state.last_cursor)
+    except Exception:
+        logger.warning("Failed to read bills cursor", exc_info=True)
+        return False
+
+
+def _should_scan_past_years(now: datetime.date) -> bool:
+    """Daily gate for the past-years restsil sweep.
+
+    Past years' bill lists are nearly static; running the sweep on every
+    5×/day tick is wasteful (see ``ingest_bills_optimizations.md`` §4). Run
+    it at most once per day, tracked via ``IngestorState.last_cursor`` on the
+    ``bills`` row (ISO date of last past-years sweep). When the cursor is
+    absent (cold start), always sweep.
+    """
+    try:
+        with task_session() as db:
+            state = _get_state(db, "bills", create=False)
+            if state is None or not state.last_cursor:
+                return True
+            try:
+                last = datetime.date.fromisoformat(state.last_cursor)
+            except ValueError:
+                return True
+            return last < now
+    except Exception:
+        logger.warning("Failed to read bills past-years cursor", exc_info=True)
+        return True
+
+
+def _mark_past_years_scanned(now: datetime.date) -> None:
+    with task_session() as db:
+        state = _get_state(db, "bills")
+        if state is not None:
+            state.last_cursor = now.isoformat()
+
+
 def run_ingest_bills(
     bulletin: str | None = None,
     since: str | None = None,
     *,
     dry_run: bool = False,
+    source: str | None = None,
 ) -> dict[str, Any]:
     dispatched = 0
     errors = 0
     bulletins: list[str] = []
     since_date: datetime.date | None = None
     mode = "single_bulletin" if bulletin else "full_scan"
+    effective_source = source or settings.ingestor_bills_source
+    scanned_past_years = False
 
     try:
         if since:
@@ -168,12 +323,6 @@ def run_ingest_bills(
             if since_date is None:
                 since_date = _get_last_sync_date("bills")
 
-            # Bulletin discovery is a bounded re-scan of OpenData's per-year bill
-            # lists. ``since_date`` (from ``--since`` or the last sync) is coarsened
-            # to its year: we re-scan from that year to the current one and re-fetch
-            # each bill's full Senado detail. With no prior sync we backfill from the
-            # configured start year. OpenData exposes no "modified since" field, so
-            # late activity on bills older than the window is not picked up.
             current_year = datetime.date.today().year
             if since_date is not None:
                 mode = "incremental"
@@ -181,27 +330,21 @@ def run_ingest_bills(
             else:
                 start_year = settings.ingestor_bills_start_year
 
-            seen: set[str] = set()
-            with OpenDataCamaraClient() as opendata:
-                for year in range(start_year, current_year + 1):
-                    try:
-                        for proyecto in opendata.get_mensajes_x_anno(year):
-                            bn = proyecto["bulletin_number"]
-                            if bn and bn not in seen:
-                                seen.add(bn)
-                                bulletins.append(bn)
-                    except Exception:
-                        logger.exception("Failed to fetch mensajes for year %d", year)
-                        errors += 1
-                    try:
-                        for proyecto in opendata.get_mociones_x_anno(year):
-                            bn = proyecto["bulletin_number"]
-                            if bn and bn not in seen:
-                                seen.add(bn)
-                                bulletins.append(bn)
-                    except Exception:
-                        logger.exception("Failed to fetch mociones for year %d", year)
-                        errors += 1
+            if effective_source == "restsil":
+                # Daily-gated past-years sweep; cold start (no cursor) → full
+                # backfill.
+                scan_past = _should_scan_past_years(datetime.date.today())
+                bulletins, disco_errors, scanned_past_years = (
+                    _discover_bulletins_restsil(
+                        start_year, current_year, full_backfill=scan_past
+                    )
+                )
+                errors += disco_errors
+            else:
+                bulletins, disco_errors = _discover_bulletins_opendata(
+                    start_year, current_year
+                )
+                errors += disco_errors
 
         if bulletins:
             results = asyncio.run(fetch_bills_parallel(bulletins))
@@ -210,10 +353,15 @@ def run_ingest_bills(
                 valid_bulletins
             )
             errors += detail_errors
-            # Senate votes come from the dedicated votaciones.php endpoint, which is
-            # the complete source — the <votacion> nodes embedded in the bill detail
-            # (tramitacion.php) are frequently absent (ADR-0008).
-            senate_votes = dict(asyncio.run(fetch_votes_parallel(valid_bulletins)))
+            # Senate vote capture: when the dedicated restsil-driven
+            # ``run_ingest_senate_votes`` task owns Senate votes (ADR-0009),
+            # we no longer fetch them per-bulletin from votaciones.php on the
+            # bill ingest path. The wspublico path remains as failover and is
+            # activated by flipping ``ingestor_senate_votes_source``.
+            if settings.ingestor_senate_votes_source == "wspublico":
+                senate_votes = dict(asyncio.run(fetch_votes_parallel(valid_bulletins)))
+            else:
+                senate_votes = {}
             for bulletin_number, raw in results:
                 try:
                     if raw is None:
@@ -222,6 +370,11 @@ def run_ingest_bills(
                     fetched_votes = senate_votes.get(bulletin_number)
                     if fetched_votes is not None:
                         payload["_votaciones"] = fetched_votes
+                    elif settings.ingestor_senate_votes_source == "restsil":
+                        # Drop the embedded ``<votacion>`` payload — the
+                        # dedicated task owns them. Avoids creating stale
+                        # rows under the legacy key shape on the bills path.
+                        payload["_votaciones"] = []
                     opendata_detail = opendata_details.get(bulletin_number)
                     if opendata_detail is not None:
                         payload.update(
@@ -241,6 +394,8 @@ def run_ingest_bills(
 
     if not dry_run:
         _mark_synced("bills")
+        if scanned_past_years:
+            _mark_past_years_scanned(datetime.date.today())
 
     return _build_dispatch_result(
         dispatched,
@@ -250,6 +405,134 @@ def run_ingest_bills(
         since=since_date.isoformat() if since_date else None,
         mode=mode,
         candidates=len(bulletins),
+        source=effective_source,
+        scanned_past_years=scanned_past_years,
+    )
+
+
+# --------------------------------------------------------------------------
+# Senate votes — dedicated restsil-driven ingest (ADR-0009)
+# --------------------------------------------------------------------------
+
+
+def _get_senate_votes_watermark() -> int | None:
+    """Highest ``ID_VOTACION`` previously ingested, or ``None`` on cold start."""
+    try:
+        with task_session() as db:
+            state = _get_state(db, "senate_votes", create=False)
+            if state is None or not state.last_cursor:
+                return None
+            try:
+                return int(state.last_cursor)
+            except ValueError:
+                logger.warning(
+                    "senate_votes cursor is not an integer: %r", state.last_cursor
+                )
+                return None
+    except Exception:
+        logger.warning("Failed to read senate_votes watermark", exc_info=True)
+        return None
+
+
+def _set_senate_votes_watermark(new_max: int) -> None:
+    with task_session() as db:
+        state = _get_state(db, "senate_votes")
+        if state is None:
+            return
+        existing = int(state.last_cursor) if state.last_cursor else 0
+        if new_max > existing:
+            state.last_cursor = str(new_max)
+        state.last_sync_date = datetime.date.today()
+
+
+def run_ingest_senate_votes(
+    *,
+    bulletin: str | None = None,
+    dry_run: bool = False,
+    source: str | None = None,
+    max_pages: int | None = None,
+) -> dict[str, Any]:
+    """Restsil desc-paged Senate-vote ingest (ADR-0009).
+
+    Walks ``buscarVotaciones?order=desc&sort=HORA`` and dispatches one
+    ``sync_voting_session`` per row. Stops at the first row whose
+    ``ID_VOTACION`` is at or below the stored watermark; updates the
+    watermark to the new max at the end.
+
+    With ``source="wspublico"`` (or the settings flag flipped to that
+    value), the task no-ops and prints a hint — the failover path captures
+    Senate votes on the bills ingest instead. There is no useful "scan all
+    votes by date" wspublico endpoint, so flipping the source is what
+    activates the failover.
+    """
+    effective_source = source or settings.ingestor_senate_votes_source
+    if effective_source != "restsil":
+        logger.info(
+            "run_ingest_senate_votes is a no-op while source=%r — failover "
+            "is via run_ingest_bills + fetch_votes_parallel.",
+            effective_source,
+        )
+        return _build_dispatch_result(
+            0, 0, dry_run, source=effective_source, mode="skip"
+        )
+
+    dispatched = 0
+    errors = 0
+    candidates = 0
+    new_max: int = 0
+    watermark = _get_senate_votes_watermark()
+    mode = (
+        "single_bulletin"
+        if bulletin
+        else ("cold_start" if watermark is None else "incremental")
+    )
+
+    try:
+        with RestsilSenadoClient() as restsil:
+            iterator = restsil.iter_votes_desc(
+                stop_at_id=watermark,
+                max_pages=max_pages,
+                boletin=bulletin,
+            )
+            for row in iterator:
+                candidates += 1
+                try:
+                    vote_id = int(row.get("ID_VOTACION") or 0)
+                    if vote_id > new_max:
+                        new_max = vote_id
+                    payload = VoteParser.parse_restsil_senate_vote(row)
+                    if not dry_run:
+                        _dispatch(
+                            sync_voting_session,
+                            payload,
+                            payload.get("bill_bulletin"),
+                        )
+                    dispatched += 1
+                except Exception:
+                    logger.exception(
+                        "Failed to dispatch restsil senate vote id=%s",
+                        row.get("ID_VOTACION"),
+                    )
+                    errors += 1
+    except Exception:
+        logger.exception("Failed restsil senate-votes ingest")
+        errors += 1
+
+    # Targeted single-bulletin runs are ops affordances; they should not
+    # advance the global watermark even though the ID may be the latest.
+    if not dry_run and bulletin is None and new_max > 0:
+        _set_senate_votes_watermark(new_max)
+
+    return _build_dispatch_result(
+        dispatched,
+        errors,
+        dry_run,
+        bulletin=bulletin,
+        candidates=candidates,
+        watermark_before=watermark,
+        watermark_after=new_max if (new_max and not bulletin) else watermark,
+        mode=mode,
+        source=effective_source,
     )
 
 
@@ -581,6 +864,11 @@ def run_ingest_reference_data(*, dry_run: bool = False) -> dict[str, Any]:
 @app.task(name="app.tasks.ingestors.ingest_bills", bind=True, base=DatabaseTask)
 def ingest_bills(self, bulletin: str | None = None, since: str | None = None) -> dict:
     return run_ingest_bills(bulletin=bulletin, since=since)
+
+
+@app.task(name="app.tasks.ingestors.ingest_senate_votes", bind=True, base=DatabaseTask)
+def ingest_senate_votes(self, bulletin: str | None = None) -> dict:
+    return run_ingest_senate_votes(bulletin=bulletin)
 
 
 @app.task(name="app.tasks.ingestors.ingest_legislators", bind=True, base=DatabaseTask)

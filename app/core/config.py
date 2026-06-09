@@ -1,8 +1,13 @@
 from datetime import date
 from functools import lru_cache
+from typing import Literal
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class ConfigurationError(RuntimeError):
+    """Raised when a required setting is missing for the selected source."""
 
 
 class Settings(BaseSettings):
@@ -58,8 +63,36 @@ class Settings(BaseSettings):
         alias="INGESTOR_BASE_URL_BCN",
     )
     ingestor_bills_start_year: int = Field(
-        default=2026,
+        default=2022,
         alias="INGESTOR_BILLS_START_YEAR",
+    )
+    ingestor_base_url_restsil: str = Field(
+        default="https://restsil.senado.cl/v3/",
+        alias="INGESTOR_BASE_URL_RESTSIL",
+    )
+    ingestor_restsil_api_key: str | None = Field(
+        default=None,
+        alias="INGESTOR_RESTSIL_API_KEY",
+    )
+    ingestor_bills_source: Literal["restsil", "opendata"] = Field(
+        default="restsil",
+        alias="INGESTOR_BILLS_SOURCE",
+    )
+    ingestor_senate_votes_source: Literal["restsil", "wspublico"] = Field(
+        default="restsil",
+        alias="INGESTOR_SENATE_VOTES_SOURCE",
+    )
+    ingestor_restsil_page_size: int = Field(
+        default=100,
+        alias="INGESTOR_RESTSIL_PAGE_SIZE",
+    )
+    ingestor_restsil_max_pages_per_tick: int = Field(
+        default=100,
+        alias="INGESTOR_RESTSIL_MAX_PAGES_PER_TICK",
+    )
+    ingestor_restsil_async_concurrency: int = Field(
+        default=10,
+        alias="INGESTOR_RESTSIL_ASYNC_CONCURRENCY",
     )
 
     model_config = SettingsConfigDict(

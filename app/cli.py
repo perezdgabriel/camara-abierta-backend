@@ -24,6 +24,7 @@ def _list_jobs(_: argparse.Namespace) -> dict[str, list[str]]:
         "scrapers": ["diario-oficial", "cgr-reglamentos", "diputados"],
         "ingestors": [
             "bills",
+            "senate-votes",
             "legislators",
             "committees",
             "legislature",
@@ -64,8 +65,22 @@ def _run_bills(args: argparse.Namespace) -> dict[str, Any]:
         bulletin=args.bulletin,
         since=args.since,
         dry_run=args.dry_run,
+        source=getattr(args, "source", None),
     )
     return {"job": "bills", **result}
+
+
+def _run_senate_votes(args: argparse.Namespace) -> dict[str, Any]:
+    run_ingest_senate_votes = _load_attr(
+        "app.tasks.ingestors", "run_ingest_senate_votes"
+    )
+    result = run_ingest_senate_votes(
+        bulletin=args.bulletin,
+        dry_run=args.dry_run,
+        source=getattr(args, "source", None),
+        max_pages=args.max_pages,
+    )
+    return {"job": "senate-votes", **result}
 
 
 def _run_legislators(args: argparse.Namespace) -> dict[str, Any]:
@@ -240,7 +255,50 @@ def _build_parser() -> argparse.ArgumentParser:
             "year). Defaults to the last sync; full backfill when never synced."
         ),
     )
+    bills_parser.add_argument(
+        "--source",
+        choices=["restsil", "opendata"],
+        default=None,
+        help=(
+            "Override the discovery source. Defaults to "
+            "settings.ingestor_bills_source ('restsil'). Use 'opendata' to "
+            "force the legacy year-scan failover path."
+        ),
+    )
     bills_parser.set_defaults(runner=_run_bills)
+
+    senate_votes_parser = ingestor_subparsers.add_parser(
+        "senate-votes",
+        parents=[dry_run_parent],
+        help="Fetch Senate voting sessions from restsil and enqueue sync jobs.",
+    )
+    senate_votes_parser.add_argument(
+        "--bulletin",
+        help=(
+            "Restrict the walk to one bulletin (ops recovery). Does not "
+            "advance the global watermark."
+        ),
+    )
+    senate_votes_parser.add_argument(
+        "--source",
+        choices=["restsil", "wspublico"],
+        default=None,
+        help=(
+            "Override the source. Defaults to "
+            "settings.ingestor_senate_votes_source ('restsil'). 'wspublico' "
+            "is a no-op here — failover Senate votes ride on `ingestors bills`."
+        ),
+    )
+    senate_votes_parser.add_argument(
+        "--max-pages",
+        type=int,
+        default=None,
+        help=(
+            "Safety cap on pages walked this run. Defaults to "
+            "settings.ingestor_restsil_max_pages_per_tick."
+        ),
+    )
+    senate_votes_parser.set_defaults(runner=_run_senate_votes)
 
     legislators_parser = ingestor_subparsers.add_parser(
         "legislators",

@@ -136,6 +136,135 @@ class VoteParser:
         }
 
     @staticmethod
+    def parse_restsil_senate_vote(raw: dict) -> dict:
+        """Normalize one ``buscarVotaciones`` row into the standard sync payload.
+
+        This is the **primary** Senate-vote parser per ADR-0009. Unlike the
+        legacy ``parse_senate_vote`` it does *not* take ``bulletin`` as input
+        — the upstream row carries ``BOLETIN`` directly — and it produces:
+
+        - ``bcn_id = senado:vot:{ID_VOTACION}`` (stable upstream id).
+        - ``legislator_external_id = senado:{PARLID}`` per individual vote,
+          letting ``_resolve_vote_legislator`` hit ``Legislator.bcn_id``
+          directly instead of brittle name matching.
+        - ``voting_type`` inferred from ``TEMA`` substrings (the upstream
+          dropped ``TIPOVOTACION`` from this endpoint).
+        - ``stage_label`` and ``bill_stage_id`` left null — ``ETAPA`` is also
+          absent from this endpoint.
+        """
+        vote_id = raw.get("ID_VOTACION")
+        bulletin = (raw.get("BOLETIN") or "").strip()
+        subject = (raw.get("TEMA") or "").strip()
+        votes_for = int(raw.get("SI", 0) or 0)
+        votes_against = int(raw.get("NO", 0) or 0)
+        abstentions = int(raw.get("ABS", 0) or 0)
+        paired = int(raw.get("PAREO", 0) or 0)
+
+        if votes_for > votes_against:
+            result = VotingResult.APPROVED
+        elif votes_against > votes_for:
+            result = VotingResult.REJECTED
+        elif votes_for == votes_against and votes_for > 0:
+            result = VotingResult.TIE
+        else:
+            result = None
+
+        session_ref = raw.get("NUMERO_SESION")
+        return {
+            "bcn_id": f"senado:vot:{vote_id}",
+            "_chamber_type": ChamberType.SENATE,
+            "bill_bulletin": bulletin or None,
+            "session_ref": str(session_ref) if session_ref is not None else None,
+            "voting_type": VoteParser._parse_chamber_voting_type(subject),
+            "stage_label": None,
+            "subject": subject,
+            "voting_date": VoteParser._parse_restsil_datetime(
+                raw.get("FECHA_VOTACION")
+            ),
+            "result": result,
+            "votes_for": votes_for,
+            "votes_against": votes_against,
+            "abstentions": abstentions,
+            "paired_count": paired,
+            "quorum": (raw.get("QUORUM") or "").strip(),
+            "individual_votes": VoteParser._parse_restsil_individual_votes(
+                raw.get("VOTACIONES") or {}
+            ),
+        }
+
+    @staticmethod
+    def _parse_restsil_datetime(value: str | None) -> str | None:
+        """``FECHA_VOTACION`` is ``DD-MM-YYYY HH:MM:SS``. Returns ISO string."""
+        if not value:
+            return None
+        import re
+
+        match = re.match(
+            r"(\d{2})-(\d{2})-(\d{4})\s+(\d{2}):(\d{2}):(\d{2})",
+            value.strip(),
+        )
+        if match:
+            return (
+                f"{match.group(3)}-{match.group(2)}-{match.group(1)}"
+                f"T{match.group(4)}:{match.group(5)}:{match.group(6)}"
+            )
+        # ``HORA`` field has only minute precision and uses ``DD/MM/YYYY``
+        match = re.match(
+            r"(\d{2})/(\d{2})/(\d{4})\s+(\d{2}):(\d{2})",
+            value.strip(),
+        )
+        if match:
+            return (
+                f"{match.group(3)}-{match.group(2)}-{match.group(1)}"
+                f"T{match.group(4)}:{match.group(5)}:00"
+            )
+        return None
+
+    @staticmethod
+    def _parse_restsil_individual_votes(votaciones: dict) -> list[dict]:
+        """Flatten ``VOTACIONES.SI/NO/ABSTENCION/PAREO`` into the standard list.
+
+        Each bucket is either a list of per-legislator dicts or an integer 0
+        (the upstream emits an int when the bucket is empty). PARLID becomes
+        ``legislator_external_id = senado:{PARLID}``; resolution then goes
+        through the existing ``_resolve_vote_legislator`` bcn_id branch.
+        """
+        buckets: list[tuple[str, VoteChoice]] = [
+            ("SI", VoteChoice.FOR),
+            ("NO", VoteChoice.AGAINST),
+            ("ABSTENCION", VoteChoice.ABSTAIN),
+            ("PAREO", VoteChoice.PAIRED),
+        ]
+        out: list[dict] = []
+        for key, choice in buckets:
+            entries = votaciones.get(key)
+            if not isinstance(entries, list):
+                continue
+            for entry in entries:
+                parlid = entry.get("PARLID")
+                if parlid is None:
+                    continue
+                first_name = (entry.get("NOMBRE") or "").strip()
+                last_father = (entry.get("APELLIDO_PATERNO") or "").strip()
+                last_mother = (entry.get("APELLIDO_MATERNO") or "").strip()
+                last_name = " ".join(
+                    part for part in [last_father, last_mother] if part
+                )
+                full_name = " ".join(
+                    part for part in [first_name, last_name] if part
+                ).strip()
+                out.append(
+                    {
+                        "legislator_external_id": f"senado:{parlid}",
+                        "_legislator_name": full_name,
+                        "legislator_first_name": first_name,
+                        "legislator_last_name": last_name,
+                        "vote": choice,
+                    }
+                )
+        return out
+
+    @staticmethod
     def parse_chamber_vote(raw: dict, bulletin: str = "") -> dict:
         votes_for = int(raw.get("votes_for", 0) or 0)
         votes_against = int(raw.get("votes_against", 0) or 0)

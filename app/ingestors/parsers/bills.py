@@ -58,7 +58,75 @@ URGENCY_MAP = {
 }
 
 
+# restsil bill-status codes (estado=) used for server-side filtering. The
+# *authoritative* BillStatus on a row still comes from the wspublico detail
+# fetch (``parse_bill`` → ``STATUS_MAP``); this dict is only consulted when
+# we want to translate a restsil-discovery row's code into a BillStatus for
+# logging / metrics. Codes "I" / "E" have no clean enum bucket — they collapse
+# to REJECTED for reporting only.
+RESTSIL_STATUS_MAP = {
+    "T": BillStatus.PENDING,
+    "V": BillStatus.ARCHIVED,
+    "I": BillStatus.REJECTED,
+    "N": BillStatus.UNCONSTITUTIONAL,
+    "L": BillStatus.PUBLISHED,
+    "R": BillStatus.REJECTED,
+    "E": BillStatus.REJECTED,
+}
+
+# restsil origin-chamber codes — ``PROYORIGEN`` is a single letter.
+RESTSIL_CHAMBER_MAP = {
+    "S": ChamberType.SENATE,
+    "D": ChamberType.DEPUTIES,
+}
+
+# restsil initiative codes — ``PROYINICIATIVA`` is the integer pair to the
+# textual ``PROYDESCINICIATIVA`` ("Mensaje" / "Moción").
+RESTSIL_INICIATIVA_MAP = {
+    30: BillOrigin.EXECUTIVE,  # Mensaje
+    31: BillOrigin.DEPUTIES,  # Moción
+}
+
+
 class BillParser:
+    @staticmethod
+    def parse_restsil_summary(row: dict) -> dict:
+        """Normalize one ``buscarProyectosDeLey`` row for discovery dispatch.
+
+        Returns only the fields the discovery loop in ``run_ingest_bills``
+        needs to make a fan-out decision; the full detail still comes from
+        wspublico ``tramitacion.php?boletin=X`` via ``parse_bill``.
+        """
+        bulletin = (row.get("PROYNUMEROBOLETIN") or "").strip()
+        chamber_code = (row.get("PROYORIGEN") or "").strip()
+        iniciativa = row.get("PROYINICIATIVA")
+        return {
+            "bulletin_number": bulletin,
+            "entry_date": BillParser._restsil_date(row.get("PROYFECHAINGRESO")),
+            "origin_chamber_type": RESTSIL_CHAMBER_MAP.get(chamber_code),
+            "origin_type": RESTSIL_INICIATIVA_MAP.get(
+                int(iniciativa) if iniciativa is not None else -1
+            ),
+            "summary_title": (row.get("PROYSUMA") or "").strip(),
+            "stage_label": (row.get("ETAPA") or "").strip() or None,
+            "substage_label": (row.get("SUBETAPA") or "").strip() or None,
+            "urgency_label": (row.get("PROYURGENCIA") or "").strip() or None,
+            "authors_text": (row.get("AUTORES") or "").strip(),
+            "refundidos": (row.get("REFUNDIDOS") or "").strip() or None,
+            "proy_id": row.get("PROYID") or row.get("ID_PROYECTO"),
+        }
+
+    @staticmethod
+    def _restsil_date(value: str | None) -> str | None:
+        if not value:
+            return None
+        import re
+
+        match = re.match(r"(\d{2})/(\d{2})/(\d{4})", value.strip())
+        if match:
+            return f"{match.group(3)}-{match.group(2)}-{match.group(1)}"
+        return None
+
     @staticmethod
     def parse_bill(raw: dict) -> dict:
         origin_type = ORIGIN_MAP.get(raw.get("initiative", ""), BillOrigin.DEPUTIES)

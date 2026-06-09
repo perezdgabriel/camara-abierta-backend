@@ -537,3 +537,152 @@ def test_legislator_parser_bcn_appointment_returns_none_for_unknown_cargo():
         }
     )
     assert payload is None
+
+
+# --- restsil (portallegislativo) parsers -----------------------------------
+
+
+def test_bill_parser_parses_restsil_summary_for_senate_message():
+    payload = BillParser.parse_restsil_summary(
+        {
+            "PROYID": 18974,
+            "PROYNUMEROBOLETIN": "18296-05",
+            "REFUNDIDOS": "",
+            "PROYFECHAINGRESO": "03/06/2026",
+            "PROYORIGEN": "D",
+            "CAMARA_ORIGEN": "C.Diputados",
+            "PROYSUMA": "Autoriza mayor endeudamiento del gobierno central durante el año 2026",
+            "ETAPA": "Primer trámite constitucional (C.Diputados)",
+            "SUBETAPA": "Primer informe de comisión de Hacienda",
+            "PROYINICIATIVA": 30,
+            "PROYDESCINICIATIVA": "Mensaje",
+            "PROYURGENCIA": "Suma",
+            "AUTORES": "Ministerio de Hacienda",
+            "ID_PROYECTO": 18974,
+        }
+    )
+
+    assert payload["bulletin_number"] == "18296-05"
+    assert payload["entry_date"] == "2026-06-03"
+    assert payload["origin_chamber_type"] is ChamberType.DEPUTIES
+    assert payload["origin_type"] is BillOrigin.EXECUTIVE
+    assert payload["urgency_label"] == "Suma"
+    assert payload["proy_id"] == 18974
+
+
+def test_bill_parser_restsil_summary_handles_unknown_codes_gracefully():
+    payload = BillParser.parse_restsil_summary(
+        {
+            "PROYNUMEROBOLETIN": " 18300-04 ",
+            "PROYFECHAINGRESO": "",
+            "PROYORIGEN": "X",
+            "PROYINICIATIVA": 99,
+            "PROYSUMA": None,
+        }
+    )
+
+    assert payload["bulletin_number"] == "18300-04"
+    assert payload["entry_date"] is None
+    assert payload["origin_chamber_type"] is None
+    assert payload["origin_type"] is None
+    assert payload["summary_title"] == ""
+
+
+def test_vote_parser_restsil_senate_vote_uses_id_votacion_as_dedup_key():
+    payload = VoteParser.parse_restsil_senate_vote(
+        {
+            "ID_VOTACION": 11110,
+            "ID_SESION": 10191,
+            "NUMERO_SESION": 26,
+            "DESCRIPCION_SESION": "(03/06/2026) Sesion 26 de legislatura 374",
+            "FECHA_VOTACION": "03-06-2026 18:45:02",
+            "HORA": "03/06/2026 18:42",
+            "TEMA": (
+                "Proyecto de ley, en segundo trámite constitucional, que deroga "
+                "la ley N° 18.356 (discusión en general). (Boletines Nos "
+                "15.767-29 y 16.248-29, refundidos)"
+            ),
+            "QUORUM": "Mayoría simple",
+            "BOLETIN": "15767-29",
+            "SI": 31,
+            "NO": 0,
+            "ABS": 0,
+            "PAREO": 9,
+            "VOTACIONES": {
+                "SI": [
+                    {
+                        "UUID": "049F997F-DA9A-6F29-E063-5968A8C00BC5",
+                        "PARLID": 911,
+                        "APELLIDO_PATERNO": "Kuschel",
+                        "APELLIDO_MATERNO": "Silva",
+                        "NOMBRE": "Carlos Ignacio",
+                        "SLUG": "carlos-ignacio-kuschel-silva-sen",
+                    }
+                ],
+                "NO": 0,
+                "ABSTENCION": 0,
+                "PAREO": [
+                    {
+                        "UUID": "049F997F-DCA5-6F29-E063-5968A8C00BC5",
+                        "PARLID": 1342,
+                        "APELLIDO_PATERNO": "Van Rysselberghe",
+                        "APELLIDO_MATERNO": "Herrera",
+                        "NOMBRE": "Enrique",
+                        "SLUG": "enrique-van-rysselberghe-herrera-sen",
+                    }
+                ],
+            },
+        }
+    )
+
+    assert payload["bcn_id"] == "senado:vot:11110"
+    assert payload["_chamber_type"] is ChamberType.SENATE
+    assert payload["bill_bulletin"] == "15767-29"
+    assert payload["session_ref"] == "26"
+    assert payload["voting_type"] is VotingType.GENERAL  # inferred from TEMA
+    assert payload["stage_label"] is None
+    assert payload["result"] is VotingResult.APPROVED
+    assert payload["votes_for"] == 31
+    assert payload["paired_count"] == 9
+    assert payload["voting_date"] == "2026-06-03T18:45:02"
+
+    individual = payload["individual_votes"]
+    assert {v["legislator_external_id"] for v in individual} == {
+        "senado:911",
+        "senado:1342",
+    }
+    assert (
+        next(v for v in individual if v["legislator_external_id"] == "senado:911")[
+            "vote"
+        ]
+        is VoteChoice.FOR
+    )
+    assert (
+        next(v for v in individual if v["legislator_external_id"] == "senado:1342")[
+            "vote"
+        ]
+        is VoteChoice.PAIRED
+    )
+    assert individual[0]["_legislator_name"] == "Carlos Ignacio Kuschel Silva"
+
+
+def test_vote_parser_restsil_handles_empty_buckets_emitted_as_integers():
+    payload = VoteParser.parse_restsil_senate_vote(
+        {
+            "ID_VOTACION": 1,
+            "TEMA": "La supresión del número 5 del artículo 15",
+            "BOLETIN": "15975-25",
+            "SI": 0,
+            "NO": 0,
+            "ABS": 0,
+            "PAREO": 0,
+            "VOTACIONES": {"SI": 0, "NO": 0, "ABSTENCION": 0, "PAREO": 0},
+            "FECHA_VOTACION": "03-06-2026 18:32:16",
+            "QUORUM": "",
+        }
+    )
+
+    assert payload["bcn_id"] == "senado:vot:1"
+    assert payload["result"] is None
+    assert payload["voting_type"] is VotingType.OTHER  # no TEMA hint
+    assert payload["individual_votes"] == []

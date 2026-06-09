@@ -15,6 +15,13 @@ app.conf.beat_schedule = {
         "task": "app.tasks.ingestors.ingest_bills",
         "schedule": crontab(hour="5,9,13,17,21", minute=0),
     },
+    "ingest-senate-votes": {
+        # Same 5×/day cadence as bills. The watermarked desc-walk is cheap
+        # (one paged restsil call when nothing new) so cadence is mostly a
+        # freshness knob — see ADR-0009.
+        "task": "app.tasks.ingestors.ingest_senate_votes",
+        "schedule": crontab(hour="5,9,13,17,21", minute=15),
+    },
     "ingest-legislators": {
         "task": "app.tasks.ingestors.ingest_legislators",
         "schedule": crontab(hour=3, minute=0),
