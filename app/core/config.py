@@ -82,6 +82,18 @@ class Settings(BaseSettings):
         default="restsil",
         alias="INGESTOR_SENATE_VOTES_SOURCE",
     )
+    ingestor_chamber_votes_source: Literal["bulk", "bill_detail"] = Field(
+        default="bulk",
+        alias="INGESTOR_CHAMBER_VOTES_SOURCE",
+    )
+    ingestor_opendata_async_concurrency: int = Field(
+        default=10,
+        alias="INGESTOR_OPENDATA_ASYNC_CONCURRENCY",
+    )
+    ingestor_chamber_votes_max_years_per_tick: int = Field(
+        default=10,
+        alias="INGESTOR_CHAMBER_VOTES_MAX_YEARS_PER_TICK",
+    )
     ingestor_restsil_page_size: int = Field(
         default=100,
         alias="INGESTOR_RESTSIL_PAGE_SIZE",

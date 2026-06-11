@@ -1,8 +1,8 @@
 """initial_schema
 
-Revision ID: 1fa801e8ad6b
+Revision ID: 886174b2e2a8
 Revises: 
-Create Date: 2026-06-08 22:02:31.191636
+Create Date: 2026-06-11 12:28:42.137326
 """
 
 from alembic import op
@@ -11,7 +11,7 @@ from sqlalchemy.dialects import postgresql
 
 
 # revision identifiers, used by Alembic.
-revision = '1fa801e8ad6b'
+revision = '886174b2e2a8'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -643,6 +643,7 @@ def upgrade() -> None:
     sa.Column('chamber_id', sa.BigInteger(), nullable=False),
     sa.Column('session_id', sa.BigInteger(), nullable=True),
     sa.Column('bill_id', sa.BigInteger(), nullable=True),
+    sa.Column('bill_bulletin_number', sa.String(length=50), nullable=True),
     sa.Column('bill_stage_id', sa.BigInteger(), nullable=True),
     sa.Column('voting_type', sa.Enum('GENERAL', 'PARTICULAR', 'SINGLE', 'OTHER', name='voting_type', native_enum=False), nullable=False),
     sa.Column('subject', sa.Text(), nullable=False),
@@ -676,6 +677,7 @@ def upgrade() -> None:
     sa.UniqueConstraint('bcn_id', name=op.f('uq_voting_sessions_bcn_id'))
     )
     op.create_index(op.f('ix_voting_sessions_deleted_at'), 'voting_sessions', ['deleted_at'], unique=False)
+    op.create_index('ix_voting_sessions_pending_bulletin', 'voting_sessions', ['bill_bulletin_number'], unique=False, postgresql_where='bill_id IS NULL AND bill_bulletin_number IS NOT NULL')
     op.create_index(op.f('ix_voting_sessions_sync_version'), 'voting_sessions', ['sync_version'], unique=False)
     op.create_table('votes',
     sa.Column('voting_session_id', sa.BigInteger(), nullable=False),
@@ -725,6 +727,7 @@ def downgrade() -> None:
     op.drop_index(op.f('ix_votes_deleted_at'), table_name='votes')
     op.drop_table('votes')
     op.drop_index(op.f('ix_voting_sessions_sync_version'), table_name='voting_sessions')
+    op.drop_index('ix_voting_sessions_pending_bulletin', table_name='voting_sessions', postgresql_where='bill_id IS NULL AND bill_bulletin_number IS NOT NULL')
     op.drop_index(op.f('ix_voting_sessions_deleted_at'), table_name='voting_sessions')
     op.drop_table('voting_sessions')
     op.drop_index(op.f('ix_bill_events_sync_version'), table_name='bill_events')

@@ -178,8 +178,14 @@ class VoteParser:
             "voting_type": VoteParser._parse_chamber_voting_type(subject),
             "stage_label": None,
             "subject": subject,
+            # ``FECHA_VOTACION`` is populated on modern rows (second
+            # precision); old historical votes (e.g. ID_VOTACION 5532, from
+            # 2014) carry only the minute-precision ``HORA`` field instead.
+            # ``_parse_restsil_datetime`` accepts both formats — chain the
+            # fallback here so we don't lose the upstream date for the
+            # old rows.
             "voting_date": VoteParser._parse_restsil_datetime(
-                raw.get("FECHA_VOTACION")
+                raw.get("FECHA_VOTACION") or raw.get("HORA")
             ),
             "result": result,
             "votes_for": votes_for,

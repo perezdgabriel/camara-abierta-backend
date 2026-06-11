@@ -20,7 +20,7 @@ recreate-db:
     uv run python scripts/recreate_db.py -y
 
 worker:
-    uv run celery -A app.core.celery_app worker -Q default -c 4 --loglevel=info
+    uv run celery -A app.core.celery_app worker -Q default --loglevel=info
 
 reference: 
     uv run python -m app.cli ingestors reference-data
@@ -40,8 +40,17 @@ bills:
 senate-votes:
     uv run python -m app.cli ingestors senate-votes
 
+chamber-votes:
+    uv run python -m app.cli ingestors chamber-votes
+
 seed-blocs:
     uv run python scripts/seed_blocs.py
 
 seed: geography legislature legislators seed-blocs
     echo "Database has been seeded with initial data"
+
+# Full bootstrap from an empty DB: drops + recreates the schema, seeds all
+# reference data, then runs cold-start backfills for bills and both chambers'
+# votes. Destructive — wipes the DB pointed to by DATABASE_URL.
+coldstart: recreate-db seed reference bills senate-votes chamber-votes
+    echo "Cold start complete: schema regenerated and all data backfilled"

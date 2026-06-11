@@ -5,7 +5,7 @@ from typing import Any
 
 from sqlalchemy import JSON, Boolean
 from sqlalchemy import Enum as SqlEnum
-from sqlalchemy import ForeignKey, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import ForeignKey, Index, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -17,6 +17,13 @@ from app.models.proyecto import Bill, BillStage
 
 class VotingSession(SyncableMixin, Base):
     __tablename__ = "voting_sessions"
+    __table_args__ = (
+        Index(
+            "ix_voting_sessions_pending_bulletin",
+            "bill_bulletin_number",
+            postgresql_where="bill_id IS NULL AND bill_bulletin_number IS NOT NULL",
+        ),
+    )
 
     bcn_id: Mapped[str | None] = mapped_column(String(100), unique=True)
     chamber_id: Mapped[int] = mapped_column(
@@ -28,6 +35,7 @@ class VotingSession(SyncableMixin, Base):
     bill_id: Mapped[int | None] = mapped_column(
         ForeignKey("bills.id", ondelete="SET NULL")
     )
+    bill_bulletin_number: Mapped[str | None] = mapped_column(String(50))
     bill_stage_id: Mapped[int | None] = mapped_column(
         ForeignKey("bill_stages.id", ondelete="SET NULL")
     )

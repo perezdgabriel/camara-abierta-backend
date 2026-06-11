@@ -25,6 +25,7 @@ def _list_jobs(_: argparse.Namespace) -> dict[str, list[str]]:
         "ingestors": [
             "bills",
             "senate-votes",
+            "chamber-votes",
             "legislators",
             "committees",
             "legislature",
@@ -81,6 +82,20 @@ def _run_senate_votes(args: argparse.Namespace) -> dict[str, Any]:
         max_pages=args.max_pages,
     )
     return {"job": "senate-votes", **result}
+
+
+def _run_chamber_votes(args: argparse.Namespace) -> dict[str, Any]:
+    run_ingest_chamber_votes = _load_attr(
+        "app.tasks.ingestors", "run_ingest_chamber_votes"
+    )
+    result = run_ingest_chamber_votes(
+        year=args.year,
+        bulletin=args.bulletin,
+        dry_run=args.dry_run,
+        source=getattr(args, "source", None),
+        max_years=args.max_years,
+    )
+    return {"job": "chamber-votes", **result}
 
 
 def _run_legislators(args: argparse.Namespace) -> dict[str, Any]:
@@ -299,6 +314,52 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     senate_votes_parser.set_defaults(runner=_run_senate_votes)
+
+    chamber_votes_parser = ingestor_subparsers.add_parser(
+        "chamber-votes",
+        parents=[dry_run_parent],
+        help=(
+            "Fetch Chamber voting sessions from OpenData's bulk year feed "
+            "and enqueue sync jobs."
+        ),
+    )
+    chamber_votes_parser.add_argument(
+        "--year",
+        type=int,
+        default=None,
+        help=(
+            "Restrict the walk to one year (ops recovery). Does not advance "
+            "the global watermark."
+        ),
+    )
+    chamber_votes_parser.add_argument(
+        "--bulletin",
+        help=(
+            "Restrict the walk to one bulletin (ops recovery). Skips the "
+            "discovery feed and fetches per-bulletin enrichment directly. "
+            "Does not advance the global watermark."
+        ),
+    )
+    chamber_votes_parser.add_argument(
+        "--source",
+        choices=["bulk", "bill_detail"],
+        default=None,
+        help=(
+            "Override the source. Defaults to "
+            "settings.ingestor_chamber_votes_source ('bulk'). 'bill_detail' "
+            "is a no-op here — failover Chamber votes ride on `ingestors bills`."
+        ),
+    )
+    chamber_votes_parser.add_argument(
+        "--max-years",
+        type=int,
+        default=None,
+        help=(
+            "Cap on years scanned during a cold-start backfill. Defaults to "
+            "settings.ingestor_chamber_votes_max_years_per_tick."
+        ),
+    )
+    chamber_votes_parser.set_defaults(runner=_run_chamber_votes)
 
     legislators_parser = ingestor_subparsers.add_parser(
         "legislators",

@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import re
 import unicodedata
 from datetime import date, datetime, timezone
 from typing import Any
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session, selectinload
 
@@ -51,7 +52,16 @@ from app.models.proyecto import (
 )
 from app.models.votacion import Vote, VotingSession
 
+logger = logging.getLogger(__name__)
+
 UNKNOWN_START_DATE = date(1900, 1, 1)
+
+# Obvious sentinel for ``_parse_datetime`` when an upstream value cannot be
+# parsed. We can't use ``None`` because ``voting_date`` is NOT NULL on the
+# voting_sessions table, and we don't want to silently stamp ``now()`` (which
+# makes corrupted rows look like fresh activity). 0001-01-01 is impossible
+# real data and sorts to the bottom of every chronological view.
+_DATETIME_PARSE_SENTINEL = datetime(1, 1, 1)
 
 
 def _next_sync_value(db: Session) -> int:
@@ -104,31 +114,40 @@ def _parse_date(value: str | date | None) -> date | None:
 
 
 def _parse_datetime(value: str | datetime | date | None) -> datetime:
+    """Coerce upstream ``Fecha`` values into a **naive Chile wall-clock**
+    ``datetime``.
+
+    Voting-session timestamps are stored on a ``TIMESTAMP WITHOUT TIME ZONE``
+    column and rendered verbatim everywhere (API, admin, UI). Upstream
+    sources always express vote times in Chile local time without a tz
+    marker, so we never apply timezone arithmetic — anything aware that
+    happens to arrive has its tz stripped, treating its wall-clock as
+    Chile-local.
+    """
     if isinstance(value, datetime):
-        return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+        return value.replace(tzinfo=None) if value.tzinfo is not None else value
     if isinstance(value, date):
-        return datetime.combine(value, datetime.min.time(), tzinfo=timezone.utc)
+        return datetime.combine(value, datetime.min.time())
     if isinstance(value, str):
         text = value.strip()
         if text:
-            # ISO datetime first — upstream sources that include a time (e.g.
-            # restsil ``FECHA_VOTACION`` after normalization) must round-trip
-            # to the same moment, not fall back to ``now()``. Tag naive
-            # values as UTC to match the date-only path below.
             try:
                 parsed = datetime.fromisoformat(text)
             except ValueError:
                 parsed = None
             if parsed is not None:
                 return (
-                    parsed
-                    if parsed.tzinfo is not None
-                    else parsed.replace(tzinfo=timezone.utc)
+                    parsed.replace(tzinfo=None) if parsed.tzinfo is not None else parsed
                 )
     parsed_date = _parse_date(value)
     if parsed_date is not None:
-        return datetime.combine(parsed_date, datetime.min.time(), tzinfo=timezone.utc)
-    return datetime.now(timezone.utc)
+        return datetime.combine(parsed_date, datetime.min.time())
+    logger.warning(
+        "_parse_datetime: unparseable upstream value %r — using sentinel %s",
+        value,
+        _DATETIME_PARSE_SENTINEL.isoformat(),
+    )
+    return _DATETIME_PARSE_SENTINEL
 
 
 def _parse_int(value: Any) -> int | None:
@@ -1096,6 +1115,24 @@ TERMINAL_STATUSES = frozenset(
 )
 
 
+def _reconcile_orphan_voting_sessions(db: Session, bill: Bill) -> None:
+    """Link previously orphaned ``VotingSession`` rows to this bill (ADR-0010).
+
+    The chamber-votes bulk task may save a vote before its bill has been
+    ingested; in that case ``bill_id`` is null and the upstream bulletin
+    is stashed in ``bill_bulletin_number``. When the bill finally arrives
+    we deterministically attach those rows here.
+    """
+    db.execute(
+        update(VotingSession)
+        .where(
+            VotingSession.bill_id.is_(None),
+            VotingSession.bill_bulletin_number == bill.bulletin_number,
+        )
+        .values(bill_id=bill.id)
+    )
+
+
 def upsert_bill(db: Session, data: dict[str, Any]) -> tuple[Bill, dict[str, Any]]:
     existing = db.execute(
         select(Bill.id, Bill.status).where(
@@ -1166,6 +1203,7 @@ def upsert_bill(db: Session, data: dict[str, Any]) -> tuple[Bill, dict[str, Any]
         ):
             _touch_syncable(db, bill)
             db.flush()
+        _reconcile_orphan_voting_sessions(db, bill)
         status_changed = old_status != new_status
         return bill, {
             "is_new": False,
@@ -1217,6 +1255,7 @@ def upsert_bill(db: Session, data: dict[str, Any]) -> tuple[Bill, dict[str, Any]
         _touch_syncable(db, bill)
 
     db.flush()
+    _reconcile_orphan_voting_sessions(db, bill)
 
     status_changed = (not is_new) and old_status != new_status
     stage_changed = (not is_new) and stages_changed
@@ -1595,6 +1634,7 @@ def upsert_voting_session(
         bcn_id=(data.get("bcn_id") or "")[:100],
         chamber_id=chamber.id,
         bill_id=bill_id,
+        bill_bulletin_number=(bulletin or None) and bulletin[:50],
         voting_type=_coerce_enum(
             VotingType, data.get("voting_type"), VotingType.GENERAL
         ),
@@ -1626,6 +1666,7 @@ def upsert_voting_session(
             set_={
                 "chamber_id": insert_stmt.excluded.chamber_id,
                 "bill_id": insert_stmt.excluded.bill_id,
+                "bill_bulletin_number": insert_stmt.excluded.bill_bulletin_number,
                 "voting_type": insert_stmt.excluded.voting_type,
                 "subject": insert_stmt.excluded.subject,
                 "voting_date": insert_stmt.excluded.voting_date,

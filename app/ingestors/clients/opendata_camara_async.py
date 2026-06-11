@@ -166,3 +166,81 @@ async def _afetch_and_parse_vote_detail(
     except Exception:
         logger.exception("Failed to fetch Chamber voting id %s", voting_id)
         return voting_id, None
+
+
+async def fetch_chamber_vote_summaries_parallel(
+    bulletins: list[str],
+    max_concurrency: int = MAX_CONCURRENCY,
+) -> list[tuple[str, list[dict[str, Any]]]]:
+    """Per-bulletin rich-vote-summary fan-out for chamber-votes ingest (ADR-0010).
+
+    Returns ``(bulletin, rich_summaries)`` for each input bulletin. Failures
+    map to an empty list so the caller can degrade gracefully.
+    """
+    if not bulletins:
+        return []
+
+    parser = OpenDataCamaraClient()
+    semaphore = asyncio.Semaphore(max_concurrency)
+
+    async def fetch_one(bulletin: str, client: Any) -> tuple[str, list[dict[str, Any]]]:
+        async with semaphore:
+            return await _afetch_and_parse_bulletin_vote_summaries(
+                client, parser, bulletin
+            )
+
+    import httpx
+
+    timeout = httpx.Timeout(60.0, connect=30.0)
+    async with httpx.AsyncClient(
+        timeout=timeout,
+        follow_redirects=True,
+        headers={
+            "User-Agent": "CamaraAbierta/1.0 (+https://camaraabierta.cl)",
+            "Accept": "application/xml, text/xml, */*",
+        },
+    ) as client:
+        tasks = [fetch_one(bulletin, client) for bulletin in bulletins]
+        results = await asyncio.gather(*tasks)
+
+    logger.info(
+        "Parallel-fetched chamber vote summaries for %d bulletins (%d with data)",
+        len(bulletins),
+        sum(1 for _, rows in results if rows),
+    )
+    return list(results)
+
+
+async def _afetch_and_parse_bulletin_vote_summaries(
+    client: Any,
+    parser: OpenDataCamaraClient,
+    bulletin: str,
+) -> tuple[str, list[dict[str, Any]]]:
+    url = f"{BASE_URL}WSLegislativo.asmx/retornarVotacionesXProyectoLey"
+
+    try:
+        response = await client.get(url, params={"prmNumeroBoletin": bulletin})
+        if response.status_code != 200:
+            logger.warning(
+                "HTTP %d fetching chamber-vote summaries for bulletin %s",
+                response.status_code,
+                bulletin,
+            )
+            return bulletin, []
+
+        root = fromstring(response.content)
+        rows = [
+            parser._parse_chamber_vote_summary(voting)
+            for voting in parser._iter(root, "VotacionProyectoLey")
+        ]
+        return bulletin, rows
+    except ET.ParseError:
+        logger.exception(
+            "XML parse error for chamber-vote summaries bulletin %s", bulletin
+        )
+        return bulletin, []
+    except Exception:
+        logger.exception(
+            "Failed to fetch chamber-vote summaries for bulletin %s", bulletin
+        )
+        return bulletin, []

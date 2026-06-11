@@ -1,4 +1,5 @@
 from app.core.celery_app import app
+from app.core.config import settings
 from app.core.session import task_session
 from app.ingestors.parsers.votes import VoteParser
 from app.search.bills import delete_bill as es_delete_bill
@@ -35,13 +36,19 @@ def sync_bill(self, data: dict) -> dict:
             data["bulletin_number"],
         )
 
-    for raw_vote in data.get("_camara_votaciones", []):
-        if not raw_vote.get("id"):
-            continue
-        sync_voting_session.delay(
-            VoteParser.parse_chamber_vote(raw_vote, bulletin=data["bulletin_number"]),
-            data["bulletin_number"],
-        )
+    # ADR-0010: the dedicated chamber-votes task owns this dispatch in the
+    # default ``bulk`` configuration. The embedded loop here is the failover
+    # path, activated via ``INGESTOR_CHAMBER_VOTES_SOURCE=bill_detail``.
+    if settings.ingestor_chamber_votes_source == "bill_detail":
+        for raw_vote in data.get("_camara_votaciones", []):
+            if not raw_vote.get("id"):
+                continue
+            sync_voting_session.delay(
+                VoteParser.parse_chamber_vote(
+                    raw_vote, bulletin=data["bulletin_number"]
+                ),
+                data["bulletin_number"],
+            )
 
     bulletin_number = data["bulletin_number"]
     title = data.get("title") or ""

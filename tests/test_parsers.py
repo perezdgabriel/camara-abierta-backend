@@ -666,6 +666,30 @@ def test_vote_parser_restsil_senate_vote_uses_id_votacion_as_dedup_key():
     assert individual[0]["_legislator_name"] == "Carlos Ignacio Kuschel Silva"
 
 
+def test_vote_parser_restsil_falls_back_to_hora_when_fecha_votacion_missing():
+    # Old historical votes (e.g. ID_VOTACION 5532, from 2014) return
+    # FECHA_VOTACION=None; the upstream date lives only in HORA, which is
+    # minute-precision DD/MM/YYYY HH:MM. Without the fallback ``_parse_datetime``
+    # falls through to the now() sentinel and rows look like fresh activity.
+    payload = VoteParser.parse_restsil_senate_vote(
+        {
+            "ID_VOTACION": 5532,
+            "FECHA_VOTACION": None,
+            "HORA": "07/10/2014 18:24",
+            "BOLETIN": "7011-07",
+            "TEMA": "Indicación renovada al proyecto de ley",
+            "SI": 23,
+            "NO": 0,
+            "ABS": 0,
+            "PAREO": 0,
+            "VOTACIONES": {"SI": 0, "NO": 0, "ABSTENCION": 0, "PAREO": 0},
+        }
+    )
+
+    # HORA is minute-precision; seconds zero-padded.
+    assert payload["voting_date"] == "2014-10-07T18:24:00"
+
+
 def test_vote_parser_restsil_handles_empty_buckets_emitted_as_integers():
     payload = VoteParser.parse_restsil_senate_vote(
         {

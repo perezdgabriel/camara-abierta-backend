@@ -1,4 +1,5 @@
 import logging
+import re
 from typing import Any
 from xml.etree import ElementTree as ET
 
@@ -9,6 +10,19 @@ logger = logging.getLogger(__name__)
 
 NS = "http://opendata.camara.cl/camaradiputados/v1"
 NS_BRACE = f"{{{NS}}}"
+
+# "Boletín N° 15936-18" or "Boletín N°15936-18" or "Boletines N° 15936-18, ..."
+# We take the first match — joint-bulletin votes link to the leftmost bulletin
+# (existing limitation, see ADR-0010).
+_BULLETIN_RE = re.compile(r"Bolet[íi]n(?:es)?\s*N[°º]\s*(\d+-\d+)")
+
+
+def parse_bulletin_from_description(description: str | None) -> str | None:
+    """Extract the first ``NNNN-NN`` bulletin from a free-text Descripcion."""
+    if not description:
+        return None
+    match = _BULLETIN_RE.search(description)
+    return match.group(1) if match else None
 
 
 class OpenDataCamaraClient(BaseCongresoClient):
@@ -61,6 +75,26 @@ class OpenDataCamaraClient(BaseCongresoClient):
             return None
         import re
 
+        match = re.match(r"(\d{4}-\d{2}-\d{2})", value)
+        if match:
+            return match.group(1)
+        return None
+
+    def _parse_dt_with_time(self, value: str) -> str | None:
+        """Like :meth:`_parse_dt` but preserves ``HH:MM:SS`` when present.
+
+        Upstream ``Fecha`` arrives as naive Chile wall-clock (e.g.
+        ``2026-06-10T13:16:55``). The voting pipeline needs the time, while
+        date-only fields elsewhere stay on :meth:`_parse_dt`. Returns the
+        full ISO string or the date-only form as a graceful fallback.
+        """
+        if not value:
+            return None
+        import re
+
+        match = re.match(r"(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}:\d{2})", value)
+        if match:
+            return f"{match.group(1)}T{match.group(2)}"
         match = re.match(r"(\d{4}-\d{2}-\d{2})", value)
         if match:
             return match.group(1)
@@ -315,7 +349,7 @@ class OpenDataCamaraClient(BaseCongresoClient):
         return {
             "id": self._int_val(voting, "Id"),
             "description": self._txt(voting, "Descripcion"),
-            "date": self._parse_dt(self._txt(voting, "Fecha")),
+            "date": self._parse_dt_with_time(self._txt(voting, "Fecha")),
             "votes_for": self._int_val(voting, "TotalSi"),
             "votes_against": self._int_val(voting, "TotalNo"),
             "abstentions": self._int_val(voting, "TotalAbstencion"),
@@ -379,7 +413,7 @@ class OpenDataCamaraClient(BaseCongresoClient):
         payload: dict[str, Any] = {
             "id": self._int_val(voting, "Id"),
             "description": self._txt(voting, "Descripcion"),
-            "date": self._parse_dt(self._txt(voting, "Fecha")),
+            "date": self._parse_dt_with_time(self._txt(voting, "Fecha")),
             "votes_for": self._int_val(voting, "TotalSi"),
             "votes_against": self._int_val(voting, "TotalNo"),
             "abstentions": self._int_val(voting, "TotalAbstencion"),
@@ -424,6 +458,71 @@ class OpenDataCamaraClient(BaseCongresoClient):
 
         logger.info("Fetched vote detail for voting id %s (opendata)", voting_id)
         return detail
+
+    def _parse_bulk_chamber_vote_summary(self, voting: ET.Element) -> dict[str, Any]:
+        """Parse the light ``<Votacion>`` shape returned by ``retornarVotacionesXAnno``.
+
+        This shape lacks ``TipoVotacionProyectoLey``, ``Articulo``, and the
+        ``Tramite*`` fields — those come from the per-bulletin enrichment via
+        ``retornarVotacionesXProyectoLey``.
+        """
+        return {
+            "id": self._int_val(voting, "Id"),
+            "description": self._txt(voting, "Descripcion"),
+            "date": self._parse_dt_with_time(self._txt(voting, "Fecha")),
+            "votes_for": self._int_val(voting, "TotalSi"),
+            "votes_against": self._int_val(voting, "TotalNo"),
+            "abstentions": self._int_val(voting, "TotalAbstencion"),
+            "dispensed_count": self._int_val(voting, "TotalDispensado"),
+            "quorum": self._txt(voting, "Quorum"),
+            "quorum_code": self._int_attr(voting, "Quorum", "Valor"),
+            "result": self._txt(voting, "Resultado"),
+            "result_code": self._int_attr(voting, "Resultado", "Valor"),
+            "type": self._txt(voting, "Tipo"),
+            "type_code": self._int_attr(voting, "Tipo", "Valor"),
+        }
+
+    def get_votes_by_year(self, year: int) -> list[dict[str, Any]]:
+        """Bulk year-keyed Chamber-vote feed (ADR-0010).
+
+        Returns light per-vote summaries in upstream desc-by-``Id`` order.
+        Each row's ``description`` contains the bulletin as free text — use
+        :func:`parse_bulletin_from_description` to extract it.
+        """
+        root = self._get_xml(
+            "WSLegislativo.asmx/retornarVotacionesXAnno",
+            params={"prmAnno": str(year)},
+        )
+        results = [
+            self._parse_bulk_chamber_vote_summary(voting)
+            for voting in self._iter(root, "Votacion")
+        ]
+        logger.info(
+            "Fetched %d chamber votes for year %d (opendata)", len(results), year
+        )
+        return results
+
+    def get_chamber_votes_for_bulletin(self, bulletin: str) -> list[dict[str, Any]]:
+        """Per-bulletin enrichment feed used by the chamber-votes ingest (ADR-0010).
+
+        Returns rich ``<VotacionProyectoLey>`` summaries (carries
+        ``TipoVotacionProyectoLey``, ``Articulo``, ``Tramite*``) without the
+        full bill detail body that ``retornarProyectoLey`` returns.
+        """
+        root = self._get_xml(
+            "WSLegislativo.asmx/retornarVotacionesXProyectoLey",
+            params={"prmNumeroBoletin": bulletin},
+        )
+        results = [
+            self._parse_chamber_vote_summary(voting)
+            for voting in self._iter(root, "VotacionProyectoLey")
+        ]
+        logger.info(
+            "Fetched %d chamber votes for bulletin %s (opendata)",
+            len(results),
+            bulletin,
+        )
+        return results
 
     def get_mensajes_x_anno(self, anno: int) -> list[dict]:
         root = self._get_xml(

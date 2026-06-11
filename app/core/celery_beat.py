@@ -22,6 +22,13 @@ app.conf.beat_schedule = {
         "task": "app.tasks.ingestors.ingest_senate_votes",
         "schedule": crontab(hour="5,9,13,17,21", minute=15),
     },
+    "ingest-chamber-votes": {
+        # OpenData bulk-year-feed driven, watermarked by `<Id>`. Offset 30
+        # minutes from bills/senate-votes within each wave so the upstream
+        # isn't hit by three tasks at once. See ADR-0010.
+        "task": "app.tasks.ingestors.ingest_chamber_votes",
+        "schedule": crontab(hour="5,9,13,17,21", minute=30),
+    },
     "ingest-legislators": {
         "task": "app.tasks.ingestors.ingest_legislators",
         "schedule": crontab(hour=3, minute=0),

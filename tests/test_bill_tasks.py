@@ -190,12 +190,18 @@ def test_sync_bill_enqueues_only_new_notification_for_new_bill(monkeypatch):
     assert notifications[0]["extra"]["origin"] == "executive"
 
 
-def test_sync_bill_enqueues_chamber_votes(monkeypatch):
+def test_sync_bill_enqueues_chamber_votes_when_source_is_bill_detail(monkeypatch):
+    """ADR-0010 failover path: embedded chamber-vote loop dispatches only when
+    INGESTOR_CHAMBER_VOTES_SOURCE=bill_detail.
+    """
     first_db = object()
     queued_summary_ids: list[int] = []
     queued_votes: list[tuple[dict, str]] = []
 
     monkeypatch.setattr(bill_tasks, "task_session", session_sequence(first_db))
+    monkeypatch.setattr(
+        bill_tasks.settings, "ingestor_chamber_votes_source", "bill_detail"
+    )
 
     def fake_upsert_bill(db, data):
         assert db is first_db
@@ -249,3 +255,44 @@ def test_sync_bill_enqueues_chamber_votes(monkeypatch):
             "555-06",
         )
     ]
+
+
+def test_sync_bill_skips_embedded_chamber_votes_under_bulk_source(monkeypatch):
+    """ADR-0010 default: the dedicated chamber-votes task owns dispatch, so
+    the embedded loop in sync_bill is a no-op under source=bulk.
+    """
+    first_db = object()
+    queued_votes: list[tuple[dict, str]] = []
+
+    monkeypatch.setattr(bill_tasks, "task_session", session_sequence(first_db))
+    monkeypatch.setattr(bill_tasks.settings, "ingestor_chamber_votes_source", "bulk")
+
+    def fake_upsert_bill(db, data):
+        return ns(id=42), {
+            "is_new": False,
+            "status_changed": False,
+            "stage_changed": False,
+            "old_status": BillStatus.PENDING,
+            "new_status": BillStatus.PENDING,
+        }
+
+    monkeypatch.setattr(bill_tasks, "upsert_bill", fake_upsert_bill)
+    monkeypatch.setattr(bill_tasks.generate_bill_ai_summary, "delay", lambda _: None)
+    monkeypatch.setattr(
+        bill_tasks.sync_voting_session,
+        "delay",
+        lambda payload, bulletin: queued_votes.append((payload, bulletin)),
+    )
+
+    bill_tasks.sync_bill.run(
+        {
+            "bulletin_number": "555-06",
+            "title": "Proyecto demo",
+            "entry_date": "2026-05-10",
+            "origin_type": BillOrigin.EXECUTIVE,
+            "_votaciones": [],
+            "_camara_votaciones": [{"id": 88980, "individual_votes": []}],
+        }
+    )
+
+    assert queued_votes == []

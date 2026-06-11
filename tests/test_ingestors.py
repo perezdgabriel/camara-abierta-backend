@@ -758,6 +758,36 @@ def test_run_ingest_senate_votes_advances_watermark_and_dispatches(monkeypatch):
     assert {args[1] for _, args in dispatched} == {"15767-29", "15975-25"}
 
 
+def test_run_ingest_senate_votes_targeted_bulletin_ignores_watermark(monkeypatch):
+    # Regression: targeted ``--bulletin`` recovery used to pass the global
+    # watermark to ``iter_votes_desc``, which stopped the walk on the first
+    # row because the target IDs (historical bulletins) are well below the
+    # watermark. Operator-driven recovery must ignore the watermark.
+    captured_stop_at_id: list[int | None] = []
+
+    class FakeRestsilClient:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def iter_votes_desc(self, *, stop_at_id, max_pages, boletin):
+            captured_stop_at_id.append(stop_at_id)
+            assert boletin == "7011-07"
+            return iter([])
+
+    monkeypatch.setattr(ingestor_tasks, "RestsilSenadoClient", FakeRestsilClient)
+    monkeypatch.setattr(ingestor_tasks, "_get_senate_votes_watermark", lambda: 11129)
+
+    result = ingestor_tasks.run_ingest_senate_votes(
+        bulletin="7011-07", source="restsil"
+    )
+
+    assert captured_stop_at_id == [None]
+    assert result["mode"] == "single_bulletin"
+
+
 def test_run_ingest_senate_votes_skips_when_source_is_wspublico(monkeypatch):
     # When the senate-votes source flag is flipped to wspublico the dedicated
     # task should no-op (failover puts vote capture back on the bills ingest).
@@ -995,3 +1025,285 @@ def test_iter_votes_desc_respects_max_pages_cap_when_fanning_out(monkeypatch):
 
     # cap=3 ⇒ 1 sequential + 2 parallel = 3 total.
     assert captured_offsets == [[100, 200]]
+
+
+# --- Chamber votes — bulk OpenData ingest (ADR-0010) ----------------------
+
+
+def test_parse_dt_with_time_preserves_chile_wall_clock():
+    from app.ingestors.clients.opendata_camara import OpenDataCamaraClient
+
+    client = OpenDataCamaraClient()
+    # Upstream ``Fecha`` is naive Chile local with HH:MM:SS — must round-trip
+    # without losing the time (the legacy ``_parse_dt`` stripped it, which
+    # caused voting_date to be stored as UTC midnight and rendered ~4h
+    # earlier in the admin panel).
+    assert client._parse_dt_with_time("2026-06-10T13:16:55") == "2026-06-10T13:16:55"
+    # Space-separated variant.
+    assert client._parse_dt_with_time("2026-06-10 13:16:55") == "2026-06-10T13:16:55"
+    # Falls back to date-only when no time is present.
+    assert client._parse_dt_with_time("2026-06-10") == "2026-06-10"
+    assert client._parse_dt_with_time("") is None
+    assert client._parse_dt_with_time(None) is None  # type: ignore[arg-type]
+
+
+def test_parse_bulletin_from_description():
+    from app.ingestors.clients.opendata_camara import (
+        parse_bulletin_from_description,
+    )
+
+    assert parse_bulletin_from_description("Boletín N° 15936-18") == "15936-18"
+    assert parse_bulletin_from_description("Boletín N°15936-18") == "15936-18"
+    assert parse_bulletin_from_description("Boletin N 15936-18") is None
+    # Joint-bulletin votes link to the first parsed bulletin.
+    assert (
+        parse_bulletin_from_description("Boletines N° 15936-18, 15937-18") == "15936-18"
+    )
+    # Free-text procedural votes don't carry a bulletin and are out of scope.
+    assert parse_bulletin_from_description("Cuenta de la sesión") is None
+    assert parse_bulletin_from_description(None) is None
+    assert parse_bulletin_from_description("") is None
+
+
+def test_run_ingest_chamber_votes_advances_watermark_and_dispatches(monkeypatch):
+    dispatched: list[tuple[object, tuple]] = []
+    watermark_after: list[int] = []
+    triggered_bill_ingests: list[str] = []
+
+    bulk_rows = [
+        {
+            "id": 89113,
+            "description": "Boletín N° 15936-18",
+            "date": "2026-06-10",
+            "votes_for": 106,
+            "votes_against": 5,
+            "abstentions": 32,
+            "dispensed_count": 0,
+            "quorum": "Quórum Simple",
+            "quorum_code": 1,
+            "result": "Aprobado",
+            "result_code": 1,
+            "type": "Proyecto de Ley",
+            "type_code": 1,
+        },
+        {
+            "id": 89112,
+            "description": "Boletín N° 15800-18",
+            "date": "2026-06-09",
+            "votes_for": 90,
+            "votes_against": 30,
+            "abstentions": 10,
+            "dispensed_count": 0,
+            "quorum": "Quórum Simple",
+            "quorum_code": 1,
+            "result": "Aprobado",
+            "result_code": 1,
+            "type": "Proyecto de Ley",
+            "type_code": 1,
+        },
+        # Below watermark — should be skipped.
+        {
+            "id": 89000,
+            "description": "Boletín N° 15700-18",
+            "date": "2026-05-01",
+        },
+        # Non-bill vote — should be skipped, watermark continues advancing.
+        {
+            "id": 89111,
+            "description": "Cuenta de la sesión",
+            "date": "2026-06-08",
+        },
+    ]
+
+    class FakeOpenData:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def get_votes_by_year(self, year):
+            assert year == 2026
+            return bulk_rows
+
+    monkeypatch.setattr(ingestor_tasks, "OpenDataCamaraClient", FakeOpenData)
+    monkeypatch.setattr(ingestor_tasks, "_get_chamber_votes_watermark", lambda: 89000)
+    monkeypatch.setattr(
+        ingestor_tasks,
+        "_set_chamber_votes_watermark",
+        lambda new_max: watermark_after.append(new_max),
+    )
+    monkeypatch.setattr(
+        ingestor_tasks,
+        "_dispatch",
+        lambda task, *args: dispatched.append((task, args)),
+    )
+    monkeypatch.setattr(
+        ingestor_tasks,
+        "_trigger_targeted_bill_ingest",
+        lambda bulletin: triggered_bill_ingests.append(bulletin),
+    )
+    # 15936-18 is unknown; 15800-18 is known.
+    monkeypatch.setattr(
+        ingestor_tasks,
+        "_bill_exists",
+        lambda bulletin: bulletin == "15800-18",
+    )
+
+    # Stub the rich-summary and per-vote-detail fan-outs.
+    monkeypatch.setattr(
+        ingestor_tasks,
+        "_fetch_rich_summaries",
+        lambda bulletins: {
+            89113: {
+                "voting_type": "Única",
+                "voting_type_code": 6,
+                "article_text": "Artículo único.",
+                "constitutional_procedure": "Tercer Trámite",
+                "constitutional_procedure_id": 3,
+                "regulatory_procedure": "Sin Informe",
+                "regulatory_procedure_id": 7,
+            },
+            89112: {
+                "voting_type": "General",
+                "voting_type_code": 1,
+                "article_text": "Artículo 1.",
+            },
+        },
+    )
+    monkeypatch.setattr(
+        ingestor_tasks,
+        "_fetch_vote_details",
+        lambda vote_ids: {
+            89113: {"individual_votes": []},
+            89112: {"individual_votes": []},
+        },
+    )
+
+    result = ingestor_tasks.run_ingest_chamber_votes(dry_run=False, source="bulk")
+
+    assert result["source"] == "bulk"
+    assert result["candidates"] == 2  # 89000 below wm, non-bill skipped
+    assert result["dispatched"] == 2
+    assert result["mode"] == "incremental"
+    assert watermark_after == [89113]
+    # Both votes were dispatched with their bulletin attached.
+    assert {args[1] for _, args in dispatched} == {"15936-18", "15800-18"}
+    # Only the unknown bulletin triggered a targeted bill ingest.
+    assert triggered_bill_ingests == ["15936-18"]
+
+
+def test_run_ingest_chamber_votes_cold_start_walks_year_range(monkeypatch):
+    years_called: list[int] = []
+
+    class FakeOpenData:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def get_votes_by_year(self, year):
+            years_called.append(year)
+            return []
+
+    monkeypatch.setattr(ingestor_tasks, "OpenDataCamaraClient", FakeOpenData)
+    monkeypatch.setattr(ingestor_tasks, "_get_chamber_votes_watermark", lambda: None)
+    monkeypatch.setattr(ingestor_tasks.settings, "ingestor_bills_start_year", 2024)
+    monkeypatch.setattr(
+        ingestor_tasks.settings, "ingestor_chamber_votes_max_years_per_tick", 5
+    )
+
+    result = ingestor_tasks.run_ingest_chamber_votes(
+        dry_run=False, source="bulk", max_years=5
+    )
+
+    # Cold start with no data — no dispatch, but years are walked newest-first.
+    assert result["mode"] == "cold_start"
+    today_year = datetime.date.today().year
+    assert years_called[0] == today_year
+    assert years_called[-1] == max(2024, today_year - 4)
+    assert all(
+        years_called[i] >= years_called[i + 1] for i in range(len(years_called) - 1)
+    )
+
+
+def test_run_ingest_chamber_votes_skips_when_source_is_bill_detail(monkeypatch):
+    called = {"opendata_constructed": False}
+
+    class FakeOpenData:
+        def __init__(self, *args, **kwargs):
+            called["opendata_constructed"] = True
+
+    monkeypatch.setattr(ingestor_tasks, "OpenDataCamaraClient", FakeOpenData)
+
+    result = ingestor_tasks.run_ingest_chamber_votes(source="bill_detail")
+
+    assert result["source"] == "bill_detail"
+    assert result["mode"] == "skip"
+    assert called["opendata_constructed"] is False
+
+
+def test_run_ingest_chamber_votes_targeted_bulletin_skips_discovery(monkeypatch):
+    dispatched: list[tuple[object, tuple]] = []
+    discovery_called = {"flag": False}
+
+    class FakeOpenData:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def get_votes_by_year(self, year):
+            discovery_called["flag"] = True
+            return []
+
+        def get_chamber_votes_for_bulletin(self, bulletin):
+            assert bulletin == "15936-18"
+            return [
+                {
+                    "id": 89113,
+                    "description": "Boletín N° 15936-18",
+                    "date": "2026-06-10",
+                    "voting_type": "Única",
+                    "voting_type_code": 6,
+                    "article_text": "Artículo único.",
+                    "votes_for": 1,
+                    "votes_against": 0,
+                    "abstentions": 0,
+                    "dispensed_count": 0,
+                    "result": "Aprobado",
+                    "result_code": 1,
+                }
+            ]
+
+    monkeypatch.setattr(ingestor_tasks, "OpenDataCamaraClient", FakeOpenData)
+    monkeypatch.setattr(ingestor_tasks, "_get_chamber_votes_watermark", lambda: None)
+    monkeypatch.setattr(
+        ingestor_tasks,
+        "_dispatch",
+        lambda task, *args: dispatched.append((task, args)),
+    )
+    monkeypatch.setattr(ingestor_tasks, "_bill_exists", lambda bulletin: True)
+    monkeypatch.setattr(
+        ingestor_tasks, "_fetch_vote_details", lambda vote_ids: {89113: {}}
+    )
+    # Stub watermark advance — targeted runs should NOT call it.
+    watermark_advances: list[int] = []
+    monkeypatch.setattr(
+        ingestor_tasks,
+        "_set_chamber_votes_watermark",
+        lambda new_max: watermark_advances.append(new_max),
+    )
+
+    result = ingestor_tasks.run_ingest_chamber_votes(
+        bulletin="15936-18", source="bulk", dry_run=False
+    )
+
+    assert discovery_called["flag"] is False
+    assert result["mode"] == "single_bulletin"
+    assert result["candidates"] == 1
+    assert result["dispatched"] == 1
+    # Targeted runs do not advance the watermark.
+    assert watermark_advances == []

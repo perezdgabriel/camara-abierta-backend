@@ -1,4 +1,4 @@
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 from types import SimpleNamespace
 
 from app.models.enums import ChamberType, VoteChoice
@@ -312,43 +312,60 @@ def test_upsert_parliamentary_appointment_updates_existing(monkeypatch):
     assert db.added == []  # not re-added
 
 
-def test_parse_datetime_round_trips_iso_datetime_string_instead_of_returning_now():
-    # Regression: prior to this fix ``_parse_datetime`` only knew how to parse
-    # date strings (``date.fromisoformat`` via ``_parse_date``), so handing it
-    # an ISO datetime string (e.g. from the restsil ``FECHA_VOTACION`` parser)
-    # silently fell through to ``datetime.now(utc)`` and ``voting_date`` ended
-    # up stamped at ingestion time. The restsil senate-vote ingest depends on
-    # the round-trip.
+def test_parse_datetime_round_trips_iso_datetime_string_as_naive_chile_time():
+    # Voting-session times are naive Chile wall-clock end-to-end (no tz
+    # arithmetic): upstream ``Fecha`` arrives without an offset, stored
+    # naive on a ``TIMESTAMP WITHOUT TIME ZONE`` column, displayed verbatim.
     result = write._parse_datetime("2026-06-03T18:33:55")
 
-    assert result == datetime(2026, 6, 3, 18, 33, 55, tzinfo=timezone.utc)
+    assert result == datetime(2026, 6, 3, 18, 33, 55)
+    assert result.tzinfo is None
 
 
-def test_parse_datetime_preserves_explicit_offset_on_iso_datetime_string():
+def test_parse_datetime_strips_explicit_offset_treating_wall_clock_as_chile():
+    # Defensive: nothing upstream produces this today, but if it ever does,
+    # the wall-clock value is what's user-facing — keep the hour, drop the tz.
     result = write._parse_datetime("2026-06-03T18:33:55-04:00")
 
-    assert result.utcoffset() is not None
-    assert result.hour == 18
-    assert result.day == 3
+    assert result == datetime(2026, 6, 3, 18, 33, 55)
+    assert result.tzinfo is None
 
 
-def test_parse_datetime_still_handles_date_only_strings_at_utc_midnight():
-    # Existing wspublico / opendata parsers feed naked date strings; that
-    # path must still produce UTC midnight.
+def test_parse_datetime_handles_date_only_strings_at_naive_midnight():
+    # Date-only strings (legacy wspublico Senate failover, OpenData date
+    # fallback) still produce midnight — naive now, not UTC.
     result = write._parse_datetime("2026-05-12")
 
-    assert result == datetime(2026, 5, 12, tzinfo=timezone.utc)
+    assert result == datetime(2026, 5, 12)
+    assert result.tzinfo is None
 
 
-def test_parse_datetime_attaches_utc_to_naive_datetime_object():
+def test_parse_datetime_leaves_naive_datetime_object_naive():
     naive = datetime(2026, 6, 3, 18, 33, 55)
 
     result = write._parse_datetime(naive)
 
-    assert result == datetime(2026, 6, 3, 18, 33, 55, tzinfo=timezone.utc)
+    assert result == datetime(2026, 6, 3, 18, 33, 55)
+    assert result.tzinfo is None
 
 
-def test_parse_datetime_promotes_date_object_to_utc_midnight():
+def test_parse_datetime_promotes_date_object_to_naive_midnight():
     result = write._parse_datetime(date(2026, 6, 3))
 
-    assert result == datetime(2026, 6, 3, tzinfo=timezone.utc)
+    assert result == datetime(2026, 6, 3)
+    assert result.tzinfo is None
+
+
+def test_parse_datetime_returns_sentinel_for_unparseable_input(caplog):
+    # Regression: the legacy fallback was ``datetime.now()`` which made
+    # corrupted rows look like fresh activity (e.g. when restsil returned
+    # FECHA_VOTACION=None for old votes and we hadn't chained the HORA
+    # fallback yet). The sentinel is impossible real data and sorts to the
+    # bottom of every chronological view, plus we log loudly.
+    caplog.set_level("WARNING", logger="app.services.write")
+    result = write._parse_datetime("not-a-date")
+
+    assert result == datetime(1, 1, 1)
+    assert any(
+        "unparseable upstream value" in record.message for record in caplog.records
+    )
