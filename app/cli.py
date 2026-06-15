@@ -27,6 +27,7 @@ def _list_jobs(_: argparse.Namespace) -> dict[str, list[str]]:
             "senate-votes",
             "chamber-votes",
             "legislators",
+            "bcn-sparql-enrichment",
             "committees",
             "legislature",
             "reference-data",
@@ -102,6 +103,14 @@ def _run_legislators(args: argparse.Namespace) -> dict[str, Any]:
     run_ingest_legislators = _load_attr("app.tasks.ingestors", "run_ingest_legislators")
     result = run_ingest_legislators(dry_run=args.dry_run)
     return {"job": "legislators", **result}
+
+
+def _run_bcn_sparql_enrichment(args: argparse.Namespace) -> dict[str, Any]:
+    run_ingest_bcn_sparql_enrichment = _load_attr(
+        "app.tasks.ingestors", "run_ingest_bcn_sparql_enrichment"
+    )
+    result = run_ingest_bcn_sparql_enrichment(dry_run=args.dry_run)
+    return {"job": "bcn-sparql-enrichment", **result}
 
 
 def _run_committees(args: argparse.Namespace) -> dict[str, Any]:
@@ -367,6 +376,18 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Fetch and enqueue legislator sync jobs.",
     )
     legislators_parser.set_defaults(runner=_run_legislators)
+
+    bcn_sparql_parser = ingestor_subparsers.add_parser(
+        "bcn-sparql-enrichment",
+        parents=[dry_run_parent],
+        help=(
+            "Run BCN SPARQL biographic enrichment (profession, twitter, photo) "
+            "and ParliamentaryAppointment backfill. Split out of `legislators` "
+            "because BCN SPARQL has been returning 502s; run separately when "
+            "SPARQL is healthy."
+        ),
+    )
+    bcn_sparql_parser.set_defaults(runner=_run_bcn_sparql_enrichment)
 
     committees_parser = ingestor_subparsers.add_parser(
         "committees",

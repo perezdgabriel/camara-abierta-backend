@@ -7,14 +7,30 @@ SENADO_PROFILE_BASE = (
     "https://www.senado.cl/senadoras-y-senadores/listado-de-senadoras-y-senadores"
 )
 
+BCN_WIKI_BASE = "https://www.bcn.cl/historiapolitica/resenas_parlamentarias/wiki"
+
 BCN_CARGO_DEPUTY = "1"
 BCN_CARGO_SENATOR = "2"
+
+BCN_REST_CAMARA_ID_DEPUTIES = 288
+BCN_REST_CAMARA_ID_SENATE = 261
+
+REST_ACRONYM_TO_PARTY_ACRONIM = {
+    "F.R.E.V.S.": "FRVS",
+    "P.D.C.": "DC",
+    "Republicano": "PREP",
+    "Frente Amplio": "FA",
+    "Nacional Libertario": "PNL",
+    "Independiente": "IND",
+    "Demócratas": "DEM",
+    "Evópoli": "EVOP",
+}
 
 
 class LegislatorParser:
     @staticmethod
     def parse_senator(raw: dict) -> dict:
-        """Parse a senator from the senado.cl web-back JSON catalog (see ADR-0002).
+        """Parse a senator from the senado.cl web-back JSON catalog (see ADR-0012).
 
         ``ID_PARLAMENTARIO`` equals the wspublico ``PARLID``, so the resulting
         ``bcn_id`` (``senado:{id}``) reconciles with any record previously created
@@ -27,6 +43,8 @@ class LegislatorParser:
             raw.get("NOMBRE_COMPLETO") or ""
         ).strip() or f"{first_name} {last_name_father} {last_name_mother}".strip()
         slug = (raw.get("SLUG") or "").strip()
+        _party_acronym = (raw.get("PARTIDO") or "").strip()
+        _part_name = REST_ACRONYM_TO_PARTY_ACRONIM.get(_party_acronym, _party_acronym)
         return {
             "bcn_id": f"senado:{raw.get('ID_PARLAMENTARIO', '')}",
             "first_name": first_name,
@@ -40,7 +58,7 @@ class LegislatorParser:
             "photo_url": (raw.get("IMAGEN_450") or raw.get("IMAGEN") or "").strip(),
             "photo_thumbnail_url": (raw.get("IMAGEN_120") or "").strip(),
             "profile_url": f"{SENADO_PROFILE_BASE}/{slug}" if slug else "",
-            "_party_name": (raw.get("PARTIDO") or "").strip(),
+            "_party_name": _part_name,
             "_circumscription": "",
             "_circumscription_number": _coerce_int(raw.get("CIRCUNSCRIPCION_ID")),
             "_region_name": (raw.get("REGION") or "").strip(),
@@ -87,6 +105,92 @@ class LegislatorParser:
             "_party_alias": current_party_alias.strip(),
             "_district_number": raw.get("district_number") or None,
             "_militancias": militancias,
+        }
+
+    @staticmethod
+    def parse_bcn_rest_deputy(raw: dict[str, Any]) -> dict[str, Any]:
+        """Parse a deputy from the BCN `ObtenerParlamentariosActivos` REST feed.
+
+        ``IdEnCamaraDeOrigen`` is the OpenData deputy ``Id`` (verified live), so
+        the resulting ``bcn_id`` (``camara:{id}``) reconciles with any record
+        previously created from OpenData and with chamber vote rows. Party
+        fields are intentionally NOT set here — OpenData stays the sole party
+        source (ADR-0012), overlaid by the orchestration; BCN's party name
+        differs from OpenData's (e.g. "Partido Renovación Nacional" vs
+        "Renovación Nacional") and routing it through
+        ``_upsert_party_from_opendata`` would collide on the existing
+        ``abbreviation`` unique constraint.
+        """
+        bridge = raw.get("id_en_camara_de_origen")
+        first_name = _title(raw.get("nombres"))
+        last_name_father = _title(raw.get("apellido_paterno"))
+        last_name_mother = _title(raw.get("apellido_materno"))
+        full_name = (raw.get("nombre_completo") or "").strip() or " ".join(
+            p for p in (first_name, last_name_father, last_name_mother) if p
+        )
+        return {
+            "bcn_id": f"camara:{bridge}" if bridge is not None else "",
+            "first_name": first_name,
+            "last_name": f"{last_name_father} {last_name_mother}".strip(),
+            "full_name": full_name,
+            "chamber_type": ChamberType.DEPUTIES,
+            "is_active": True,
+            "birth_date": raw.get("fecha_nacimiento"),
+            "email": (raw.get("email") or "").strip(),
+            "_district_number": _parse_number(raw.get("division_descripcion") or ""),
+        }
+
+    @staticmethod
+    def parse_bcn_rest_senator(raw: dict[str, Any]) -> dict[str, Any]:
+        """Parse a senator from the BCN `ObtenerParlamentariosActivos` REST feed.
+
+        ``IdEnCamaraDeOrigen`` is the senado.cl ``ID_PARLAMENTARIO`` (verified
+        live), so the resulting ``bcn_id`` (``senado:{id}``) reconciles with the
+        senado.cl catalog metadata join and with senate vote rows. ``_party_name``
+        carries the BCN party acronym (matching what
+        ``_resolve_party_from_senado`` expects as the abbreviation lookup key);
+        the senado catalog overlay re-asserts the same value, but using BCN's
+        acronym here keeps party resolution working even if the senado catalog
+        join misses.
+        """
+        bridge = raw.get("id_en_camara_de_origen")
+        first_name = _title(raw.get("nombres"))
+        last_name_father = _title(raw.get("apellido_paterno"))
+        last_name_mother = _title(raw.get("apellido_materno"))
+        full_name = (raw.get("nombre_completo") or "").strip() or " ".join(
+            p for p in (first_name, last_name_father, last_name_mother) if p
+        )
+        _party_acronym = (raw.get("partido_acronimo") or "").strip()
+        _party_name = REST_ACRONYM_TO_PARTY_ACRONIM.get(_party_acronym, _party_acronym)
+        return {
+            "bcn_id": f"senado:{bridge}" if bridge is not None else "",
+            "first_name": first_name,
+            "last_name": f"{last_name_father} {last_name_mother}".strip(),
+            "full_name": full_name,
+            "chamber_type": ChamberType.SENATE,
+            "is_active": True,
+            "birth_date": raw.get("fecha_nacimiento"),
+            "email": (raw.get("email") or "").strip(),
+            "_party_name": _party_name,
+            "_circumscription_number": raw.get("division_id"),
+            "_circumscription": (raw.get("division_descripcion") or "").strip(),
+            "_region_name": (raw.get("region_nombre") or "").strip(),
+        }
+
+    @staticmethod
+    def parse_bcn_rest_enrichment(raw: dict[str, Any]) -> dict[str, Any]:
+        """Enrichment payload for ``enrich_legislator_profile`` from a BCN REST record.
+
+        Returns the subset BCN REST owns end-to-end (no SPARQL dependency):
+        ``bcn_uri`` and ``bcn_wiki_url``. Empty values collapse to ``None`` so
+        the writer can skip touching already-populated columns.
+        """
+        bcn_uri = (raw.get("bcn_uri") or "").strip() or None
+        id_wiki = (raw.get("id_wiki") or "").strip()
+        bcn_wiki_url = f"{BCN_WIKI_BASE}/{id_wiki}" if id_wiki else None
+        return {
+            "bcn_uri": bcn_uri,
+            "bcn_wiki_url": bcn_wiki_url,
         }
 
     @staticmethod
@@ -210,6 +314,10 @@ def _gender_from_sexo(sexo: object, etiqueta: object) -> str:
     if code == "1":
         return "F"
     return ""
+
+
+def _title(value: object) -> str:
+    return (str(value).strip() if value is not None else "").title()
 
 
 def _coerce_int(value: object) -> int | None:

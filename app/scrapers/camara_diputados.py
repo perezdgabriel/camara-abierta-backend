@@ -14,15 +14,15 @@ HOME_URL = "https://www.camara.cl/"
 ROSTER_URL = "https://www.camara.cl/diputados/diputados.aspx"
 
 # www.camara.cl is Cloudflare-protected, so this MUST run through the stealth
-# ScraperEngine (camoufox recommended). No congress API exposes the deputy->district
-# link, which is why we scrape it here (see ADR-0003).
+# ScraperEngine (camoufox recommended). District + party are sourced from BCN
+# REST (see ADR-0012); this scraper is narrowed to photo + profile URL
+# enrichment because BCN REST does not expose either for deputies.
 #
-# DOM (verified 2026-05-27): the roster renders each deputy as
+# DOM: the roster renders each deputy as
 #   <article class="grid-2">
 #     <a href="detalle/mociones.aspx?prmID=803"><img src="/img.aspx?prmID=GRCL803"></a>
 #     <h4><a href="...prmID=803">Sr. René Alinco</a></h4>
-#     <p>Distrito: N°27</p>
-#     <p>Partido: IND</p>
+#     ...
 #   </article>
 # `prmID` equals the OpenData `Id` behind the `camara:{id}` bcn_id (e.g. 803 = René
 # Alinco). In the browser, img.src / a.href resolve to absolute URLs.
@@ -34,12 +34,9 @@ SCRAPE_JS = r"""
         if (!link) return;
         const m = link.href.match(/prmid=(\d+)/i);
         if (!m) return;
-        const text = card.textContent || '';
-        const distM = text.match(/Distrito:?\s*N?[°º]?\s*(\d+)/i);
         const img = card.querySelector('img');
         out.push({
             dipid: m[1],
-            district: distM ? distM[1] : '',
             photo_url: img ? img.src : '',
             profile_url: link.href,
         });
@@ -61,12 +58,6 @@ def build_enrichment(raw: dict[str, Any]) -> tuple[str, dict[str, Any]] | None:
     bcn_id = f"camara:{dipid}"
 
     fields: dict[str, Any] = {}
-    try:
-        district = int(str(raw.get("district") or "").strip())
-        if district > 0:
-            fields["district_number"] = district
-    except ValueError, TypeError:
-        pass
     if raw.get("photo_url"):
         fields["photo_url"] = str(raw["photo_url"]).strip()
     if raw.get("profile_url"):
@@ -92,12 +83,13 @@ def run_scrape(
     headed: bool = False,
     dry_run: bool = False,
 ) -> dict[str, Any]:
-    """Scrape the Cámara roster and enrich existing deputies with district + photo.
+    """Scrape the Cámara roster and enrich existing deputies with photo + profile URL.
 
     Enrichment-only: matches existing legislators by ``camara:{dipid}`` and updates
-    only district/photo/profile_url via :func:`enrich_legislator_profile`. Never
-    creates legislators or touches party data (ADR-0001). Unmatched deputies are
-    skipped and counted so an id-scheme mismatch is loud during verification.
+    only photo_url + profile_url via :func:`enrich_legislator_profile`. Never
+    creates legislators or touches party/district data (district comes from BCN
+    REST per ADR-0012). Unmatched deputies are skipped and counted so an id-scheme
+    mismatch is loud during verification.
     """
     deputies = asyncio.run(_scrape(engine, headed))
     found = len(deputies)

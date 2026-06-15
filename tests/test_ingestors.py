@@ -63,8 +63,8 @@ def test_run_ingest_bills_scans_opendata_from_since_year_for_explicit_since(
         lambda raw: {"bulletin_number": raw["bulletin"]},
     )
 
-    # ``source="opendata"`` selects the legacy ADR-0008 year-scan; the
-    # restsil branch (ADR-0009) is covered by a separate test below.
+    # ``source="opendata"`` selects the legacy year-scan failover; the
+    # restsil branch (ADR-0013 default) is covered by a separate test below.
     result = ingestor_tasks.run_ingest_bills(
         since="2026-05-01", dry_run=True, source="opendata"
     )
@@ -244,143 +244,167 @@ def test_run_ingest_bills_falls_back_to_full_scan_when_state_lookup_fails(monkey
     assert result["would_dispatch"] == 1
 
 
-def test_run_ingest_legislators_dispatches_both_sources_with_geography(monkeypatch):
-    dispatched: list[tuple[object, tuple]] = []
+class _FakeSenadoWebClient:
+    def __enter__(self):
+        return self
 
-    class FakeSenadoWebClient:
-        def __enter__(self):
-            return self
+    def __exit__(self, *args):
+        return None
 
-        def __exit__(self, *args):
-            return None
-
-        def get_full_catalog(self) -> dict[int, dict]:
-            return {
-                42: {
-                    "ID_PARLAMENTARIO": 42,
-                    "NOMBRE": "Ada",
-                    "APELLIDO_PATERNO": "Demo",
-                    "APELLIDO_MATERNO": "Senadora",
-                    "NOMBRE_COMPLETO": "Ada Demo Senadora",
-                    "PARTIDO": "Partido Demo",
-                    "CIRCUNSCRIPCION_ID": 7,
-                    "REGION": "Valparaiso",
-                    "EMAIL": "ada@example.com",
-                    "FONO": "+56 2 1234 5678",
-                    "SEXO": "1",
-                    "SEXO_ETIQUETA": "Mujer",
-                    "SLUG": "ada-demo-senadora-sen",
-                }
+    def get_full_catalog(self) -> dict[int, dict]:
+        return {
+            42: {
+                "ID_PARLAMENTARIO": 42,
+                "NOMBRE": "Ada",
+                "APELLIDO_PATERNO": "Demo",
+                "APELLIDO_MATERNO": "Senadora",
+                "NOMBRE_COMPLETO": "Ada Demo Senadora",
+                "PARTIDO": "Partido Demo",
+                "CIRCUNSCRIPCION_ID": 7,
+                "REGION": "Valparaiso",
+                "EMAIL": "ada@example.com",
+                "FONO": "+56 2 1234 5678",
+                "SEXO": "1",
+                "SEXO_ETIQUETA": "Mujer",
+                "SLUG": "ada-demo-senadora-sen",
+                "IMAGEN_450": "https://cdn.senado.cl/ada_450.jpg",
+                "IMAGEN_120": "https://cdn.senado.cl/ada_120.jpg",
             }
+        }
 
-    class FakeOpenDataCamaraClient:
-        def __enter__(self):
-            return self
 
-        def __exit__(self, *args):
-            return None
+class _FakeOpenDataCamaraClient:
+    def __enter__(self):
+        return self
 
-        def get_diputados_periodo_actual(self) -> list[dict]:
-            return [
-                {
-                    "id": 1254,
-                    "first_name": "Ignacio",
-                    "second_name": "",
-                    "last_name_father": "Urcullú",
-                    "last_name_mother": "Clèment-Lund",
-                    "birth_date": "1976-03-07",
-                    "gender": "Masculino",
-                    "gender_code": "1",
-                    "district_number": 8,
-                    "militancias": [
-                        {
-                            "start_date": "2026-03-11",
-                            "end_date": "2030-03-10",
-                            "party_name": "Partido Republicano",
-                            "party_alias": "PREP",
-                        }
-                    ],
-                }
-            ]
+    def __exit__(self, *args):
+        return None
 
-    class FakeBCNClient:
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *args):
-            return None
-
-        def get_active_appointments(self) -> list[dict]:
-            return [
-                {
-                    "personUri": "http://datos.bcn.cl/recurso/persona/4558",
-                    "appointmentUri": "http://datos.bcn.cl/recurso/persona/4558/nombramiento/2",
-                    "cargoId": "2",
-                    "idSenado": "42",
-                    "idCamara": None,
-                    "full_name": "Ada Demo Senadora",
-                    "term_start": "2022-03-11",
-                    "term_end": "2030-03-11",
-                },
-                {
-                    "personUri": "http://datos.bcn.cl/recurso/persona/1254",
-                    "appointmentUri": "http://datos.bcn.cl/recurso/persona/1254/nombramiento/1",
-                    "cargoId": "1",
-                    "idSenado": None,
-                    "idCamara": "1254",
-                    "full_name": "Ignacio Urcullú Clèment-Lund",
-                    "term_start": "2026-03-11",
-                    "term_end": "2030-03-11",
-                },
-            ]
-
-    profiles_by_uri = {
-        "http://datos.bcn.cl/recurso/persona/4558": {
-            "personUri": "http://datos.bcn.cl/recurso/persona/4558",
-            "full_name": "Ada Demo Senadora",
-            "profession": "Abogada",
-            "twitter": "ada_demo",
-            "bcn_wiki_url": "https://www.bcn.cl/historiapolitica/Demo",
-            "gender": "mujer",
-        },
-        "http://datos.bcn.cl/recurso/persona/1254": {
-            "personUri": "http://datos.bcn.cl/recurso/persona/1254",
-            "full_name": "Ignacio Urcullú Clèment-Lund",
-            "profession": "Ingeniero",
-            "twitter": "iurcullu",
-            "gender": "hombre",
-        },
-    }
-    appointments_by_uri = {
-        "http://datos.bcn.cl/recurso/persona/4558": [
+    def get_diputados_periodo_actual(self) -> list[dict]:
+        return [
             {
-                "appointmentUri": "http://datos.bcn.cl/recurso/persona/4558/nombramiento/2",
-                "cargoId": "2",
-                "term_start": "2022-03-11",
-                "term_end": "2030-03-11",
+                "id": 1254,
+                "first_name": "Ignacio",
+                "second_name": "",
+                "last_name_father": "Urcullú",
+                "last_name_mother": "Clèment-Lund",
+                "birth_date": "1976-03-07",
+                "gender": "Masculino",
+                "gender_code": "1",
+                "militancias": [
+                    {
+                        "start_date": "2026-03-11",
+                        "end_date": "2030-03-10",
+                        "party_name": "Partido Republicano",
+                        "party_alias": "PREP",
+                    }
+                ],
             }
-        ],
-        "http://datos.bcn.cl/recurso/persona/1254": [
+        ]
+
+
+class _FakeBCNRestClient:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return None
+
+    def get_active_parliamentarians(self) -> list[dict]:
+        return [
             {
-                "appointmentUri": "http://datos.bcn.cl/recurso/persona/1254/nombramiento/1",
-                "cargoId": "1",
-                "term_start": "2026-03-11",
-                "term_end": "2030-03-11",
-            }
-        ],
-    }
+                "bcn_id": 4558,
+                "bcn_uri": "http://datos.bcn.cl/recurso/persona/4558",
+                "id_en_camara_de_origen": 42,
+                "nombres": "Ada",
+                "apellido_paterno": "Demo",
+                "apellido_materno": "Senadora",
+                "nombre_completo": "Ada Demo Senadora",
+                "fecha_nacimiento": "1970-04-15",
+                "email": "ada@example.com",
+                "id_wiki": "Ada_Demo_Senadora",
+                "camara_id": 261,
+                "partido_nombre": "Partido Demo",
+                "partido_acronimo": "PD",
+                "division_tipo": "Circunscripcion",
+                "division_id": 7,
+                "division_descripcion": "Circunscripción VII Demo",
+                "region_nombre": "Valparaiso",
+            },
+            {
+                "bcn_id": 1254,
+                "bcn_uri": "http://datos.bcn.cl/recurso/persona/1254",
+                "id_en_camara_de_origen": 1254,
+                "nombres": "Ignacio",
+                "apellido_paterno": "Urcullú",
+                "apellido_materno": "Clèment-Lund",
+                "nombre_completo": "Ignacio Urcullú Clèment-Lund",
+                "fecha_nacimiento": "1976-03-07",
+                "email": "ignacio@example.com",
+                "id_wiki": "Ignacio_Urcullú_Clèment-Lund",
+                "camara_id": 288,
+                "partido_nombre": "Partido Republicano de Chile",
+                "partido_acronimo": "PREP",
+                "division_tipo": "Distrito",
+                "division_id": 4321,
+                "division_descripcion": "Distrito N° 8",
+            },
+        ]
+
+
+_PROFILES_BY_URI = {
+    "http://datos.bcn.cl/recurso/persona/4558": {
+        "personUri": "http://datos.bcn.cl/recurso/persona/4558",
+        "full_name": "Ada Demo Senadora",
+        "profession": "Abogada",
+        "twitter": "ada_demo",
+        "gender": "mujer",
+    },
+    "http://datos.bcn.cl/recurso/persona/1254": {
+        "personUri": "http://datos.bcn.cl/recurso/persona/1254",
+        "full_name": "Ignacio Urcullú Clèment-Lund",
+        "profession": "Ingeniero",
+        "twitter": "iurcullu",
+        "gender": "hombre",
+    },
+}
+_APPOINTMENTS_BY_URI = {
+    "http://datos.bcn.cl/recurso/persona/4558": [
+        {
+            "appointmentUri": "http://datos.bcn.cl/recurso/persona/4558/nombramiento/2",
+            "cargoId": "2",
+            "term_start": "2022-03-11",
+            "term_end": "2030-03-11",
+        }
+    ],
+    "http://datos.bcn.cl/recurso/persona/1254": [
+        {
+            "appointmentUri": "http://datos.bcn.cl/recurso/persona/1254/nombramiento/1",
+            "cargoId": "1",
+            "term_start": "2026-03-11",
+            "term_end": "2030-03-11",
+        }
+    ],
+}
+
+
+def _wire_legislator_ingest_mocks(monkeypatch, dispatched, *, sparql_raises=False):
+    monkeypatch.setattr(ingestor_tasks, "SenadoWebClient", _FakeSenadoWebClient)
+    monkeypatch.setattr(
+        ingestor_tasks, "OpenDataCamaraClient", _FakeOpenDataCamaraClient
+    )
+    monkeypatch.setattr(ingestor_tasks, "BCNRestClient", _FakeBCNRestClient)
 
     async def fake_fetch_profiles(uris):
-        return {uri: profiles_by_uri.get(uri) for uri in uris}
+        if sparql_raises:
+            raise RuntimeError("BCN SPARQL profile fetch failed")
+        return {uri: _PROFILES_BY_URI.get(uri) for uri in uris}
 
     async def fake_fetch_appointments(uris):
-        return {uri: appointments_by_uri.get(uri, []) for uri in uris}
+        if sparql_raises:
+            raise RuntimeError("BCN SPARQL appointments fetch failed")
+        return {uri: _APPOINTMENTS_BY_URI.get(uri, []) for uri in uris}
 
-    monkeypatch.setattr(ingestor_tasks, "SenadoWebClient", FakeSenadoWebClient)
-    monkeypatch.setattr(
-        ingestor_tasks, "OpenDataCamaraClient", FakeOpenDataCamaraClient
-    )
-    monkeypatch.setattr(ingestor_tasks, "BCNClient", FakeBCNClient)
     monkeypatch.setattr(
         ingestor_tasks, "fetch_person_profiles_parallel", fake_fetch_profiles
     )
@@ -397,41 +421,102 @@ def test_run_ingest_legislators_dispatches_both_sources_with_geography(monkeypat
     monkeypatch.setattr(ingestor_tasks, "_mark_synced", lambda entity_type: None)
     monkeypatch.setattr(ingestor_tasks.time, "sleep", lambda _: None)
 
-    result = ingestor_tasks.run_ingest_legislators(dry_run=False)
 
-    # 2 sync_legislator (deputy + senator) + 2 BCN enrichment + 2 appointment.
-    assert result == {"errors": 0, "dry_run": False, "dispatched": 6}
-
+def _group_by_task(dispatched):
     by_task: dict[str, list[tuple]] = {}
     for task, args in dispatched:
         by_task.setdefault(task.name, []).append(args)
+    return by_task
 
+
+def test_run_ingest_legislators_dispatches_both_chambers_via_bcn_rest(monkeypatch):
+    dispatched: list[tuple[object, tuple]] = []
+    _wire_legislator_ingest_mocks(monkeypatch, dispatched)
+
+    result = ingestor_tasks.run_ingest_legislators(dry_run=False)
+
+    # 2 sync_legislator (senator+deputy) + 2 BCN REST enrichment = 4.
+    # BCN SPARQL passes moved to run_ingest_bcn_sparql_enrichment.
+    assert result == {"errors": 0, "dry_run": False, "dispatched": 4}
+
+    by_task = _group_by_task(dispatched)
     legislator_dispatches = by_task[ingestor_tasks.sync_legislator.name]
     enrichment_dispatches = by_task[ingestor_tasks.sync_legislator_bcn_enrichment.name]
-    appointment_dispatches = by_task[ingestor_tasks.sync_parliamentary_appointment.name]
+    # No SPARQL appointment dispatches in the legislator flow anymore.
+    assert ingestor_tasks.sync_parliamentary_appointment.name not in by_task
 
-    deputy_payload = legislator_dispatches[0][0]
-    senator_payload = legislator_dispatches[1][0]
-    assert deputy_payload["bcn_id"] == "camara:1254"
-    assert deputy_payload["_party_name"] == "Partido Republicano"
-    assert deputy_payload["_district_number"] == 8
-    assert senator_payload["bcn_id"] == "senado:42"
+    payloads_by_bcn_id = {args[0]["bcn_id"]: args[0] for args in legislator_dispatches}
+    senator_payload = payloads_by_bcn_id["senado:42"]
+    deputy_payload = payloads_by_bcn_id["camara:1254"]
+
+    # Senado catalog overlays its abbreviation ("Partido Demo") onto _party_name
+    # — that's what _resolve_party_from_senado looks up.
     assert senator_payload["_party_name"] == "Partido Demo"
     assert senator_payload["_circumscription_number"] == 7
-    assert senator_payload["bcn_uri"].endswith("/persona/4558")
+    # senado.cl catalog overlays gender/phone/photo onto BCN REST identity.
+    assert senator_payload["gender"] == "F"
+    assert senator_payload["phone"] == "+56 2 1234 5678"
+    assert senator_payload["photo_url"].endswith("ada_450.jpg")
+    assert senator_payload["photo_thumbnail_url"].endswith("ada_120.jpg")
+    assert senator_payload["profile_url"].endswith("ada-demo-senadora-sen")
 
-    enrichment_by_bcn_id = {args[0]: args[1] for args in enrichment_dispatches}
-    assert enrichment_by_bcn_id["camara:1254"]["profession"] == "Ingeniero"
-    assert enrichment_by_bcn_id["camara:1254"]["twitter_handle"] == "iurcullu"
+    # OpenData militancia overlays "Partido Republicano" — NOT BCN REST's
+    # "Partido Republicano de Chile" (that would collide on the abbreviation
+    # unique constraint, ADR-0012).
+    assert deputy_payload["_party_name"] == "Partido Republicano"
+    assert deputy_payload["_party_alias"] == "PREP"
+    assert deputy_payload["_district_number"] == 8
+    assert deputy_payload["gender"] == "1"
+    assert deputy_payload["_militancias"][0]["party_alias"] == "PREP"
+
+    # BCN REST enrichment writes bcn_uri + bcn_wiki_url (no SPARQL involved).
+    enrichment_by_bcn_id = {bcn_id: payload for bcn_id, payload in enrichment_dispatches}
+    senator_enrichment = enrichment_by_bcn_id["senado:42"]
+    assert senator_enrichment["bcn_uri"].endswith("/persona/4558")
+    assert senator_enrichment["bcn_wiki_url"].endswith("/Ada_Demo_Senadora")
+    assert "profession" not in senator_enrichment
+    assert "twitter_handle" not in senator_enrichment
+
+
+def test_run_ingest_bcn_sparql_enrichment_dispatches_profile_and_appointments(
+    monkeypatch,
+):
+    dispatched: list[tuple[object, tuple]] = []
+    _wire_legislator_ingest_mocks(monkeypatch, dispatched)
+
+    result = ingestor_tasks.run_ingest_bcn_sparql_enrichment(dry_run=False)
+
+    # 2 SPARQL profile enrichments + 2 appointment dispatches = 4.
+    assert result == {"errors": 0, "dry_run": False, "dispatched": 4}
+
+    by_task = _group_by_task(dispatched)
+    enrichment_dispatches = by_task[ingestor_tasks.sync_legislator_bcn_enrichment.name]
+    appointment_dispatches = by_task[ingestor_tasks.sync_parliamentary_appointment.name]
+    # The roster-write task is not dispatched by the SPARQL command.
+    assert ingestor_tasks.sync_legislator.name not in by_task
+
+    enrichment_by_bcn_id = {bcn_id: payload for bcn_id, payload in enrichment_dispatches}
+    assert enrichment_by_bcn_id["senado:42"]["profession"] == "Abogada"
+    assert enrichment_by_bcn_id["senado:42"]["twitter_handle"] == "ada_demo"
     assert enrichment_by_bcn_id["senado:42"]["gender"] == "F"
-    assert enrichment_by_bcn_id["senado:42"]["bcn_wiki_url"].startswith(
-        "https://www.bcn.cl/historiapolitica/"
-    )
+    assert enrichment_by_bcn_id["camara:1254"]["profession"] == "Ingeniero"
 
     appointment_by_bcn_id = {args[0]: args[1] for args in appointment_dispatches}
     assert appointment_by_bcn_id["senado:42"]["chamber_type"] == "senate"
     assert appointment_by_bcn_id["senado:42"]["end_date"] == "2030-03-11"
     assert appointment_by_bcn_id["camara:1254"]["chamber_type"] == "deputies"
+
+
+def test_run_ingest_bcn_sparql_enrichment_tolerates_sparql_outage(monkeypatch):
+    dispatched: list[tuple[object, tuple]] = []
+    _wire_legislator_ingest_mocks(monkeypatch, dispatched, sparql_raises=True)
+
+    result = ingestor_tasks.run_ingest_bcn_sparql_enrichment(dry_run=False)
+
+    # No dispatches — both SPARQL passes raised — but no errors counted either,
+    # the function degrades to a no-op rather than failing.
+    assert result == {"errors": 0, "dry_run": False, "dispatched": 0}
+    assert dispatched == []
 
 
 def test_run_ingest_reference_data_dispatches_topics_only(monkeypatch):
@@ -561,7 +646,7 @@ def test_run_ingest_bills_sources_senate_votes_from_votaciones_endpoint(monkeypa
     # Failover behavior: with ``ingestor_senate_votes_source="wspublico"`` the
     # dedicated restsil-driven senate-votes task no-ops and the per-bulletin
     # votaciones.php fetch supplies the Senate votes that flow on to
-    # ``sync_voting_session`` (ADR-0008 path preserved by ADR-0009).
+    # ``sync_voting_session`` (legacy embedded path preserved per ADR-0013).
     dispatched: list[tuple[object, dict]] = []
 
     async def fake_fetch_bills_parallel(bulletins: list[str]):
@@ -612,7 +697,7 @@ def test_run_ingest_bills_sources_senate_votes_from_votaciones_endpoint(monkeypa
     ]
 
 
-# --- restsil (ADR-0009) ingestion-task tests --------------------------------
+# --- restsil (ADR-0013) ingestion-task tests --------------------------------
 
 
 def test_run_ingest_bills_restsil_current_year_then_dispatches_via_tramitacion(
@@ -1027,7 +1112,7 @@ def test_iter_votes_desc_respects_max_pages_cap_when_fanning_out(monkeypatch):
     assert captured_offsets == [[100, 200]]
 
 
-# --- Chamber votes — bulk OpenData ingest (ADR-0010) ----------------------
+# --- Chamber votes — bulk OpenData ingest (ADR-0013) ----------------------
 
 
 def test_parse_dt_with_time_preserves_chile_wall_clock():

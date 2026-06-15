@@ -10,9 +10,13 @@ from app.core.celery_app import app
 from app.core.config import settings
 from app.core.session import task_session
 from app.ingestors.clients.bcn import (
-    BCNClient,
     fetch_person_appointments_parallel,
     fetch_person_profiles_parallel,
+)
+from app.ingestors.clients.bcn_rest import (
+    CAMARA_ID_DEPUTIES,
+    CAMARA_ID_SENATE,
+    BCNRestClient,
 )
 from app.ingestors.clients.camara import CamaraClient
 from app.ingestors.clients.opendata_camara import (
@@ -36,7 +40,6 @@ from app.ingestors.parsers.committees import CommitteeParser
 from app.ingestors.parsers.legislators import LegislatorParser
 from app.ingestors.parsers.legislature import LegislatureParser
 from app.ingestors.parsers.votes import VoteParser
-from app.models.enums import ChamberType
 from app.models.ingestor_state import IngestorState
 from app.tasks.base import DatabaseTask
 from app.tasks.bills import sync_bill
@@ -156,10 +159,10 @@ def _load_opendata_bill_details_with_votes(
 def _discover_bulletins_opendata(
     start_year: int, current_year: int
 ) -> tuple[list[str], int]:
-    """Legacy OpenData year-scan discovery (ADR-0008).
+    """Legacy OpenData year-scan discovery (ADR-0013).
 
     Iterates ``get_mensajes_x_anno`` + ``get_mociones_x_anno`` across the
-    requested year range. Kept in tree as the failover path per ADR-0009 —
+    requested year range. Kept in tree as the failover path per ADR-0013 —
     activated when ``settings.ingestor_bills_source == "opendata"``.
     """
     seen: set[str] = set()
@@ -191,7 +194,7 @@ def _discover_bulletins_opendata(
 def _discover_bulletins_restsil(
     start_year: int, current_year: int, *, full_backfill: bool
 ) -> tuple[list[str], int, bool]:
-    """Restsil desc-paged discovery (ADR-0009).
+    """Restsil desc-paged discovery (ADR-0013).
 
     Policy (also documented in the ADR):
 
@@ -358,7 +361,7 @@ def run_ingest_bills(
             )
             errors += detail_errors
             # Senate vote capture: when the dedicated restsil-driven
-            # ``run_ingest_senate_votes`` task owns Senate votes (ADR-0009),
+            # ``run_ingest_senate_votes`` task owns Senate votes (ADR-0013),
             # we no longer fetch them per-bulletin from votaciones.php on the
             # bill ingest path. The wspublico path remains as failover and is
             # activated by flipping ``ingestor_senate_votes_source``.
@@ -415,7 +418,7 @@ def run_ingest_bills(
 
 
 # --------------------------------------------------------------------------
-# Senate votes — dedicated restsil-driven ingest (ADR-0009)
+# Senate votes — dedicated restsil-driven ingest (ADR-0013)
 # --------------------------------------------------------------------------
 
 
@@ -456,7 +459,7 @@ def run_ingest_senate_votes(
     source: str | None = None,
     max_pages: int | None = None,
 ) -> dict[str, Any]:
-    """Restsil desc-paged Senate-vote ingest (ADR-0009).
+    """Restsil desc-paged Senate-vote ingest (ADR-0013).
 
     Walks ``buscarVotaciones?order=desc&sort=HORA`` and dispatches one
     ``sync_voting_session`` per row. Stops at the first row whose
@@ -547,7 +550,7 @@ def run_ingest_senate_votes(
 
 
 # --------------------------------------------------------------------------
-# Chamber votes — dedicated OpenData-bulk-driven ingest (ADR-0010)
+# Chamber votes — dedicated OpenData-bulk-driven ingest (ADR-0013)
 # --------------------------------------------------------------------------
 
 
@@ -628,7 +631,7 @@ def _collect_new_chamber_votes(
                 bulletin = parse_bulletin_from_description(row.get("description"))
                 if not bulletin:
                     # Non-bill chamber votes (Proyectos de Acuerdo, internal
-                    # procedural votes) are out of scope — see ADR-0010.
+                    # procedural votes) are out of scope — see ADR-0013.
                     continue
                 row["_bulletin"] = bulletin
                 collected.append(row)
@@ -643,7 +646,7 @@ def run_ingest_chamber_votes(
     source: str | None = None,
     max_years: int | None = None,
 ) -> dict[str, Any]:
-    """OpenData bulk Chamber-vote ingest (ADR-0010).
+    """OpenData bulk Chamber-vote ingest (ADR-0013).
 
     Walks ``retornarVotacionesXAnno?prmAnno=YYYY``, parses the bulletin from
     each ``<Descripcion>``, enriches per-bulletin via
@@ -895,7 +898,7 @@ def _trigger_targeted_bill_ingest(bulletin: str) -> None:
     The bill ingest fetches Senado detail + OpenData enrichment for the
     bulletin and ultimately calls ``sync_bill`` with the right shape.
     Once the bill row lands, ``upsert_bill``'s reconcile step relinks
-    the previously-orphaned ``VotingSession`` rows (ADR-0010).
+    the previously-orphaned ``VotingSession`` rows (ADR-0013).
     """
     # Local import avoids a circular dependency at module load.
     from app.tasks.ingestors import ingest_bills as _ingest_bills_task
@@ -904,80 +907,93 @@ def _trigger_targeted_bill_ingest(bulletin: str) -> None:
 
 
 def run_ingest_legislators(*, dry_run: bool = False) -> dict[str, Any]:
-    """Refresh the legislator roster + biographic data.
+    """Refresh the legislator roster + chamber-sourced metadata.
 
-    Per ADR-0005, BCN linked data is the source of truth for *which*
-    legislators are currently seated. The pipeline shape:
+    Per ADR-0012, the BCN REST endpoint ``ObtenerParlamentariosActivos`` is
+    the active-roster authority for both chambers. The pipeline shape:
 
-    1. **Deputies** stay on OpenData Cámara for identity + party + district
-       number (ADR-0001 / ADR-0003 unchanged); camara.cl district scraping
-       runs separately.
-    2. **Senators** come from BCN's active appointments cross-referenced with
-       the senado.cl metadata catalog (circumscription, region, party
-       abbreviation, email, phone, photo) by ``ID_PARLAMENTARIO``.
-    3. **Both chambers** receive BCN biographic enrichment (profession,
-       twitter handle, BCN wiki page, photo) joined by ``idCamara`` /
-       ``idSenado``.
-    4. **Term history** for both chambers is backfilled into
-       ``ParliamentaryAppointment`` rows via per-URI fan-out.
+    1. **BCN REST** drives the active roster for both chambers in one call.
+    2. **Deputies** are enriched with OpenData (gender + ``_militancias``
+       party history) joined by ``IdEnCamaraDeOrigen`` ↔ OpenData ``Id``.
+    3. **Senators** are enriched with the senado.cl metadata catalog (gender,
+       phone, photo, slug-derived profile URL) joined by
+       ``IdEnCamaraDeOrigen`` ↔ ``ID_PARLAMENTARIO``.
+    4. **BCN REST enrichment** (``bcn_uri`` + ``bcn_wiki_url``) is dispatched
+       for every active legislator — no dependency on BCN SPARQL.
+
+    BCN SPARQL biographic enrichment (profession, twitter, photo) and
+    ``ParliamentaryAppointment`` history are no longer part of this flow —
+    BCN SPARQL has been chronically returning 502s and was delaying every
+    run. Use ``python -m app.cli ingestors bcn-sparql-enrichment`` to run
+    those passes separately when SPARQL is healthy.
     """
     dispatched = 0
     errors = 0
 
-    # 1. Deputies — OpenData stays primary.
+    # 1. BCN REST roster — critical path, source of truth for both chambers.
+    bcn_rest_rows: list[dict[str, Any]] = []
+    try:
+        with BCNRestClient() as bcn_rest:
+            bcn_rest_rows = bcn_rest.get_active_parliamentarians()
+    except Exception:
+        logger.exception(
+            "Failed to fetch active roster from BCN REST; aborting legislator ingest"
+        )
+        errors += 1
+        return _build_dispatch_result(dispatched, errors, dry_run)
+
+    senate_rows = [r for r in bcn_rest_rows if r.get("camara_id") == CAMARA_ID_SENATE]
+    deputy_rows = [r for r in bcn_rest_rows if r.get("camara_id") == CAMARA_ID_DEPUTIES]
+    logger.info(
+        "BCN REST roster: %d senators, %d deputies",
+        len(senate_rows),
+        len(deputy_rows),
+    )
+
+    # 2. Deputies — BCN REST identity + OpenData gender/militancias overlay.
+    opendata_by_id: dict[int, dict[str, Any]] = {}
     try:
         with OpenDataCamaraClient() as opendata:
             for raw in opendata.get_diputados_periodo_actual():
-                try:
-                    payload = LegislatorParser.parse_opendata_deputy(raw)
-                    if not dry_run:
-                        _dispatch(sync_legislator, payload)
-                    dispatched += 1
-                except Exception:
-                    logger.exception("Failed to parse deputy from OpenDataCamaraClient")
-                    errors += 1
+                opendata_id = raw.get("id")
+                if opendata_id is None:
+                    continue
+                opendata_by_id[int(opendata_id)] = raw
     except Exception:
-        logger.exception("Failed to fetch deputies from OpenDataCamaraClient")
+        logger.exception("Failed to fetch OpenData deputies for enrichment overlay")
         errors += 1
 
     time.sleep(REQUEST_DELAY)
 
-    # 2. BCN roster — source of truth for who is currently seated (both chambers).
-    bcn_rows: list[dict[str, Any]] = []
-    try:
-        with BCNClient() as bcn:
-            bcn_rows = bcn.get_active_appointments()
-    except Exception:
-        logger.exception("Failed to fetch active appointments from BCN")
-        errors += 1
+    for raw in deputy_rows:
+        try:
+            payload = LegislatorParser.parse_bcn_rest_deputy(raw)
+            bridge = raw.get("id_en_camara_de_origen")
+            opendata_row = opendata_by_id.get(bridge) if bridge is not None else None
+            if opendata_row is not None:
+                # OpenData is the sole party source (ADR-0012) — overlay party
+                # name + alias (derived from militancias by parse_opendata_deputy)
+                # so _upsert_party_from_opendata reconciles with existing rows
+                # instead of colliding on the abbreviation unique constraint.
+                opendata_payload = LegislatorParser.parse_opendata_deputy(opendata_row)
+                for key in ("gender", "_party_name", "_party_alias", "_militancias"):
+                    value = opendata_payload.get(key)
+                    if value:
+                        payload[key] = value
+            else:
+                logger.warning(
+                    "BCN REST deputy %s has no OpenData match (bridge id %s)",
+                    payload["bcn_id"],
+                    bridge,
+                )
+            if not dry_run:
+                _dispatch(sync_legislator, payload)
+            dispatched += 1
+        except Exception:
+            logger.exception("Failed to dispatch deputy %s", raw.get("bcn_id"))
+            errors += 1
 
-    # Reduce to one normalized roster entry per bcn_id (latest term wins on
-    # duplicates — should not happen for active legislators, but a defensive
-    # de-dupe keeps the senator/deputy join clean).
-    roster_by_bcn_id: dict[str, dict[str, Any]] = {}
-    for row in bcn_rows:
-        parsed = LegislatorParser.parse_bcn_roster_row(row)
-        if parsed is None:
-            continue
-        roster_by_bcn_id[parsed["bcn_id"]] = parsed
-
-    senator_roster = [
-        entry
-        for entry in roster_by_bcn_id.values()
-        if entry["chamber_type"] == ChamberType.SENATE
-    ]
-    deputy_roster = [
-        entry
-        for entry in roster_by_bcn_id.values()
-        if entry["chamber_type"] == ChamberType.DEPUTIES
-    ]
-    logger.info(
-        "BCN roster: %d senators, %d deputies after de-dupe",
-        len(senator_roster),
-        len(deputy_roster),
-    )
-
-    # 3. Senators — BCN roster merged with senado.cl metadata catalog by PARLID.
+    # 3. Senators — BCN REST identity + senado.cl catalog overlay (gender, phone, photo).
     senate_catalog: dict[int, dict[str, Any]] = {}
     try:
         with SenadoWebClient() as senado_web:
@@ -986,71 +1002,152 @@ def run_ingest_legislators(*, dry_run: bool = False) -> dict[str, Any]:
         logger.exception("Failed to fetch senate catalog from SenadoWebClient")
         errors += 1
 
-    for entry in senator_roster:
+    for raw in senate_rows:
         try:
-            try:
-                parlid = int(entry["external_id"])
-            except TypeError, ValueError:
-                parlid = None
-            catalog_row = senate_catalog.get(parlid) if parlid is not None else None
-            if catalog_row is None:
+            payload = LegislatorParser.parse_bcn_rest_senator(raw)
+            bridge = raw.get("id_en_camara_de_origen")
+            catalog_row = senate_catalog.get(bridge) if bridge is not None else None
+            if catalog_row is not None:
+                catalog_payload = LegislatorParser.parse_senator(catalog_row)
+                # _party_name is what _resolve_party_from_senado looks up by
+                # (legacy naming — senado.cl's PARTIDO is the abbreviation).
+                # BCN REST's partido_acronimo matches when the catalog join
+                # misses; the catalog's PARTIDO is canonical when it succeeds.
+                for key in (
+                    "gender",
+                    "phone",
+                    "photo_url",
+                    "photo_thumbnail_url",
+                    "profile_url",
+                    "_party_name",
+                ):
+                    value = catalog_payload.get(key)
+                    if value:
+                        payload[key] = value
+            else:
                 logger.warning(
-                    "BCN senator %s has no senado catalog entry (PARLID %s)",
-                    entry["bcn_id"],
-                    entry.get("external_id"),
+                    "BCN REST senator %s has no senado catalog entry (PARLID %s)",
+                    payload["bcn_id"],
+                    bridge,
                 )
-                continue
-            payload = LegislatorParser.parse_senator(catalog_row)
-            payload["bcn_uri"] = entry["bcn_uri"]
             if not dry_run:
                 _dispatch(sync_legislator, payload)
             dispatched += 1
         except Exception:
-            logger.exception("Failed to merge senator %s", entry.get("bcn_id"))
+            logger.exception("Failed to dispatch senator %s", raw.get("bcn_id"))
             errors += 1
 
-    # 4. BCN biographic enrichment — fan-out per URI for both chambers.
-    enrichment_uris = [
-        entry["bcn_uri"] for entry in roster_by_bcn_id.values() if entry.get("bcn_uri")
-    ]
+    # 4. BCN REST enrichment — bcn_uri + bcn_wiki_url, no SPARQL dependency.
+    for bcn_id, raw in _bcn_rest_rows_by_bcn_id(bcn_rest_rows).items():
+        try:
+            enrichment = LegislatorParser.parse_bcn_rest_enrichment(raw)
+            cleaned = {k: v for k, v in enrichment.items() if v}
+            if not cleaned:
+                continue
+            if not dry_run:
+                _dispatch(sync_legislator_bcn_enrichment, bcn_id, cleaned)
+            dispatched += 1
+        except Exception:
+            logger.exception("Failed to dispatch BCN REST enrichment for %s", bcn_id)
+            errors += 1
+
+    if not dry_run:
+        _mark_synced("legislators")
+
+    return _build_dispatch_result(dispatched, errors, dry_run)
+
+
+def _bcn_rest_rows_by_bcn_id(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """Index BCN REST roster rows by the constructed ``bcn_id`` lookup key."""
+    indexed: dict[str, dict[str, Any]] = {}
+    for raw in rows:
+        bridge = raw.get("id_en_camara_de_origen")
+        if bridge is None:
+            continue
+        camara_id = raw.get("camara_id")
+        if camara_id == CAMARA_ID_SENATE:
+            indexed[f"senado:{bridge}"] = raw
+        elif camara_id == CAMARA_ID_DEPUTIES:
+            indexed[f"camara:{bridge}"] = raw
+    return indexed
+
+
+def run_ingest_bcn_sparql_enrichment(*, dry_run: bool = False) -> dict[str, Any]:
+    """Run BCN SPARQL-backed enrichment passes against the active roster.
+
+    Split out of ``run_ingest_legislators`` because BCN SPARQL has been
+    chronically returning 502s and the per-URI fan-out (with its retry
+    budget) was delaying every legislator ingest. This function is meant to
+    run only when SPARQL is healthy — typically out-of-band from the main
+    legislator ingest.
+
+    Two passes against the same URI list (fetched from BCN REST, which is
+    fast and reliable):
+
+    1. ``fetch_person_profiles_parallel`` → ``sync_legislator_bcn_enrichment``
+       with profession, twitter, gender, BCN-sourced photo.
+    2. ``fetch_person_appointments_parallel`` →
+       ``sync_parliamentary_appointment`` with term history rows keyed by
+       BCN ``PositionPeriod`` URI.
+
+    Both passes are wrapped in try/except so a SPARQL outage degrades to a
+    no-op rather than killing the function.
+    """
+    dispatched = 0
+    errors = 0
+
+    bcn_rest_rows: list[dict[str, Any]] = []
+    try:
+        with BCNRestClient() as bcn_rest:
+            bcn_rest_rows = bcn_rest.get_active_parliamentarians()
+    except Exception:
+        logger.exception(
+            "Failed to fetch active roster from BCN REST; aborting SPARQL enrichment"
+        )
+        errors += 1
+        return _build_dispatch_result(dispatched, errors, dry_run)
+
+    rest_by_bcn_id = _bcn_rest_rows_by_bcn_id(bcn_rest_rows)
+    sparql_uris = [raw.get("bcn_uri") for raw in bcn_rest_rows if raw.get("bcn_uri")]
+
+    # Profile enrichment pass.
     profiles: dict[str, dict[str, Any] | None] = {}
     try:
-        profiles = asyncio.run(fetch_person_profiles_parallel(enrichment_uris))
-    except Exception:
-        logger.exception("Failed to fan-out BCN profile enrichment")
-        errors += 1
+        profiles = asyncio.run(fetch_person_profiles_parallel(sparql_uris))
+    except Exception as exc:
+        logger.warning(
+            "BCN SPARQL profile enrichment unavailable (continuing): %s", exc
+        )
 
-    for entry in roster_by_bcn_id.values():
+    for bcn_id, raw in rest_by_bcn_id.items():
         try:
-            profile = profiles.get(entry["bcn_uri"])
+            profile = profiles.get(raw.get("bcn_uri") or "")
             if profile is None:
                 continue
             payload = LegislatorParser.parse_bcn_profile(profile)
-            # Drop empty entries so enrich_legislator_profile does not touch
-            # already-populated columns with empty strings.
             cleaned = {k: v for k, v in payload.items() if v}
-            cleaned["bcn_uri"] = entry["bcn_uri"]
+            if not cleaned:
+                continue
             if not dry_run:
-                _dispatch(sync_legislator_bcn_enrichment, entry["bcn_id"], cleaned)
+                _dispatch(sync_legislator_bcn_enrichment, bcn_id, cleaned)
             dispatched += 1
         except Exception:
-            logger.exception(
-                "Failed to dispatch BCN enrichment for %s", entry.get("bcn_id")
-            )
+            logger.exception("Failed to dispatch BCN SPARQL enrichment for %s", bcn_id)
             errors += 1
 
-    # 5. Term history backfill — every past + present appointment per legislator.
+    # Appointment-history backfill pass.
     appointments_by_uri: dict[str, list[dict[str, Any]]] = {}
     try:
         appointments_by_uri = asyncio.run(
-            fetch_person_appointments_parallel(enrichment_uris)
+            fetch_person_appointments_parallel(sparql_uris)
         )
-    except Exception:
-        logger.exception("Failed to fan-out BCN appointment history")
-        errors += 1
+    except Exception as exc:
+        logger.warning(
+            "BCN SPARQL appointment history unavailable (continuing): %s", exc
+        )
 
-    for entry in roster_by_bcn_id.values():
-        appointments = appointments_by_uri.get(entry["bcn_uri"], [])
+    for bcn_id, raw in rest_by_bcn_id.items():
+        appointments = appointments_by_uri.get(raw.get("bcn_uri") or "", [])
         for appointment in appointments:
             try:
                 term_payload = LegislatorParser.parse_bcn_appointment(appointment)
@@ -1060,18 +1157,13 @@ def run_ingest_legislators(*, dry_run: bool = False) -> dict[str, Any]:
                 if not dry_run:
                     _dispatch(
                         sync_parliamentary_appointment,
-                        entry["bcn_id"],
+                        bcn_id,
                         term_payload,
                     )
                 dispatched += 1
             except Exception:
-                logger.exception(
-                    "Failed to dispatch appointment for %s", entry.get("bcn_id")
-                )
+                logger.exception("Failed to dispatch appointment for %s", bcn_id)
                 errors += 1
-
-    if not dry_run:
-        _mark_synced("legislators")
 
     return _build_dispatch_result(dispatched, errors, dry_run)
 

@@ -710,3 +710,100 @@ def test_vote_parser_restsil_handles_empty_buckets_emitted_as_integers():
     assert payload["result"] is None
     assert payload["voting_type"] is VotingType.OTHER  # no TEMA hint
     assert payload["individual_votes"] == []
+
+
+def test_legislator_parser_bcn_rest_deputy_maps_district_and_bridge_id():
+    raw = {
+        "bcn_id": 5250,
+        "bcn_uri": "http://datos.bcn.cl/recurso/persona/5250",
+        "id_en_camara_de_origen": 1165,
+        "nombres": "Agustín Matías",
+        "apellido_paterno": "Romero",
+        "apellido_materno": "Leiva",
+        "nombre_completo": "Agustín Matías Romero Leiva",
+        "fecha_nacimiento": "1975-01-03",
+        "email": "agustin.romero@congreso.cl",
+        "id_wiki": "Agustín_Romero_Leiva",
+        "camara_id": 288,
+        "partido_id": 134,
+        "partido_nombre": "Partido Republicano de Chile",
+        "partido_acronimo": "Republicano",
+        "division_tipo": "Distrito",
+        "division_id": 4321,
+        "division_descripcion": "Distrito N° 8",
+    }
+
+    payload = LegislatorParser.parse_bcn_rest_deputy(raw)
+
+    assert payload["bcn_id"] == "camara:1165"
+    assert payload["chamber_type"] is ChamberType.DEPUTIES
+    assert payload["full_name"] == "Agustín Matías Romero Leiva"
+    assert payload["birth_date"] == "1975-01-03"
+    assert payload["email"] == "agustin.romero@congreso.cl"
+    assert payload["_district_number"] == 8
+    assert payload["is_active"] is True
+    # ADR-0012: OpenData is the sole party source; BCN REST must not pass
+    # party fields through to the upsert payload — they collide with existing
+    # OpenData-sourced rows on the abbreviation unique constraint.
+    assert "_party_name" not in payload
+    assert "_party_alias" not in payload
+
+
+def test_legislator_parser_bcn_rest_senator_maps_circumscription_and_bridge_id():
+    raw = {
+        "bcn_id": 2717,
+        "bcn_uri": "http://datos.bcn.cl/recurso/persona/2717",
+        "id_en_camara_de_origen": 1341,
+        "nombres": "Alejandra",
+        "apellido_paterno": "Sepúlveda",
+        "apellido_materno": "Orbenes",
+        "nombre_completo": "Alejandra Sepúlveda Orbenes",
+        "fecha_nacimiento": "1965-11-13",
+        "email": "asepulveda@senado.cl",
+        "id_wiki": "Alejandra_Sepúlveda_Orbenes",
+        "camara_id": 261,
+        "partido_nombre": "Independiente",
+        "partido_acronimo": "IND",
+        "division_tipo": "Circunscripcion",
+        "division_id": 2343,
+        "division_descripcion": "Circunscripción VIII O'Higgins",
+        "region_nombre": "Región Del Libertador Gral. Bernardo O'higgins",
+    }
+
+    payload = LegislatorParser.parse_bcn_rest_senator(raw)
+
+    assert payload["bcn_id"] == "senado:1341"
+    assert payload["chamber_type"] is ChamberType.SENATE
+    assert payload["full_name"] == "Alejandra Sepúlveda Orbenes"
+    assert payload["birth_date"] == "1965-11-13"
+    assert payload["email"] == "asepulveda@senado.cl"
+    # _party_name carries BCN's acronym so _resolve_party_from_senado has a
+    # usable lookup key even if the senado catalog overlay misses.
+    assert payload["_party_name"] == "IND"
+    assert "_party_alias" not in payload
+    assert payload["_circumscription_number"] == 2343
+    assert payload["_circumscription"] == "Circunscripción VIII O'Higgins"
+    assert payload["_region_name"].startswith("Región Del Libertador")
+    assert payload["is_active"] is True
+
+
+def test_legislator_parser_bcn_rest_enrichment_derives_wiki_url():
+    enrichment = LegislatorParser.parse_bcn_rest_enrichment(
+        {
+            "bcn_uri": "http://datos.bcn.cl/recurso/persona/2717",
+            "id_wiki": "Alejandra_Sepúlveda_Orbenes",
+        }
+    )
+    assert enrichment["bcn_uri"] == "http://datos.bcn.cl/recurso/persona/2717"
+    assert enrichment["bcn_wiki_url"] == (
+        "https://www.bcn.cl/historiapolitica/resenas_parlamentarias/wiki"
+        "/Alejandra_Sepúlveda_Orbenes"
+    )
+
+
+def test_legislator_parser_bcn_rest_enrichment_handles_missing_id_wiki():
+    enrichment = LegislatorParser.parse_bcn_rest_enrichment(
+        {"bcn_uri": "http://datos.bcn.cl/recurso/persona/2717", "id_wiki": ""}
+    )
+    assert enrichment["bcn_uri"] == "http://datos.bcn.cl/recurso/persona/2717"
+    assert enrichment["bcn_wiki_url"] is None
