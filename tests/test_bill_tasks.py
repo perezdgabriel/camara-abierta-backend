@@ -191,7 +191,7 @@ def test_sync_bill_enqueues_only_new_notification_for_new_bill(monkeypatch):
 
 
 def test_sync_bill_enqueues_chamber_votes_when_source_is_bill_detail(monkeypatch):
-    """ADR-0010 failover path: embedded chamber-vote loop dispatches only when
+    """ADR-0013 failover path: embedded chamber-vote loop dispatches only when
     INGESTOR_CHAMBER_VOTES_SOURCE=bill_detail.
     """
     first_db = object()
@@ -258,7 +258,7 @@ def test_sync_bill_enqueues_chamber_votes_when_source_is_bill_detail(monkeypatch
 
 
 def test_sync_bill_skips_embedded_chamber_votes_under_bulk_source(monkeypatch):
-    """ADR-0010 default: the dedicated chamber-votes task owns dispatch, so
+    """ADR-0013 default: the dedicated chamber-votes task owns dispatch, so
     the embedded loop in sync_bill is a no-op under source=bulk.
     """
     first_db = object()

@@ -139,7 +139,7 @@ class VoteParser:
     def parse_restsil_senate_vote(raw: dict) -> dict:
         """Normalize one ``buscarVotaciones`` row into the standard sync payload.
 
-        This is the **primary** Senate-vote parser per ADR-0009. Unlike the
+        This is the **primary** Senate-vote parser per ADR-0013. Unlike the
         legacy ``parse_senate_vote`` it does *not* take ``bulletin`` as input
         — the upstream row carries ``BOLETIN`` directly — and it produces:
 

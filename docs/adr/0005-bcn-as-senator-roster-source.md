@@ -1,5 +1,7 @@
 # BCN linked data is the source of truth for the parliamentary roster
 
+**Status:** Superseded by [ADR-0012](0012-legislator-ingest-pipeline.md) on 2026-06-15 — chronic BCN SPARQL 502s moved the roster authority to the BCN REST `ObtenerParlamentariosActivos` endpoint; SPARQL biographic enrichment is now operator-triggered via `python -m app.cli ingestors bcn-sparql-enrichment`. Content preserved below for history.
+
 Supersedes [ADR-0002](0002-senado-web-json-as-senator-roster-source.md).
 
 Live testing on 2026-05-28 showed that the senado.cl `web-back` `api/hemicycle`

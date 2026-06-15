@@ -3,7 +3,7 @@
 Lives under ``tests/integration/`` because the ORM relies on a PostgreSQL
 sequence for ``sync_version`` that the in-memory SQLite default can't compile.
 Run with ``just test-integration``. The pure tallying logic is covered in
-``tests/test_legislator_stats.py``. See ADR-0007.
+``tests/test_legislator_stats.py``. See ADR-0014.
 """
 
 from __future__ import annotations

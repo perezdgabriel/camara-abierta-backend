@@ -77,7 +77,7 @@ class Bloc(str, Enum):
 
     Editorial, not upstream-sourced: there is no congress API for this. Modeled
     temporally via ``BlocAffiliation`` (party-scoped) and ``Legislator.default_bloc``
-    (independent/override). See CONTEXT.md "Bloque" and ADR-0006.
+    (independent/override). See CONTEXT.md "Bloque" and ADR-0014.
     """
 
     OFICIALISMO = "oficialismo"

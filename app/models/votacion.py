@@ -182,7 +182,7 @@ class VotingWindowAggregate(SyncableMixin, Base):
 class LegislatorVotingStats(SyncableMixin, Base):
     """Precomputed per-legislator voting stats, refreshed out-of-band.
 
-    Mixed windows by design (see ADR-0007): the base aggregates
+    Mixed windows by design (see ADR-0014): the base aggregates
     (``total_sessions`` … ``participation_rate``) are **career-wide** — matching
     the on-the-fly ``get_legislator_voting_summary`` — while the lean/discipline
     fields are scoped to the **current legislative period**.
@@ -205,7 +205,7 @@ class LegislatorVotingStats(SyncableMixin, Base):
         Numeric(5, 2), nullable=False, default=0
     )
 
-    # ── Inclinación de voto (current period) — see ADR-0007 ────────────────
+    # ── Inclinación de voto (current period) — see ADR-0014 ────────────────
     # The bloc whose modal vote the legislator matched most often across
     # contested, decisive sessions. ``lean_seats`` marks a lean strong enough to
     # seed an independent in the simulator. Null bloc = insufficient data or tie.

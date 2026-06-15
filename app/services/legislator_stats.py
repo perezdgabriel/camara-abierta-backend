@@ -17,7 +17,7 @@ The math lives in pure functions (unit-tested in ``tests/test_legislator_stats``
 the DB fetch is thin (integration-tested). A bloc's position in a past session is
 the modal of its members at the session date — party-at-date (``LegislatorTerm``,
 as ``compute_quiebre_bloque`` does) mapped through each party's *current* bloc,
-since ADR-0006 exposes only ``current_bloc``. See web ``CONTEXT.md`` and ADR-0007.
+since ADR-0014 exposes only ``current_bloc``. See web ``CONTEXT.md``.
 """
 
 from __future__ import annotations

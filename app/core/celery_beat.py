@@ -18,14 +18,14 @@ app.conf.beat_schedule = {
     "ingest-senate-votes": {
         # Same 5×/day cadence as bills. The watermarked desc-walk is cheap
         # (one paged restsil call when nothing new) so cadence is mostly a
-        # freshness knob — see ADR-0009.
+        # freshness knob — see ADR-0013.
         "task": "app.tasks.ingestors.ingest_senate_votes",
         "schedule": crontab(hour="5,9,13,17,21", minute=15),
     },
     "ingest-chamber-votes": {
         # OpenData bulk-year-feed driven, watermarked by `<Id>`. Offset 30
         # minutes from bills/senate-votes within each wave so the upstream
-        # isn't hit by three tasks at once. See ADR-0010.
+        # isn't hit by three tasks at once. See ADR-0013.
         "task": "app.tasks.ingestors.ingest_chamber_votes",
         "schedule": crontab(hour="5,9,13,17,21", minute=30),
     },

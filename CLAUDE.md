@@ -88,12 +88,15 @@ The default test suite (`uv run pytest`) uses SQLite in-memory (`sqlite+pysqlite
 
 | Entity | Source |
 |--------|--------|
-| Bills (list / discovery) | OpenData Camara (`get_mensajes_x_anno`, `get_mociones_x_anno`) — bounded year-scan from `start_year`; no Senado date query (ADR-0008) |
-| Bills (detail) | Senado (`get_bill_by_bulletin`) |
-| Deputies (roster) | OpenData Camara (`get_diputados_periodo_actual`) |
-| Deputies (district + photo) | camara.cl scraper (`scrapers/camara_diputados.py`) — no API exposes district (ADR-0003) |
-| Senators (roster) | senado.cl web JSON API (`SenadoWebClient.get_senators`) — wspublico returns only 31/50 (ADR-0002) |
-| Voting sessions | Captured during bill ingest — Senate votes from Senado `votaciones.php` (`fetch_votes_parallel`; the embedded bill-detail votes are often absent), Chamber votes from OpenData enrichment; no separate voting-ingestion task (ADR-0008) |
+| Bills (list / discovery) | restsil (`buscarProyectosDeLey`) — apikey-authed paged feed (ADR-0013) |
+| Bills (detail) | wspublico `tramitacion.php?boletin=X` |
+| Legislators (active roster) | BCN REST `ObtenerParlamentariosActivos` — both chambers in one call (ADR-0012) |
+| Deputies (gender + party history) | OpenData Camara (`get_diputados_periodo_actual`) overlay (ADR-0012) |
+| Deputies (photo + profile URL) | camara.cl scraper (`scrapers/camara_diputados.py`) — enrichment-only (ADR-0012) |
+| Senators (gender, phone, photo) | senado.cl web JSON catalog (`SenadoWebClient.get_full_catalog`) overlay (ADR-0012) |
+| BCN biographic enrichment | Out-of-band: `python -m app.cli ingestors bcn-sparql-enrichment` — profession, twitter, ParliamentaryAppointment history (ADR-0012) |
+| Senate votes | Dedicated `run_ingest_senate_votes` task via restsil `buscarVotaciones` (ADR-0013) |
+| Chamber votes | Dedicated `run_ingest_chamber_votes` task via OpenData `retornarVotacionesXAnno` + per-bulletin + per-deputy enrichment (ADR-0013) |
 
 ## Domain language
 

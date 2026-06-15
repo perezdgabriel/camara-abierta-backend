@@ -13,7 +13,7 @@ NS_BRACE = f"{{{NS}}}"
 
 # "Boletín N° 15936-18" or "Boletín N°15936-18" or "Boletines N° 15936-18, ..."
 # We take the first match — joint-bulletin votes link to the leftmost bulletin
-# (existing limitation, see ADR-0010).
+# (existing limitation, see ADR-0013).
 _BULLETIN_RE = re.compile(r"Bolet[íi]n(?:es)?\s*N[°º]\s*(\d+-\d+)")
 
 
@@ -483,7 +483,7 @@ class OpenDataCamaraClient(BaseCongresoClient):
         }
 
     def get_votes_by_year(self, year: int) -> list[dict[str, Any]]:
-        """Bulk year-keyed Chamber-vote feed (ADR-0010).
+        """Bulk year-keyed Chamber-vote feed (ADR-0013).
 
         Returns light per-vote summaries in upstream desc-by-``Id`` order.
         Each row's ``description`` contains the bulletin as free text — use
@@ -503,7 +503,7 @@ class OpenDataCamaraClient(BaseCongresoClient):
         return results
 
     def get_chamber_votes_for_bulletin(self, bulletin: str) -> list[dict[str, Any]]:
-        """Per-bulletin enrichment feed used by the chamber-votes ingest (ADR-0010).
+        """Per-bulletin enrichment feed used by the chamber-votes ingest (ADR-0013).
 
         Returns rich ``<VotacionProyectoLey>`` summaries (carries
         ``TipoVotacionProyectoLey``, ``Articulo``, ``Tramite*``) without the

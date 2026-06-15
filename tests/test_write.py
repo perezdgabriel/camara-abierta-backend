@@ -189,7 +189,7 @@ def test_enrich_legislator_profile_sets_district_and_photo_only(monkeypatch):
     assert legislator.district_id == 8
     assert legislator.photo_url == "https://img/x.jpg"
     assert legislator.profile_url == "https://camara.cl/x"
-    assert legislator.party_id == 77  # untouched (ADR-0001)
+    assert legislator.party_id == 77  # untouched (ADR-0012)
     assert db.flush_count == 1
 
 
@@ -227,7 +227,7 @@ def test_enrich_legislator_profile_writes_bcn_sourced_enrichment_fields(monkeypa
     assert legislator.twitter_handle == "Alvaro_CarterF"
     assert legislator.gender == "M"
     assert legislator.photo_url.endswith("/4558.jpg")
-    assert legislator.party_id == 77  # ADR-0001 invariant
+    assert legislator.party_id == 77  # ADR-0012 invariant
 
 
 def test_enrich_legislator_profile_truncates_to_column_max_lengths(monkeypatch):

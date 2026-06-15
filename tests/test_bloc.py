@@ -1,4 +1,4 @@
-"""Unit tests for bloc affiliation (ADR-0006).
+"""Unit tests for bloc affiliation (ADR-0014).
 
 Covers the `PoliticalParty.current_bloc` property logic, the two write-service
 helpers, and serialization of the new fields. Uses the existing `FakeDB` mock

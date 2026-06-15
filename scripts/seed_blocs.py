@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Seed initial party bloc affiliations for the majority simulator (ADR-0006).
+"""Seed initial party bloc affiliations for the majority simulator (ADR-0014).
 
 Bloc alignment (oficialismo / oposición) is *editorial*: no congress API exposes
 it. This script encodes a best-effort starting mapping for the current

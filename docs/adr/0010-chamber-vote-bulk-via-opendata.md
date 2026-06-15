@@ -1,5 +1,7 @@
 # Chamber-vote bulk ingest via OpenData `retornarVotacionesXAnno`
 
+**Status:** Superseded by [ADR-0013](0013-bill-and-vote-ingest-pipeline.md) on 2026-06-15 — consolidated with ADR-0008 and ADR-0009 into a single bills + votes ingest ADR. Content preserved below for history.
+
 Chamber votes were captured only as a side-effect of bill ingest: the
 embedded `<VotacionProyectoLey>` block inside `retornarProyectoLey` was
 re-dispatched per bulletin by `sync_bill` (`app/tasks/bills.py:24-44`).

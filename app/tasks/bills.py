@@ -36,7 +36,7 @@ def sync_bill(self, data: dict) -> dict:
             data["bulletin_number"],
         )
 
-    # ADR-0010: the dedicated chamber-votes task owns this dispatch in the
+    # ADR-0013: the dedicated chamber-votes task owns this dispatch in the
     # default ``bulk`` configuration. The embedded loop here is the failover
     # path, activated via ``INGESTOR_CHAMBER_VOTES_SOURCE=bill_detail``.
     if settings.ingestor_chamber_votes_source == "bill_detail":

@@ -81,7 +81,7 @@ class VotingLean(ORMModel):
     """Inclinación de voto: the bloc whose modal vote the legislator matched most
     often across contested, decisive sessions of the current period. ``bloc`` is
     null on an exact split; ``seats`` marks a lean strong enough to seed an
-    independent in the simulator. See ADR-0007."""
+    independent in the simulator. See ADR-0014."""
 
     bloc: Bloc | None = None
     agreed: int
@@ -110,9 +110,9 @@ class LegislatorSummary(ORMModel):
     is_active: bool
     # Editorial bloc override, used mainly to align independents in the majority
     # simulator. Null for party members (they inherit party.current_bloc) and for
-    # unaligned independents (the "sin alinear" tray). See ADR-0006.
+    # unaligned independents (the "sin alinear" tray). See ADR-0014.
     default_bloc: Bloc | None = None
-    # Observed lean from voting behavior (computed, not editorial — see ADR-0007).
+    # Observed lean from voting behavior (computed, not editorial — see ADR-0014).
     # The simulator reads it from the list endpoint to seed independents.
     voting_lean: VotingLean | None = None
     created_at: datetime
@@ -132,7 +132,7 @@ class LegislatorDetail(LegislatorSummary):
     terms: list[LegislatorTermItem] = Field(default_factory=list)
     committee_memberships: list[CommitteeMembershipItem] = Field(default_factory=list)
     voting_stats: LegislatorVotingStatsSummary | None = None
-    # Per-person party-unity rate this period; null for independents. See ADR-0007.
+    # Per-person party-unity rate this period; null for independents. See ADR-0014.
     party_discipline: PartyDiscipline | None = None
 
 

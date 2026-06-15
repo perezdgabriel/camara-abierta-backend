@@ -1,5 +1,7 @@
 # Deputy → district is scraped from camara.cl (enrichment-only)
 
+**Status:** Superseded by [ADR-0012](0012-legislator-ingest-pipeline.md) on 2026-06-15 — district now comes from the BCN REST roster; the camara.cl scraper is narrowed to deputy photo + profile_url enrichment only. Content preserved below for history.
+
 No congress API exposes which district a deputy represents: `retornarDiputadosPeriodoActual`,
 `retornarDiputado`, `retornarDiputadosXPeriodo` (OpenData) and `getDiputados_Vigentes`
 (congreso.cl) all omit `<Distrito>`, and BCN SPARQL is too slow/fragile to rely on. The only

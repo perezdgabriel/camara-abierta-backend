@@ -4,7 +4,7 @@ DB-dependent orchestration (``refresh_legislator_voting_stats``) lives in
 ``tests/integration/test_legislator_stats_integration.py`` because the ORM uses
 a PostgreSQL sequence that the in-memory SQLite default can't compile. These
 tests cover the pure tallying logic only — no DB. See web ``CONTEXT.md``
-("Inclinación de voto", "Disciplina partidaria") and ADR-0007.
+("Inclinación de voto", "Disciplina partidaria") and ADR-0014.
 """
 
 from __future__ import annotations

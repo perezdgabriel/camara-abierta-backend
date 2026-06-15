@@ -1,6 +1,6 @@
 # senado.cl web-back JSON API is the authoritative senator roster source
 
-**Status:** Superseded by [ADR-0005](0005-bcn-as-senator-roster-source.md) on 2026-05-28 — the `web-back` `api/hemicycle` seated set is also stale; BCN linked data is now the senator roster source and the senado.cl JSON catalog is demoted to a metadata enrichment lookup keyed by `PARLID`.
+**Status:** Superseded by [ADR-0012](0012-legislator-ingest-pipeline.md) on 2026-06-15 (consolidated legislator-ingest ADR). Previously superseded by ADR-0005 on 2026-05-28 — the `web-back` `api/hemicycle` seated set proved stale, and senator-roster authority moved first to BCN SPARQL and then to BCN REST. Content preserved below for history.
 
 The documented Senado wspublico endpoint `senadores_vigentes.php` returns only **31** of the
 50 sitting senators, so it cannot back a correct roster. The senado.cl SPA is served by a

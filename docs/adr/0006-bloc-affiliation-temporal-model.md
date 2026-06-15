@@ -1,5 +1,7 @@
 # Bloc affiliation is modeled as temporal data, not a static label
 
+**Status:** Superseded by [ADR-0014](0014-bloc-affiliation-and-inferred-lean.md) on 2026-06-15 — consolidated with ADR-0007 into a single bloc-model ADR. Content preserved below for history.
+
 To power the majority simulator on `/legisladores`, every party (and every
 independent legislator) needs a structural bloc — *oficialismo* or *oposición*.
 This alignment is editorial: no congress API exposes it. We model it as a dated

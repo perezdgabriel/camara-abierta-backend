@@ -1116,7 +1116,7 @@ TERMINAL_STATUSES = frozenset(
 
 
 def _reconcile_orphan_voting_sessions(db: Session, bill: Bill) -> None:
-    """Link previously orphaned ``VotingSession`` rows to this bill (ADR-0010).
+    """Link previously orphaned ``VotingSession`` rows to this bill (ADR-0013).
 
     The chamber-votes bulk task may save a vote before its bill has been
     ingested; in that case ``bill_id`` is null and the upstream bulletin
@@ -1310,6 +1310,8 @@ def update_bill_ai_summary(
 def upsert_legislator(db: Session, data: dict[str, Any]) -> Legislator:
     if data.get("chamber_type") == ChamberType.SENATE:
         party = _resolve_party_from_senado(db, data.get("_party_name"))
+        if party is None:
+            logger.info("Party not found: %s", data.get("_party_name"))
     else:
         party = _upsert_party_from_opendata(
             db, data.get("_party_name"), data.get("_party_alias")
@@ -1392,7 +1394,7 @@ def enrich_legislator_profile(
     ``district_number``), photos, biography, profile URL, plus the BCN-sourced
     ``bcn_uri``, ``bcn_wiki_url``, ``profession``, ``twitter_handle``, and
     ``gender``. Never touches party, name, or ``is_active`` — OpenData-sourced
-    identity/party data (ADR-0001) and chamber-sourced active flag stay
+    identity/party data (ADR-0012) and chamber-sourced active flag stay
     authoritative. Returns ``None`` if no legislator matches (caller should log
     and skip).
     """
@@ -1457,7 +1459,7 @@ def upsert_parliamentary_appointment(
 
     The BCN ``PositionPeriod`` URI (``bcn_appointment_uri``) is the natural
     upsert key — re-runs over the same appointment update the existing row
-    rather than duplicating it. See ADR-0005.
+    rather than duplicating it. See ADR-0012.
     """
     chamber = _get_or_create_chamber(db, chamber_type)
     existing = db.execute(
@@ -1506,7 +1508,7 @@ def upsert_bloc_affiliation(
 ) -> BlocAffiliation:
     """Idempotently upsert a party's bloc affiliation, keyed on (party, start).
 
-    Editorial data with no upstream source (see ADR-0006). Re-running with the
+    Editorial data with no upstream source (see ADR-0014). Re-running with the
     same ``start_date`` updates the existing row's ``bloc``/``end_date`` rather
     than duplicating it. To record a change of government, close the current row
     (set its ``end_date``) and call this again with a new ``start_date``.
@@ -1551,7 +1553,7 @@ def update_legislator_default_bloc(
 
     Used primarily to align independents (``party_id IS NULL``) in the majority
     simulator, where the party's bloc is unavailable. Pass ``None`` to clear,
-    sending the legislator back to the "sin alinear" tray. See ADR-0006.
+    sending the legislator back to the "sin alinear" tray. See ADR-0014.
     """
     legislator = db.execute(
         select(Legislator).where(Legislator.id == legislator_id).with_for_update()

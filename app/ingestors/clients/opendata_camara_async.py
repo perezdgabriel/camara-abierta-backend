@@ -172,7 +172,7 @@ async def fetch_chamber_vote_summaries_parallel(
     bulletins: list[str],
     max_concurrency: int = MAX_CONCURRENCY,
 ) -> list[tuple[str, list[dict[str, Any]]]]:
-    """Per-bulletin rich-vote-summary fan-out for chamber-votes ingest (ADR-0010).
+    """Per-bulletin rich-vote-summary fan-out for chamber-votes ingest (ADR-0013).
 
     Returns ``(bulletin, rich_summaries)`` for each input bulletin. Failures
     map to an empty list so the caller can degrade gracefully.

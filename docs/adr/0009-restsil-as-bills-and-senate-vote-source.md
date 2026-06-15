@@ -1,5 +1,7 @@
 # Restsil portallegislativo backend is the bills + Senate-vote source
 
+**Status:** Superseded by [ADR-0013](0013-bill-and-vote-ingest-pipeline.md) on 2026-06-15 — consolidated with ADR-0008 and ADR-0010 into a single bills + votes ingest ADR. Content preserved below for history.
+
 Two endpoints on `restsil.senado.cl/v3/` — the backend of
 `portallegislativo.senado.cl`, reached with `Authorization: Apikey {...}` —
 supersede the bill-discovery and Senate-vote-capture paths from

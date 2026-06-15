@@ -1,5 +1,7 @@
 # Inferred bloc lean is a computed behavioral signal, separate from editorial bloc affiliation
 
+**Status:** Superseded by [ADR-0014](0014-bloc-affiliation-and-inferred-lean.md) on 2026-06-15 — consolidated with ADR-0006 into a single bloc-model ADR. Content preserved below for history.
+
 To seed the majority simulator and characterize legislators, we derive each
 legislator's *inclinación de voto* — the bloc whose modal vote they matched most
 often across the **contested, decisive** voting sessions of the current

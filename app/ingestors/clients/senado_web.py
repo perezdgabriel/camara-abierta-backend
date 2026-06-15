@@ -12,7 +12,7 @@ class SenadoWebClient(BaseCongresoClient):
 
     Unlike :class:`SenadoClient` (the documented wspublico XML API), this hits
     the undocumented JSON API that powers https://www.senado.cl. As of
-    ADR-0005 this client is **no longer the senator roster source** — BCN
+    ADR-0012 this client is **no longer the senator roster source** — BCN
     linked data is. We keep it as a *metadata catalog* keyed by
     ``ID_PARLAMENTARIO`` (= wspublico ``PARLID`` = BCN ``bcnbio:idSenado``) for
     fields BCN does not expose: circumscription, region, party abbreviation,
@@ -41,7 +41,9 @@ class SenadoWebClient(BaseCongresoClient):
         skipped: BCN tells us who is currently active; this catalog is used
         purely as a metadata lookup.
         """
-        payload = self._get_json("api/hemicycle", params={"limit": 1000})
+        payload = self._get_json(
+            "api/hemicycle", params={"vigentes": 1, "camara": "S", "limit": 100}
+        )
         data = payload.get("data", {})
         catalog = (data.get("parlamentarios", {}) or {}).get("data", []) or []
         keyed: dict[int, dict[str, Any]] = {}

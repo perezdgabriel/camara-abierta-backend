@@ -249,7 +249,7 @@ Parámetros de filtro para `/normas`: `date_from`, `date_to`, `ministry`, `branc
 | `INGESTOR_BASE_URL_OPENDATA_CAMARA` | Opcional  | Override base URL OpenData Camara        |
 | `INGESTOR_BASE_URL_SENADO`          | Opcional  | Override base URL API Senado             |
 | `INGESTOR_BASE_URL_RESTSIL`         | Opcional  | Override base URL portallegislativo backend |
-| `INGESTOR_RESTSIL_API_KEY`          | ✅¹       | Apikey para `restsil.senado.cl/v3/` (ADR-0009) |
+| `INGESTOR_RESTSIL_API_KEY`          | ✅¹       | Apikey para `restsil.senado.cl/v3/` (ADR-0013) |
 | `INGESTOR_BILLS_SOURCE`             | Opcional  | `restsil` (default) o `opendata` (failover) |
 | `INGESTOR_SENATE_VOTES_SOURCE`      | Opcional  | `restsil` (default) o `wspublico` (failover) |
 | `INGESTOR_RESTSIL_ASYNC_CONCURRENCY`| Opcional  | Concurrencia de fan-out paginado (default 10) |

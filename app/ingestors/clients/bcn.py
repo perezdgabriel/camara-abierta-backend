@@ -2,7 +2,7 @@
 
 BCN is the source of truth for *which* legislators are currently seated and for
 biographic enrichment (profession, twitter handle, BCN wiki page, photo). See
-ADR-0005. Active senators / deputies are identified via dated
+ADR-0012. Active senators / deputies are identified via dated
 ``bcnbio:PositionPeriod`` nodes (``hasEnd >= today``), bypassing the stale
 hemicycle/Estado flags exposed by the chamber APIs.
 

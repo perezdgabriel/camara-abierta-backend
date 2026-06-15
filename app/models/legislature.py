@@ -45,7 +45,7 @@ class PoliticalParty(SyncableMixin, Base):
 
         Reads from the (ideally eager-loaded) ``bloc_affiliations`` relationship;
         callers should ``selectinload`` it to avoid N+1. Returns ``None`` when the
-        party has no editorial bloc assignment. See ADR-0006.
+        party has no editorial bloc assignment. See ADR-0014.
         """
         today = date.today()
         active = [
@@ -71,7 +71,7 @@ class BlocAffiliation(SyncableMixin, Base):
     temporally — one row per (party, start_date) — so a change of government can
     be recorded by closing the old row (``end_date``) and opening a new one. v1
     UI consumes only the current row via :attr:`PoliticalParty.current_bloc`.
-    See ADR-0006.
+    See ADR-0014.
     """
 
     __tablename__ = "bloc_affiliations"
@@ -262,7 +262,7 @@ class Legislator(SyncableMixin, Base):
 
         Null when there is no stats row or too few contested sessions (*datos
         insuficientes*). ``bloc`` may still be null on an exact split. Callers
-        should eager-load ``voting_stats`` to avoid N+1. See ADR-0007.
+        should eager-load ``voting_stats`` to avoid N+1. See ADR-0014.
         """
         stats = self.voting_stats
         if stats is None or stats.lean_contested == 0:
@@ -327,7 +327,7 @@ class ParliamentaryAppointment(SyncableMixin, Base):
     the formal, dated record that legislator X served in chamber Y from
     ``start_date`` to ``end_date``. Distinct from :class:`LegislatorTerm`, which
     tracks party-membership windows derived from OpenData militancias and may
-    record several rows per appointment (one per party change). See ADR-0005.
+    record several rows per appointment (one per party change). See ADR-0012.
     """
 
     __tablename__ = "parliamentary_appointments"

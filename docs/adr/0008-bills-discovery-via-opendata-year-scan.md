@@ -1,6 +1,6 @@
 # Bills discovery is a bounded OpenData year-scan; vote capture rides on bill ingest
 
-**Status:** Superseded by [ADR-0009](0009-restsil-as-bills-and-senate-vote-source.md) — bill discovery moved to the `restsil.senado.cl/v3/buscarProyectosDeLey` paged feed and Senate-vote capture moved to a dedicated `run_ingest_senate_votes` task driven by `buscarVotaciones`. The OpenData year-scan and per-bulletin `votaciones.php` paths remain in tree as a failover; the policy below (re-fetch full detail for every in-window bulletin; no modified-since signal upstream) is preserved in the restsil discovery branch.
+**Status:** Superseded by [ADR-0013](0013-bill-and-vote-ingest-pipeline.md) on 2026-06-15 (consolidated bills + votes ADR). Previously superseded by ADR-0009 — bill discovery moved to the `restsil.senado.cl/v3/buscarProyectosDeLey` paged feed and Senate-vote capture moved to a dedicated `run_ingest_senate_votes` task driven by `buscarVotaciones`. The OpenData year-scan and per-bulletin `votaciones.php` paths remain in tree as a failover; the policy below (re-fetch full detail for every in-window bulletin; no modified-since signal upstream) is preserved in the restsil discovery branch. Content preserved below for history.
 
 `SenadoClient.get_bills_by_date(since)` called the Senado wspublico
 `tramitacion.php?fecha=DD/MM/YYYY` endpoint to discover which bulletins changed
