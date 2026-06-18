@@ -9,6 +9,16 @@ Supersedes [ADR-0001](0001-opendata-as-party-source-of-truth.md),
 preserved in-place for history; this ADR is the single source of truth for
 how the pipeline operates today.
 
+**Partially superseded by [ADR-0015](0015-legislator-identity-and-temporal-terms.md)
+on 2026-06-17:** the "Roster authority — BCN REST" section and the
+``ParliamentaryAppointment`` paragraph are no longer current. Identity comes
+from the historical OpenData + senado.cl pulls; chamber-stint history lives
+on ``LegislatorTerm`` (with ``bcn_appointment_uri`` as a nullable column);
+BCN REST contributes only ``bcn_uri`` enrichment keyed by the chamber
+bridge. See ADR-0015 for the new shape. The rest of this ADR (party
+authority, chamber-specific overlays, photo scraper, SPARQL out-of-band
+enrichment) remains in force.
+
 ## Context
 
 The legislator pipeline has churned through three roster authorities in six
