@@ -338,7 +338,7 @@ def test_opendata_diputado_periodo_parser_preserves_wrapper_metadata():
     assert raw["district_communes"] == [{"number": 13101, "name": "Santiago"}]
 
 
-def test_legislator_parser_maps_opendata_deputy_party_and_district_number():
+def test_legislator_parser_opendata_deputy_emits_per_militancia_terms():
     payload = LegislatorParser.parse_opendata_deputy(
         {
             "id": 1254,
@@ -349,120 +349,164 @@ def test_legislator_parser_maps_opendata_deputy_party_and_district_number():
             "birth_date": "1976-03-07",
             "gender": "Masculino",
             "gender_code": "1",
-            "district_number": 8,
             "militancias": [
                 {
-                    "start_date": "2026-03-11",
-                    "end_date": "2030-03-10",
+                    "start_date": "2018-03-11",
+                    "end_date": "2022-03-10",
+                    "party_name": "Renovación Nacional",
+                    "party_alias": "RN",
+                },
+                {
+                    "start_date": "2022-03-11",
+                    "end_date": None,
                     "party_name": "Partido Republicano",
                     "party_alias": "PREP",
-                }
+                },
             ],
         }
     )
 
-    assert payload["bcn_id"] == "camara:1254"
-    assert payload["chamber_type"] is ChamberType.DEPUTIES
+    assert payload is not None
+    assert payload["source"] == "opendata_camara"
+    assert payload["source_external_id"] == "1254"
     assert payload["full_name"] == "Ignacio Urcullú Clèment-Lund"
-    assert payload["_party_name"] == "Partido Republicano"
-    assert payload["_district_number"] == 8
+    assert payload["paternal_last_name"] == "Urcullú"
+    assert payload["maternal_last_name"] == "Clèment-Lund"
+    # Each militancia becomes a term, all sharing the camara bridge.
+    assert len(payload["terms"]) == 2
+    term = payload["terms"][0]
+    assert term["chamber_type"].value == "deputies"
+    assert term["chamber_external_id"] == "camara:1254"
+    assert term["party_name"] == "Renovación Nacional"
+    assert term["party_alias"] == "RN"
+    assert term["party_source"] == "opendata"
 
 
-def test_legislator_parser_maps_senator_from_web_json():
-    payload = LegislatorParser.parse_senator(
+def test_legislator_parser_opendata_deputy_returns_none_when_id_missing():
+    assert LegislatorParser.parse_opendata_deputy({"id": None}) is None
+
+
+def test_legislator_parser_opendata_deputy_skips_malformed_militancia_with_end_before_start():
+    # Regression: OpenData has emitted militancias whose FechaTermino predates
+    # FechaInicio (deputy 1180, Consuelo Veloso, carries
+    # 2026-03-11 → 2026-03-10 alongside her real 2026-2030 row). The malformed
+    # entry collided on (chamber, start_date) in _reconcile_terms and clobbered
+    # the valid term's end_date, dropping her from the active-deputies count.
+    payload = LegislatorParser.parse_opendata_deputy(
         {
-            "ID_PARLAMENTARIO": 1110,
-            "NOMBRE": "Pedro",
-            "APELLIDO_PATERNO": "Araya",
-            "APELLIDO_MATERNO": "Guerrero",
-            "NOMBRE_COMPLETO": "Pedro Araya Guerrero",
-            "PARTIDO": "P.P.D.",
-            "CIRCUNSCRIPCION_ID": 3,
-            "REGION": "Región de Antofagasta",
-            "EMAIL": "paraya@senado.cl",
-            "FONO": "(56-32) 2504703",
-            "SEXO": "2",
-            "SEXO_ETIQUETA": "Hombre",
-            "SLUG": "pedro-araya-guerrero-sen",
-            "IMAGEN_450": "https://cdn.senado.cl/x_450x750.jpg",
-            "IMAGEN_120": "https://cdn.senado.cl/x_120x120.jpg",
+            "id": 1180,
+            "first_name": "Consuelo",
+            "last_name_father": "Veloso",
+            "last_name_mother": "Ávila",
+            "militancias": [
+                {
+                    "start_date": "2022-03-11",
+                    "end_date": "2024-05-30",
+                    "party_name": "Revolución Democrática",
+                    "party_alias": "RD",
+                },
+                {
+                    "start_date": "2024-05-31",
+                    "end_date": "2026-03-10",
+                    "party_name": "Independientes",
+                    "party_alias": "IND",
+                },
+                {
+                    "start_date": "2026-03-11",
+                    "end_date": "2030-03-10",
+                    "party_name": "Frente Amplio",
+                    "party_alias": "FA",
+                },
+                # Malformed — closing date precedes opening date.
+                {
+                    "start_date": "2026-03-11",
+                    "end_date": "2026-03-10",
+                    "party_name": "Independientes",
+                    "party_alias": "IND",
+                },
+            ],
         }
     )
 
-    assert payload["bcn_id"] == "senado:1110"
-    assert payload["chamber_type"] is ChamberType.SENATE
-    assert payload["full_name"] == "Pedro Araya Guerrero"
-    assert payload["_party_name"] == "P.P.D."
-    assert payload["_circumscription_number"] == 3
-    assert payload["_region_name"] == "Región de Antofagasta"
-    assert payload["gender"] == "M"
-    assert payload["email"] == "paraya@senado.cl"
-    assert payload["photo_url"] == "https://cdn.senado.cl/x_450x750.jpg"
-    assert payload["photo_thumbnail_url"] == "https://cdn.senado.cl/x_120x120.jpg"
-    assert payload["profile_url"].endswith("/pedro-araya-guerrero-sen")
+    assert payload is not None
+    assert len(payload["terms"]) == 3
+    current_term = next(
+        term for term in payload["terms"] if term["start_date"] == "2026-03-11"
+    )
+    assert current_term["end_date"] == "2030-03-10"
+    assert current_term["party_name"] == "Frente Amplio"
+    assert current_term["party_alias"] == "FA"
 
 
-def test_legislator_parser_maps_female_senator_gender():
+def test_legislator_parser_senator_emits_term_per_periodo():
     payload = LegislatorParser.parse_senator(
-        {"ID_PARLAMENTARIO": 1, "SEXO": "1", "SEXO_ETIQUETA": "Mujer"}
+        {
+            "ID_PARLAMENTARIO": 1335,
+            "NOMBRE": "Javier",
+            "APELLIDO_PATERNO": "Macaya",
+            "APELLIDO_MATERNO": "Danús",
+            "NOMBRE_COMPLETO": "Javier Macaya Danús",
+            "PARTIDO": "U.D.I.",
+            "CIRCUNSCRIPCION_ID": 8,
+            "REGION": "Región del Libertador General Bernardo O'Higgins",
+            "SEXO": "2",
+            "SEXO_ETIQUETA": "Hombre",
+            "SLUG": "javier-macaya-danus-sen",
+            "PERIODOS": [
+                {"CAMARA": "S", "DESDE": "2026", "HASTA": "2030", "VIGENTE": 1},
+                {"CAMARA": "S", "DESDE": "2022", "HASTA": "2026", "VIGENTE": 0},
+                {"CAMARA": "D", "DESDE": "2018", "HASTA": "2022", "VIGENTE": 0},
+            ],
+        }
+    )
+
+    assert payload is not None
+    assert payload["source"] == "senado_web"
+    assert payload["source_external_id"] == "1335"
+    assert payload["full_name"] == "Javier Macaya Danús"
+    assert payload["gender"] == "M"
+    assert len(payload["terms"]) == 3
+
+    senate_current = payload["terms"][0]
+    assert senate_current["chamber_external_id"] == "senado:1335"
+    assert senate_current["chamber_type"].value == "senate"
+    assert senate_current["start_date"] == "2026-03-11"
+    # Only the active senate term picks up the top-level PARTIDO; historical
+    # senate stints have no upstream party signal.
+    assert senate_current["party_name"] == "U.D.I."
+    assert senate_current["party_source"] == "senado_abbreviation"
+
+    # The deputy stint embedded in a senator's history carries no chamber
+    # bridge — the reconciliation against OpenData fills it in by overlap.
+    deputy_past = payload["terms"][2]
+    assert deputy_past["chamber_type"].value == "deputies"
+    assert deputy_past["chamber_external_id"] is None
+    assert deputy_past["party_name"] == ""
+    assert deputy_past["party_source"] is None
+
+
+def test_legislator_parser_senator_returns_none_for_empty_periodos():
+    # The empty-PERIODOS stub records in hemicycle are duplicate persons
+    # under a second ID_PARLAMENTARIO; treating them as separate people
+    # would create exactly the cross-chamber duplicate we're preventing.
+    payload = LegislatorParser.parse_senator(
+        {"ID_PARLAMENTARIO": 1042, "NOMBRE": "Javier", "PERIODOS": []}
+    )
+    assert payload is None
+
+
+def test_legislator_parser_senator_maps_female_gender():
+    payload = LegislatorParser.parse_senator(
+        {
+            "ID_PARLAMENTARIO": 1,
+            "SEXO": "1",
+            "SEXO_ETIQUETA": "Mujer",
+            "PERIODOS": [
+                {"CAMARA": "S", "DESDE": "2026", "HASTA": "2030", "VIGENTE": 1}
+            ],
+        }
     )
     assert payload["gender"] == "F"
-
-
-def test_legislator_parser_bcn_roster_row_for_senator_uses_idsenado_as_bcn_id():
-    row = {
-        "personUri": "http://datos.bcn.cl/recurso/persona/4558",
-        "appointmentUri": "http://datos.bcn.cl/recurso/persona/4558/nombramiento/5",
-        "cargoId": "2",
-        "idSenado": "1234",
-        "idCamara": None,
-        "full_name": "Ana Pérez Soto",
-        "term_start": "2022-03-11",
-        "term_end": "2030-03-11",
-    }
-
-    payload = LegislatorParser.parse_bcn_roster_row(row)
-
-    assert payload is not None
-    assert payload["bcn_id"] == "senado:1234"
-    assert payload["external_id"] == "1234"
-    assert payload["chamber_type"] == ChamberType.SENATE
-    assert payload["bcn_uri"] == "http://datos.bcn.cl/recurso/persona/4558"
-    assert payload["appointment_uri"].endswith("/nombramiento/5")
-    assert payload["term_end"] == "2030-03-11"
-
-
-def test_legislator_parser_bcn_roster_row_for_deputy_uses_idcamara_as_bcn_id():
-    row = {
-        "personUri": "http://datos.bcn.cl/recurso/persona/1017",
-        "appointmentUri": "http://datos.bcn.cl/recurso/persona/1017/nombramiento/3",
-        "cargoId": "1",
-        "idSenado": None,
-        "idCamara": "1017",
-        "full_name": "Álvaro Carter Fernández",
-        "term_start": "2026-03-11",
-        "term_end": "2030-03-11",
-    }
-
-    payload = LegislatorParser.parse_bcn_roster_row(row)
-
-    assert payload is not None
-    assert payload["bcn_id"] == "camara:1017"
-    assert payload["chamber_type"] == ChamberType.DEPUTIES
-
-
-def test_legislator_parser_bcn_roster_row_returns_none_when_bridge_id_missing():
-    row = {
-        "personUri": "http://datos.bcn.cl/recurso/persona/99",
-        "appointmentUri": "http://datos.bcn.cl/recurso/persona/99/nombramiento/1",
-        "cargoId": "2",
-        "idSenado": None,
-        "idCamara": None,
-        "full_name": "Sin IDs",
-        "term_start": "2026-03-11",
-        "term_end": "2030-03-11",
-    }
-    assert LegislatorParser.parse_bcn_roster_row(row) is None
 
 
 def test_legislator_parser_bcn_profile_normalizes_gender_and_collapses_empties():
@@ -712,88 +756,17 @@ def test_vote_parser_restsil_handles_empty_buckets_emitted_as_integers():
     assert payload["individual_votes"] == []
 
 
-def test_legislator_parser_bcn_rest_deputy_maps_district_and_bridge_id():
-    raw = {
-        "bcn_id": 5250,
-        "bcn_uri": "http://datos.bcn.cl/recurso/persona/5250",
-        "id_en_camara_de_origen": 1165,
-        "nombres": "Agustín Matías",
-        "apellido_paterno": "Romero",
-        "apellido_materno": "Leiva",
-        "nombre_completo": "Agustín Matías Romero Leiva",
-        "fecha_nacimiento": "1975-01-03",
-        "email": "agustin.romero@congreso.cl",
-        "id_wiki": "Agustín_Romero_Leiva",
-        "camara_id": 288,
-        "partido_id": 134,
-        "partido_nombre": "Partido Republicano de Chile",
-        "partido_acronimo": "Republicano",
-        "division_tipo": "Distrito",
-        "division_id": 4321,
-        "division_descripcion": "Distrito N° 8",
-    }
-
-    payload = LegislatorParser.parse_bcn_rest_deputy(raw)
-
-    assert payload["bcn_id"] == "camara:1165"
-    assert payload["chamber_type"] is ChamberType.DEPUTIES
-    assert payload["full_name"] == "Agustín Matías Romero Leiva"
-    assert payload["birth_date"] == "1975-01-03"
-    assert payload["email"] == "agustin.romero@congreso.cl"
-    assert payload["_district_number"] == 8
-    assert payload["is_active"] is True
-    # ADR-0012: OpenData is the sole party source; BCN REST must not pass
-    # party fields through to the upsert payload — they collide with existing
-    # OpenData-sourced rows on the abbreviation unique constraint.
-    assert "_party_name" not in payload
-    assert "_party_alias" not in payload
-
-
-def test_legislator_parser_bcn_rest_senator_maps_circumscription_and_bridge_id():
-    raw = {
-        "bcn_id": 2717,
-        "bcn_uri": "http://datos.bcn.cl/recurso/persona/2717",
-        "id_en_camara_de_origen": 1341,
-        "nombres": "Alejandra",
-        "apellido_paterno": "Sepúlveda",
-        "apellido_materno": "Orbenes",
-        "nombre_completo": "Alejandra Sepúlveda Orbenes",
-        "fecha_nacimiento": "1965-11-13",
-        "email": "asepulveda@senado.cl",
-        "id_wiki": "Alejandra_Sepúlveda_Orbenes",
-        "camara_id": 261,
-        "partido_nombre": "Independiente",
-        "partido_acronimo": "IND",
-        "division_tipo": "Circunscripcion",
-        "division_id": 2343,
-        "division_descripcion": "Circunscripción VIII O'Higgins",
-        "region_nombre": "Región Del Libertador Gral. Bernardo O'higgins",
-    }
-
-    payload = LegislatorParser.parse_bcn_rest_senator(raw)
-
-    assert payload["bcn_id"] == "senado:1341"
-    assert payload["chamber_type"] is ChamberType.SENATE
-    assert payload["full_name"] == "Alejandra Sepúlveda Orbenes"
-    assert payload["birth_date"] == "1965-11-13"
-    assert payload["email"] == "asepulveda@senado.cl"
-    # _party_name carries BCN's acronym so _resolve_party_from_senado has a
-    # usable lookup key even if the senado catalog overlay misses.
-    assert payload["_party_name"] == "IND"
-    assert "_party_alias" not in payload
-    assert payload["_circumscription_number"] == 2343
-    assert payload["_circumscription"] == "Circunscripción VIII O'Higgins"
-    assert payload["_region_name"].startswith("Región Del Libertador")
-    assert payload["is_active"] is True
-
-
-def test_legislator_parser_bcn_rest_enrichment_derives_wiki_url():
+def test_legislator_parser_bcn_rest_enrichment_keyed_by_chamber_bridge():
     enrichment = LegislatorParser.parse_bcn_rest_enrichment(
         {
             "bcn_uri": "http://datos.bcn.cl/recurso/persona/2717",
             "id_wiki": "Alejandra_Sepúlveda_Orbenes",
+            "id_en_camara_de_origen": 1341,
+            "camara_id": 261,
         }
     )
+    assert enrichment is not None
+    assert enrichment["chamber_external_id"] == "senado:1341"
     assert enrichment["bcn_uri"] == "http://datos.bcn.cl/recurso/persona/2717"
     assert enrichment["bcn_wiki_url"] == (
         "https://www.bcn.cl/historiapolitica/resenas_parlamentarias/wiki"
@@ -801,9 +774,22 @@ def test_legislator_parser_bcn_rest_enrichment_derives_wiki_url():
     )
 
 
-def test_legislator_parser_bcn_rest_enrichment_handles_missing_id_wiki():
+def test_legislator_parser_bcn_rest_enrichment_returns_none_without_bridge():
+    # No bridge = nothing to key the enrichment off — the new resolver no
+    # longer has Legislator.bcn_id to attach to.
     enrichment = LegislatorParser.parse_bcn_rest_enrichment(
-        {"bcn_uri": "http://datos.bcn.cl/recurso/persona/2717", "id_wiki": ""}
+        {"bcn_uri": "http://x", "id_wiki": "y"}
     )
-    assert enrichment["bcn_uri"] == "http://datos.bcn.cl/recurso/persona/2717"
-    assert enrichment["bcn_wiki_url"] is None
+    assert enrichment is None
+
+
+def test_legislator_parser_bcn_rest_enrichment_returns_none_when_all_fields_empty():
+    enrichment = LegislatorParser.parse_bcn_rest_enrichment(
+        {
+            "bcn_uri": "",
+            "id_wiki": "",
+            "id_en_camara_de_origen": 1341,
+            "camara_id": 261,
+        }
+    )
+    assert enrichment is None

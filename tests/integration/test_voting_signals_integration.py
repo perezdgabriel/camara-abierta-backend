@@ -101,12 +101,15 @@ def _make_legislator_with_term(
     first_name: str,
     last_name: str = "Demo",
 ) -> Legislator:
+    """Build a person row plus their open ``LegislatorTerm``.
+
+    ``Legislator`` is now strictly person-level (ADR-0015) — chamber/party/
+    is_active live on the term and are read via the ``current_*`` properties.
+    """
     leg = Legislator(
         first_name=first_name,
         last_name=last_name,
         full_name=f"{first_name} {last_name}",
-        chamber_type=chamber.chamber_type,
-        party_id=party.id,
     )
     db.add(leg)
     db.flush()
@@ -129,11 +132,18 @@ def _cast_votes(
     legislators: list[Legislator],
     vote: VoteChoice,
 ) -> None:
+    """Persist one ``Vote`` per legislator.
+
+    ``Vote.legislator_external_id`` is NOT NULL (per ADR-0015); we synthesize
+    a unique ``camara:`` bridge per legislator id since the value doesn't
+    matter for these signal threshold tests.
+    """
     for leg in legislators:
         db.add(
             Vote(
                 voting_session_id=session.id,
                 legislator_id=leg.id,
+                legislator_external_id=f"camara:{leg.id}",
                 vote=vote,
             )
         )

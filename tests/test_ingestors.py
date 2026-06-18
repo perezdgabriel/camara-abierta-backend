@@ -251,9 +251,9 @@ class _FakeSenadoWebClient:
     def __exit__(self, *args):
         return None
 
-    def get_full_catalog(self) -> dict[int, dict]:
-        return {
-            42: {
+    def get_historical_catalog(self) -> list[dict]:
+        return [
+            {
                 "ID_PARLAMENTARIO": 42,
                 "NOMBRE": "Ada",
                 "APELLIDO_PATERNO": "Demo",
@@ -269,8 +269,11 @@ class _FakeSenadoWebClient:
                 "SLUG": "ada-demo-senadora-sen",
                 "IMAGEN_450": "https://cdn.senado.cl/ada_450.jpg",
                 "IMAGEN_120": "https://cdn.senado.cl/ada_120.jpg",
+                "PERIODOS": [
+                    {"CAMARA": "S", "DESDE": "2026", "HASTA": "2030", "VIGENTE": 1},
+                ],
             }
-        }
+        ]
 
 
 class _FakeOpenDataCamaraClient:
@@ -280,7 +283,7 @@ class _FakeOpenDataCamaraClient:
     def __exit__(self, *args):
         return None
 
-    def get_diputados_periodo_actual(self) -> list[dict]:
+    def get_all_diputados(self) -> list[dict]:
         return [
             {
                 "id": 1254,
@@ -429,49 +432,52 @@ def _group_by_task(dispatched):
     return by_task
 
 
-def test_run_ingest_legislators_dispatches_both_chambers_via_bcn_rest(monkeypatch):
+def test_run_ingest_legislators_dispatches_historical_rosters_and_enrichment(
+    monkeypatch,
+):
+    """Ingest dispatches one ``sync_legislator`` per historical row, plus
+    chamber-keyed BCN REST enrichments. See ADR-0015 for the cutover from the
+    current-only path to full historical."""
     dispatched: list[tuple[object, tuple]] = []
     _wire_legislator_ingest_mocks(monkeypatch, dispatched)
 
     result = ingestor_tasks.run_ingest_legislators(dry_run=False)
 
-    # 2 sync_legislator (senator+deputy) + 2 BCN REST enrichment = 4.
-    # BCN SPARQL passes moved to run_ingest_bcn_sparql_enrichment.
+    # 1 historical deputy + 1 historical senator + 2 BCN REST enrichments = 4.
     assert result == {"errors": 0, "dry_run": False, "dispatched": 4}
 
     by_task = _group_by_task(dispatched)
     legislator_dispatches = by_task[ingestor_tasks.sync_legislator.name]
     enrichment_dispatches = by_task[ingestor_tasks.sync_legislator_bcn_enrichment.name]
-    # No SPARQL appointment dispatches in the legislator flow anymore.
+    # SPARQL passes (profile + appointments) moved to the out-of-band command.
     assert ingestor_tasks.sync_parliamentary_appointment.name not in by_task
 
-    payloads_by_bcn_id = {args[0]["bcn_id"]: args[0] for args in legislator_dispatches}
-    senator_payload = payloads_by_bcn_id["senado:42"]
-    deputy_payload = payloads_by_bcn_id["camara:1254"]
+    payloads_by_external_id = {
+        args[0]["source_external_id"]: args[0] for args in legislator_dispatches
+    }
+    senator_payload = payloads_by_external_id["42"]
+    deputy_payload = payloads_by_external_id["1254"]
 
-    # Senado catalog overlays its abbreviation ("Partido Demo") onto _party_name
-    # — that's what _resolve_party_from_senado looks up.
-    assert senator_payload["_party_name"] == "Partido Demo"
-    assert senator_payload["_circumscription_number"] == 7
-    # senado.cl catalog overlays gender/phone/photo onto BCN REST identity.
+    # Senate seed carries per-PERIODO terms; current period gets the PARTIDO.
+    senate_term = senator_payload["terms"][0]
+    assert senate_term["chamber_external_id"] == "senado:42"
+    assert senate_term["party_name"] == "Partido Demo"
+    assert senate_term["party_source"] == "senado_abbreviation"
     assert senator_payload["gender"] == "F"
-    assert senator_payload["phone"] == "+56 2 1234 5678"
     assert senator_payload["photo_url"].endswith("ada_450.jpg")
-    assert senator_payload["photo_thumbnail_url"].endswith("ada_120.jpg")
-    assert senator_payload["profile_url"].endswith("ada-demo-senadora-sen")
 
-    # OpenData militancia overlays "Partido Republicano" — NOT BCN REST's
-    # "Partido Republicano de Chile" (that would collide on the abbreviation
-    # unique constraint, ADR-0012).
-    assert deputy_payload["_party_name"] == "Partido Republicano"
-    assert deputy_payload["_party_alias"] == "PREP"
-    assert deputy_payload["_district_number"] == 8
-    assert deputy_payload["gender"] == "1"
-    assert deputy_payload["_militancias"][0]["party_alias"] == "PREP"
+    # Deputy seed carries one militancia → one term with camara: bridge.
+    deputy_term = deputy_payload["terms"][0]
+    assert deputy_term["chamber_external_id"] == "camara:1254"
+    assert deputy_term["party_name"] == "Partido Republicano"
+    assert deputy_term["party_source"] == "opendata"
 
-    # BCN REST enrichment writes bcn_uri + bcn_wiki_url (no SPARQL involved).
-    enrichment_by_bcn_id = {bcn_id: payload for bcn_id, payload in enrichment_dispatches}
-    senator_enrichment = enrichment_by_bcn_id["senado:42"]
+    # BCN REST enrichment is keyed by the chamber bridge (used to look up the
+    # legislator via LegislatorTerm in the write service).
+    enrichment_by_bridge = {
+        bridge: payload for bridge, payload in enrichment_dispatches
+    }
+    senator_enrichment = enrichment_by_bridge["senado:42"]
     assert senator_enrichment["bcn_uri"].endswith("/persona/4558")
     assert senator_enrichment["bcn_wiki_url"].endswith("/Ada_Demo_Senadora")
     assert "profession" not in senator_enrichment
@@ -481,6 +487,8 @@ def test_run_ingest_legislators_dispatches_both_chambers_via_bcn_rest(monkeypatc
 def test_run_ingest_bcn_sparql_enrichment_dispatches_profile_and_appointments(
     monkeypatch,
 ):
+    """SPARQL profile + appointment passes key by ``bcn_uri`` (the BCN person
+    URI is the cross-chamber identity post ADR-0015)."""
     dispatched: list[tuple[object, tuple]] = []
     _wire_legislator_ingest_mocks(monkeypatch, dispatched)
 
@@ -495,16 +503,18 @@ def test_run_ingest_bcn_sparql_enrichment_dispatches_profile_and_appointments(
     # The roster-write task is not dispatched by the SPARQL command.
     assert ingestor_tasks.sync_legislator.name not in by_task
 
-    enrichment_by_bcn_id = {bcn_id: payload for bcn_id, payload in enrichment_dispatches}
-    assert enrichment_by_bcn_id["senado:42"]["profession"] == "Abogada"
-    assert enrichment_by_bcn_id["senado:42"]["twitter_handle"] == "ada_demo"
-    assert enrichment_by_bcn_id["senado:42"]["gender"] == "F"
-    assert enrichment_by_bcn_id["camara:1254"]["profession"] == "Ingeniero"
+    enrichment_by_uri = {key: payload for key, payload in enrichment_dispatches}
+    senator_uri = "http://datos.bcn.cl/recurso/persona/4558"
+    deputy_uri = "http://datos.bcn.cl/recurso/persona/1254"
+    assert enrichment_by_uri[senator_uri]["profession"] == "Abogada"
+    assert enrichment_by_uri[senator_uri]["twitter_handle"] == "ada_demo"
+    assert enrichment_by_uri[senator_uri]["gender"] == "F"
+    assert enrichment_by_uri[deputy_uri]["profession"] == "Ingeniero"
 
-    appointment_by_bcn_id = {args[0]: args[1] for args in appointment_dispatches}
-    assert appointment_by_bcn_id["senado:42"]["chamber_type"] == "senate"
-    assert appointment_by_bcn_id["senado:42"]["end_date"] == "2030-03-11"
-    assert appointment_by_bcn_id["camara:1254"]["chamber_type"] == "deputies"
+    appointment_by_uri = {args[0]: args[1] for args in appointment_dispatches}
+    assert appointment_by_uri[senator_uri]["chamber_type"] == "senate"
+    assert appointment_by_uri[senator_uri]["end_date"] == "2030-03-11"
+    assert appointment_by_uri[deputy_uri]["chamber_type"] == "deputies"
 
 
 def test_run_ingest_bcn_sparql_enrichment_tolerates_sparql_outage(monkeypatch):

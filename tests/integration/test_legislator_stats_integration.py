@@ -73,12 +73,15 @@ def _make_member(
     party: PoliticalParty,
     name: str,
 ) -> Legislator:
+    """Build a party-member legislator with an open term in the given chamber.
+
+    ``Legislator`` is now strictly person-level (ADR-0015) — chamber/party/
+    is_active live on the term and are read via the ``current_*`` properties.
+    """
     leg = Legislator(
         first_name=name,
         last_name="Demo",
         full_name=f"{name} Demo",
-        chamber_type=chamber.chamber_type,
-        party_id=party.id,
     )
     db.add(leg)
     db.flush()
@@ -96,15 +99,34 @@ def _make_member(
     return leg
 
 
-def _make_independent(db: Session, *, chamber: Chamber, name: str) -> Legislator:
+def _make_independent(
+    db: Session, *, chamber: Chamber, period: LegislativePeriod, name: str
+) -> Legislator:
+    """Build an independent legislator: term with ``party_id=None``.
+
+    Independents need an active term too — ``is_active`` reads from terms now
+    (ADR-0015), so omitting the term would make them invisible to the active
+    roster filter and to ``current_party`` (which would not be ``None`` because
+    no term exists, but rather the legislator wouldn't show up at all in any
+    chamber-scoped query).
+    """
     leg = Legislator(
         first_name=name,
         last_name="Indep",
         full_name=f"{name} Indep",
-        chamber_type=chamber.chamber_type,
-        party_id=None,
     )
     db.add(leg)
+    db.flush()
+    db.add(
+        LegislatorTerm(
+            legislator_id=leg.id,
+            period_id=period.id,
+            chamber_id=chamber.id,
+            party_id=None,
+            start_date=PERIOD_START,
+            end_date=None,
+        )
+    )
     db.flush()
     return leg
 
@@ -125,8 +147,22 @@ def _session(db: Session, chamber: Chamber, day: int) -> VotingSession:
 
 
 def _cast(db: Session, session: VotingSession, legs, vote: VoteChoice) -> None:
+    """Persist one ``Vote`` per legislator.
+
+    ``Vote.legislator_external_id`` is NOT NULL (per ADR-0015 — chamber
+    bridge always populated so orphan reconciliation can claim votes later).
+    The exact value doesn't matter for stats math; we synthesize a unique
+    ``camara:`` bridge per legislator id.
+    """
     for leg in legs:
-        db.add(Vote(voting_session_id=session.id, legislator_id=leg.id, vote=vote))
+        db.add(
+            Vote(
+                voting_session_id=session.id,
+                legislator_id=leg.id,
+                legislator_external_id=f"camara:{leg.id}",
+                vote=vote,
+            )
+        )
     db.flush()
 
 
@@ -157,7 +193,7 @@ class TestRefreshLegislatorVotingStats:
             _make_member(db, chamber=chamber, period=period, party=opo, name=f"O{i}")
             for i in range(6)
         ]
-        ada = _make_independent(db, chamber=chamber, name="Ada")
+        ada = _make_independent(db, chamber=chamber, period=period, name="Ada")
         for day in range(1, n_contested + 1):
             session = _session(db, chamber, day)
             _cast(db, session, ofi_members, VoteChoice.FOR)

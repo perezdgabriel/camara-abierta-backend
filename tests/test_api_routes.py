@@ -118,19 +118,25 @@ def make_bill() -> SimpleNamespace:
 
 
 def make_legislator() -> SimpleNamespace:
+    """Build a fake legislator mirroring the new property-based shape (ADR-0015).
+
+    ``Legislator`` no longer carries chamber/party/district/circumscription as
+    columns; the schema reads ``current_*`` properties. The namespace exposes
+    those names directly so the Pydantic ``validation_alias`` resolves.
+    """
     now = datetime(2026, 5, 22, 12, 0, 0)
     party = ns(id=1, name="Partido Demo", abbreviation="PD", color="#112233")
     district = ns(id=2, number=8, name="Distrito 8")
     circumscription = ns(id=3, number=7, name="Circunscripcion 7")
     return ns(
         id=20,
-        bcn_id="senado:20",
+        current_chamber_external_id="senado:20",
         full_name="Ada Demo",
-        chamber_type=ChamberType.SENATE,
+        current_chamber_type=ChamberType.SENATE,
         photo_thumbnail_url=None,
-        party=party,
-        district=district,
-        circumscription=circumscription,
+        current_party=party,
+        current_district=district,
+        current_circumscription=circumscription,
         is_active=True,
         created_at=now,
         updated_at=now,
