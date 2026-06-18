@@ -54,4 +54,11 @@ app.conf.beat_schedule = {
         "task": "app.tasks.voting.refresh_legislator_voting_stats",
         "schedule": crontab(hour=4, minute=20),
     },
+    "alert-orphan-votes": {
+        # Daily SLA check on vote rows that resolved with legislator_id=NULL.
+        # See ADR-0015 — orphans get claimed by _reconcile_orphan_votes once
+        # the matching LegislatorTerm arrives; this surfaces ones that don't.
+        "task": "app.tasks.legislators.alert_orphan_votes",
+        "schedule": crontab(hour=5, minute=45),
+    },
 }

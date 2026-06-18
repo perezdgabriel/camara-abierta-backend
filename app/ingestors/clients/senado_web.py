@@ -56,3 +56,33 @@ class SenadoWebClient(BaseCongresoClient):
             len(keyed),
         )
         return keyed
+
+    def get_historical_catalog(self) -> list[dict[str, Any]]:
+        """Return all historical senators with their ``PERIODOS`` chamber history.
+
+        Drops the ``vigentes=1`` filter so retired senators and current
+        senators who previously served as deputies (whose ``PERIODOS``
+        carries chamber=D rows) come back in one payload. Stub records with
+        ``PERIODOS == []`` are filtered out — they are duplicate catalog
+        entries that share a person across two different ``ID_PARLAMENTARIO``
+        values, and treating them as separate people creates exactly the
+        cross-chamber duplicate ``Legislator`` we are trying to prevent.
+        See ADR-0015.
+        """
+        payload = self._get_json("api/hemicycle", params={"camara": "S", "limit": 1000})
+        data = payload.get("data", {})
+        catalog = (data.get("parlamentarios", {}) or {}).get("data", []) or []
+        filtered: list[dict[str, Any]] = []
+        dropped = 0
+        for record in catalog:
+            if not record.get("PERIODOS"):
+                dropped += 1
+                continue
+            filtered.append(record)
+        logger.info(
+            "Fetched %d historical senators (opendata-senate, dropped %d "
+            "PERIODOS=[] stubs)",
+            len(filtered),
+            dropped,
+        )
+        return filtered

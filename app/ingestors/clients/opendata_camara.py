@@ -112,6 +112,22 @@ class OpenDataCamaraClient(BaseCongresoClient):
         logger.info("Fetched %d deputies (current period, opendata)", len(results))
         return results
 
+    def get_all_diputados(self) -> list[dict[str, Any]]:
+        """All historical deputies with full militancia history (ADR-0015).
+
+        Hits ``retornarDiputados`` (note: no ``PeriodoActual`` suffix), which
+        returns every person who has ever served as a deputy along with their
+        complete ``Militancias`` list. Used as the deputy-side roster for the
+        historical term backfill: each row produces one ``Legislator`` (merged
+        with senado.cl history when the same person is in both lists) and one
+        :class:`LegislatorTerm` per militancia, all carrying ``camara:{Id}``
+        as the chamber bridge.
+        """
+        root = self._get_xml("WSDiputado.asmx/retornarDiputados")
+        results = [self._parse_diputado(dip) for dip in self._iter(root, "Diputado")]
+        logger.info("Fetched %d historical deputies (opendata)", len(results))
+        return results
+
     def _parse_diputado_periodo(self, periodo: ET.Element) -> dict[str, Any]:
         diputado = self._find(periodo, "Diputado")
         distrito = self._find(periodo, "Distrito")
