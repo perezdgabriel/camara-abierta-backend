@@ -152,6 +152,45 @@ def test_resolve_vote_legislator_returns_term_legislator_id_on_match():
     assert legislator_id == 42
 
 
+# ── _parse_date year plausibility ────────────────────────────────────────
+
+
+def test_parse_date_round_trips_date_object():
+    result = write._parse_date(date(2026, 5, 12))
+
+    assert result == date(2026, 5, 12)
+
+
+def test_parse_date_round_trips_dmy_string():
+    result = write._parse_date("12/05/2026")
+
+    assert result == date(2026, 5, 12)
+
+
+def test_parse_date_repairs_common_millennium_typo(caplog):
+    caplog.set_level("WARNING", logger="app.services.write")
+
+    result = write._parse_date("2626-05-12")
+
+    assert result == date(2026, 5, 12)
+    assert any(
+        "repaired implausible upstream year" in record.message
+        for record in caplog.records
+    )
+
+
+def test_parse_date_rejects_implausible_year_without_known_repair(caplog):
+    caplog.set_level("WARNING", logger="app.services.write")
+
+    result = write._parse_date("2926-05-12")
+
+    assert result is None
+    assert any(
+        "rejecting implausible upstream year" in record.message
+        for record in caplog.records
+    )
+
+
 # ── _parse_datetime (preserved across the refactor) ───────────────────────
 
 
@@ -190,6 +229,30 @@ def test_parse_datetime_promotes_date_object_to_naive_midnight():
 
     assert result == datetime(2026, 6, 3)
     assert result.tzinfo is None
+
+
+def test_parse_datetime_repairs_common_millennium_typo(caplog):
+    caplog.set_level("WARNING", logger="app.services.write")
+
+    result = write._parse_datetime("2626-06-03T18:33:55")
+
+    assert result == datetime(2026, 6, 3, 18, 33, 55)
+    assert any(
+        "repaired implausible upstream year" in record.message
+        for record in caplog.records
+    )
+
+
+def test_parse_datetime_returns_sentinel_for_unrepairable_implausible_year(caplog):
+    caplog.set_level("WARNING", logger="app.services.write")
+
+    result = write._parse_datetime("2926-06-03T18:33:55")
+
+    assert result == datetime(1, 1, 1)
+    assert any(
+        "rejecting implausible upstream year" in record.message
+        for record in caplog.records
+    )
 
 
 def test_parse_datetime_returns_sentinel_for_unparseable_input(caplog):

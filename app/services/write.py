@@ -55,6 +55,8 @@ from app.models.votacion import Vote, VotingSession
 logger = logging.getLogger(__name__)
 
 UNKNOWN_START_DATE = date(1900, 1, 1)
+_MIN_PLAUSIBLE_YEAR = 1800
+_MAX_PLAUSIBLE_FUTURE_YEARS = 25
 
 # Obvious sentinel for ``_parse_datetime`` when an upstream value cannot be
 # parsed. We can't use ``None`` because ``voting_date`` is NOT NULL on the
@@ -96,21 +98,96 @@ def _set_syncable_attrs(db: Session, obj: Any, **attrs: Any) -> bool:
     return changed
 
 
+def _is_plausible_year(year: int) -> bool:
+    return (
+        _MIN_PLAUSIBLE_YEAR <= year <= date.today().year + _MAX_PLAUSIBLE_FUTURE_YEARS
+    )
+
+
+def _repair_common_year_typo(parsed_value: date) -> date | None:
+    if not 2600 <= parsed_value.year <= 2699:
+        return None
+    corrected_year = parsed_value.year - 600
+    if not _is_plausible_year(corrected_year):
+        return None
+    try:
+        return parsed_value.replace(year=corrected_year)
+    except ValueError:
+        return None
+
+
+def _normalize_parsed_date(
+    parsed_value: date, *, raw_value: Any, parser_name: str
+) -> date | None:
+    if _is_plausible_year(parsed_value.year):
+        return parsed_value
+
+    repaired = _repair_common_year_typo(parsed_value)
+    if repaired is not None:
+        logger.warning(
+            "%s: repaired implausible upstream year in %r from %s to %s",
+            parser_name,
+            raw_value,
+            parsed_value.isoformat(),
+            repaired.isoformat(),
+        )
+        return repaired
+
+    logger.warning(
+        "%s: rejecting implausible upstream year in %r (%s)",
+        parser_name,
+        raw_value,
+        parsed_value.isoformat(),
+    )
+    return None
+
+
+def _normalize_parsed_datetime(
+    parsed_value: datetime, *, raw_value: Any, parser_name: str
+) -> datetime | None:
+    normalized_date = _normalize_parsed_date(
+        parsed_value.date(), raw_value=raw_value, parser_name=parser_name
+    )
+    if normalized_date is None:
+        return None
+    if normalized_date == parsed_value.date():
+        return parsed_value
+    return parsed_value.replace(
+        year=normalized_date.year,
+        month=normalized_date.month,
+        day=normalized_date.day,
+    )
+
+
 def _parse_date(value: str | date | None) -> date | None:
     if value is None or value == "":
         return None
     if isinstance(value, date):
-        return value
+        parsed_value = value if not isinstance(value, datetime) else value.date()
+        return _normalize_parsed_date(
+            parsed_value, raw_value=value, parser_name="_parse_date"
+        )
     text = str(value).strip()
     if not text:
         return None
     try:
-        return date.fromisoformat(text)
+        parsed_value = date.fromisoformat(text)
     except ValueError:
         match = re.match(r"(\d{2})/(\d{2})/(\d{4})", text)
         if match:
-            return date(int(match.group(3)), int(match.group(2)), int(match.group(1)))
-    return None
+            try:
+                parsed_value = date(
+                    int(match.group(3)),
+                    int(match.group(2)),
+                    int(match.group(1)),
+                )
+            except ValueError:
+                return None
+        else:
+            return None
+    return _normalize_parsed_date(
+        parsed_value, raw_value=value, parser_name="_parse_date"
+    )
 
 
 def _parse_datetime(value: str | datetime | date | None) -> datetime:
@@ -125,9 +202,18 @@ def _parse_datetime(value: str | datetime | date | None) -> datetime:
     Chile-local.
     """
     if isinstance(value, datetime):
-        return value.replace(tzinfo=None) if value.tzinfo is not None else value
+        parsed_value = value.replace(tzinfo=None) if value.tzinfo is not None else value
+        normalized = _normalize_parsed_datetime(
+            parsed_value, raw_value=value, parser_name="_parse_datetime"
+        )
+        return normalized or _DATETIME_PARSE_SENTINEL
     if isinstance(value, date):
-        return datetime.combine(value, datetime.min.time())
+        normalized = _normalize_parsed_datetime(
+            datetime.combine(value, datetime.min.time()),
+            raw_value=value,
+            parser_name="_parse_datetime",
+        )
+        return normalized or _DATETIME_PARSE_SENTINEL
     if isinstance(value, str):
         text = value.strip()
         if text:
@@ -136,9 +222,13 @@ def _parse_datetime(value: str | datetime | date | None) -> datetime:
             except ValueError:
                 parsed = None
             if parsed is not None:
-                return (
+                parsed_value = (
                     parsed.replace(tzinfo=None) if parsed.tzinfo is not None else parsed
                 )
+                normalized = _normalize_parsed_datetime(
+                    parsed_value, raw_value=value, parser_name="_parse_datetime"
+                )
+                return normalized or _DATETIME_PARSE_SENTINEL
     parsed_date = _parse_date(value)
     if parsed_date is not None:
         return datetime.combine(parsed_date, datetime.min.time())
