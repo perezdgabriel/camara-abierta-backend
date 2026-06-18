@@ -5,10 +5,10 @@ import json
 import logging
 import re
 import unicodedata
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session, selectinload
 
@@ -37,8 +37,8 @@ from app.models.legislature import (
     LegislativePeriod,
     LegislativeSession,
     Legislator,
+    LegislatorMergeCandidate,
     LegislatorTerm,
-    ParliamentaryAppointment,
     PoliticalParty,
 )
 from app.models.proyecto import (
@@ -660,75 +660,205 @@ def _reconcile_urgencies(
     return changed
 
 
+def _resolve_term_period(
+    db: Session, start_date_value: date
+) -> LegislativePeriod | None:
+    return (
+        db.execute(
+            select(LegislativePeriod)
+            .where(LegislativePeriod.start_date <= start_date_value)
+            .order_by(LegislativePeriod.start_date.desc())
+        )
+        .scalars()
+        .first()
+    )
+
+
+def _resolve_term_party(
+    db: Session, term_payload: dict[str, Any]
+) -> PoliticalParty | None:
+    source = term_payload.get("party_source")
+    if source == "opendata":
+        return _upsert_party_from_opendata(
+            db,
+            term_payload.get("party_name"),
+            term_payload.get("party_alias"),
+        )
+    if source == "senado_abbreviation":
+        return _resolve_party_from_senado(db, term_payload.get("party_name"))
+    return None
+
+
+def _resolve_term_district(db: Session, district_number: int | None) -> District | None:
+    if not district_number:
+        return None
+    return db.execute(
+        select(District).where(District.number == district_number)
+    ).scalar_one_or_none()
+
+
 def _reconcile_terms(
-    db: Session, legislator: Legislator, militancias: list[dict[str, Any]]
+    db: Session, legislator: Legislator, term_payloads: list[dict[str, Any]]
 ) -> bool:
-    chamber = _get_or_create_chamber(db, legislator.chamber_type)
-    desired: dict[tuple[Any, ...], dict[str, Any]] = {}
-    for militancia in militancias:
-        start_date_value = _parse_date(militancia.get("start_date"))
+    """Reconcile a legislator's per-stint terms against a normalized payload list.
+
+    Each entry in ``term_payloads`` describes one chamber stint (chamber,
+    bridge ID, dates, party, district/circumscription) — the unified shape
+    emitted by parsers in :mod:`app.ingestors.parsers.legislators`. Existing
+    terms keyed by ``(chamber_id, start_date)`` are updated in place; new
+    payloads create rows; orphaned terms are not deleted (multiple ingest
+    sources contribute to the same person, so deletion would race). See
+    ADR-0015.
+    """
+    changed = False
+    current_by_key: dict[tuple[int, date], LegislatorTerm] = {
+        (term.chamber_id, term.start_date): term for term in legislator.terms
+    }
+
+    for payload in term_payloads:
+        start_date_value = _parse_date(payload.get("start_date"))
         if start_date_value is None:
             continue
-        party = _upsert_party_from_opendata(
-            db,
-            militancia.get("party_name"),
-            militancia.get("party_alias"),
-        )
-        period = (
-            db.execute(
-                select(LegislativePeriod)
-                .where(LegislativePeriod.start_date <= start_date_value)
-                .order_by(LegislativePeriod.start_date.desc())
-            )
-            .scalars()
-            .first()
-        )
+        end_date_value = _parse_date(payload.get("end_date"))
+        chamber = _get_or_create_chamber(db, payload.get("chamber_type"))
+        period = _resolve_term_period(db, start_date_value)
         if period is None:
             continue
-        desired[(start_date_value, chamber.id)] = {
-            "period_id": period.id,
-            "party_id": party.id if party else None,
-            "end_date": _parse_date(militancia.get("end_date")),
-        }
 
-    current_by_key = {
-        (term.start_date, term.chamber_id): term for term in legislator.terms
-    }
-    changed = False
-    for key, existing_term in list(current_by_key.items()):
-        if key not in desired:
-            db.delete(existing_term)
-            changed = True
+        party = _resolve_term_party(db, payload)
+        district = _resolve_term_district(db, payload.get("district_number"))
+        circumscription = _get_or_create_circumscription(
+            db,
+            payload.get("circumscription_number"),
+            payload.get("_region_name"),
+        )
+        chamber_external_id = payload.get("chamber_external_id") or None
 
-    for key, payload in desired.items():
+        key = (chamber.id, start_date_value)
         term = current_by_key.get(key)
         if term is None:
-            db.add(
-                LegislatorTerm(
-                    legislator_id=legislator.id,
-                    period_id=payload["period_id"],
-                    chamber_id=chamber.id,
-                    party_id=payload["party_id"],
-                    start_date=key[0],
-                    end_date=payload["end_date"],
-                )
+            term = LegislatorTerm(
+                legislator_id=legislator.id,
+                period_id=period.id,
+                chamber_id=chamber.id,
+                party_id=party.id if party else None,
+                district_id=district.id if district else None,
+                circumscription_id=circumscription.id if circumscription else None,
+                chamber_external_id=chamber_external_id,
+                start_date=start_date_value,
+                end_date=end_date_value,
             )
+            db.add(term)
+            db.flush()
+            current_by_key[key] = term
+            _reconcile_orphan_votes(db, term)
             changed = True
             continue
+
         field_changed = False
-        if term.period_id != payload["period_id"]:
-            term.period_id = payload["period_id"]
+        if term.period_id != period.id:
+            term.period_id = period.id
             field_changed = True
-        if term.party_id != payload["party_id"]:
-            term.party_id = payload["party_id"]
+        # ``party_id``: only overwrite when the new payload actually supplies
+        # one. senado.cl periodos don't carry party for historical stints, so
+        # we'd otherwise wipe a party we already learned from OpenData.
+        if party is not None and term.party_id != party.id:
+            term.party_id = party.id
             field_changed = True
-        if term.end_date != payload["end_date"]:
-            term.end_date = payload["end_date"]
+        if district is not None and term.district_id != district.id:
+            term.district_id = district.id
+            field_changed = True
+        if (
+            circumscription is not None
+            and term.circumscription_id != circumscription.id
+        ):
+            term.circumscription_id = circumscription.id
+            field_changed = True
+        if chamber_external_id and term.chamber_external_id != chamber_external_id:
+            term.chamber_external_id = chamber_external_id
+            field_changed = True
+        if end_date_value is not None and term.end_date != end_date_value:
+            term.end_date = end_date_value
             field_changed = True
         if field_changed:
             _touch_syncable(db, term)
+            db.flush()
+            _reconcile_orphan_votes(db, term)
             changed = True
     return changed
+
+
+def count_orphan_votes_older_than(db: Session, sla_days: int) -> int:
+    """Count votes still unresolved (``legislator_id IS NULL``) past the SLA.
+
+    A vote is created orphan whenever its ``legislator_external_id`` does not
+    match any :class:`LegislatorTerm` covering the vote date. The reconciler
+    fills them in as terms arrive; rows older than ``sla_days`` indicate a
+    bridge ID that never resolved and needs operator attention. See
+    ADR-0015.
+    """
+    cutoff = datetime.now(timezone.utc) - timedelta(days=sla_days)
+    return int(
+        db.execute(
+            select(func.count(Vote.id))
+            .where(Vote.legislator_id.is_(None))
+            .where(Vote.created_at < cutoff)
+        ).scalar_one()
+        or 0
+    )
+
+
+def _reconcile_orphan_votes(db: Session, term: LegislatorTerm) -> int:
+    """Link any orphan votes whose bridge + date matches the just-upserted term.
+
+    Called after every ``LegislatorTerm`` write. Orphan votes (those saved
+    with ``legislator_id IS NULL`` because the resolver had no matching
+    term) are claimed by joining on ``legislator_external_id`` and the
+    voting-session ``voting_date`` against the term's date window. See
+    ADR-0015.
+    """
+    if not term.chamber_external_id:
+        return 0
+    end_date = term.end_date or date(9999, 12, 31)
+    rows = db.execute(
+        select(Vote.id, Vote.voting_session_id)
+        .join(VotingSession, VotingSession.id == Vote.voting_session_id)
+        .where(
+            Vote.legislator_id.is_(None),
+            Vote.legislator_external_id == term.chamber_external_id,
+            func.date(VotingSession.voting_date) >= term.start_date,
+            func.date(VotingSession.voting_date) <= end_date,
+        )
+    ).all()
+    if not rows:
+        return 0
+
+    # Drop any already-resolved Vote for the same (session, legislator) — would
+    # collide with the partial unique index. Last-writer-wins by orphan id.
+    existing_resolved = {
+        sid: vid
+        for vid, sid in db.execute(
+            select(Vote.id, Vote.voting_session_id).where(
+                Vote.legislator_id == term.legislator_id,
+                Vote.voting_session_id.in_([sid for _, sid in rows]),
+            )
+        ).all()
+    }
+    for orphan_id, session_id in rows:
+        existing_id = existing_resolved.get(session_id)
+        if existing_id is not None and existing_id != orphan_id:
+            db.execute(delete(Vote).where(Vote.id == orphan_id))
+            continue
+        db.execute(
+            update(Vote)
+            .where(Vote.id == orphan_id)
+            .values(
+                legislator_id=term.legislator_id,
+                sync_version=global_sync_version_seq.next_value(),
+                updated_at=func.now(),
+            )
+        )
+    return len(rows)
 
 
 def _reconcile_committee_memberships(
@@ -739,13 +869,20 @@ def _reconcile_committee_memberships(
         bcn_id = member.get("bcn_id")
         if not bcn_id:
             continue
-        legislator = db.execute(
-            select(Legislator).where(Legislator.bcn_id == bcn_id)
+        # Committee membership uses the chamber bridge ID like vote rows do.
+        # Resolve via any LegislatorTerm carrying the bridge — the membership
+        # window can be open-ended, so we don't enforce a date join here.
+        term = db.execute(
+            select(LegislatorTerm)
+            .where(LegislatorTerm.chamber_external_id == bcn_id)
+            .order_by(LegislatorTerm.start_date.desc())
+            .limit(1)
         ).scalar_one_or_none()
-        if legislator is None:
+        if term is None:
             continue
+        legislator_id = term.legislator_id
         start_date_value = _parse_date(member.get("start_date")) or UNKNOWN_START_DATE
-        key = (legislator.id, member.get("role") or "member", start_date_value)
+        key = (legislator_id, member.get("role") or "member", start_date_value)
         desired[key] = {"end_date": _parse_date(member.get("end_date"))}
 
     current_by_key = {
@@ -786,198 +923,93 @@ def _reconcile_votes(
     individual_votes: list[dict[str, Any]],
     chamber_type: ChamberType | None = None,
 ) -> bool:
-    desired: dict[int, VoteChoice] = {}
-    for payload in individual_votes:
-        legislator_id = _resolve_vote_legislator(db, payload, chamber_type)
-        if legislator_id is None:
-            continue
-        desired[legislator_id] = _coerce_enum(
-            VoteChoice, payload.get("vote"), VoteChoice.ABSENT
-        )
+    """Reconcile a voting session's individual votes against the upstream list.
 
-    current_by_legislator = {vote.legislator_id: vote for vote in voting_session.votes}
+    Each upstream payload must carry ``legislator_external_id`` (the chamber
+    bridge — ``camara:{Id}`` or ``senado:{PARLID}``). The resolver maps the
+    bridge to a canonical :class:`Legislator` via :class:`LegislatorTerm`
+    when a term covers the session's date; otherwise the row is saved
+    orphaned (``legislator_id IS NULL``) and waits for term ingest to claim
+    it. See ADR-0015.
+    """
+    voting_date = voting_session.voting_date.date()
+    desired: dict[str, dict[str, Any]] = {}
+    for payload in individual_votes:
+        external_id = (payload.get("legislator_external_id") or "").strip()
+        if not external_id:
+            continue
+        legislator_id = _resolve_vote_legislator(db, external_id, voting_date)
+        desired[external_id] = {
+            "legislator_id": legislator_id,
+            "vote": _coerce_enum(VoteChoice, payload.get("vote"), VoteChoice.ABSENT),
+        }
+
+    current_by_external: dict[str, Vote] = {
+        vote.legislator_external_id: vote
+        for vote in voting_session.votes
+        if vote.legislator_external_id
+    }
     changed = False
 
-    for legislator_id, existing_vote in list(current_by_legislator.items()):
-        if legislator_id not in desired:
+    for external_id, existing_vote in list(current_by_external.items()):
+        if external_id not in desired:
             db.delete(existing_vote)
             changed = True
 
-    for legislator_id, vote_value in desired.items():
-        vote = current_by_legislator.get(legislator_id)
+    for external_id, payload in desired.items():
+        vote = current_by_external.get(external_id)
         if vote is None:
             db.add(
                 Vote(
                     voting_session_id=voting_session.id,
-                    legislator_id=legislator_id,
-                    vote=vote_value,
+                    legislator_id=payload["legislator_id"],
+                    legislator_external_id=external_id,
+                    vote=payload["vote"],
                 )
             )
             changed = True
-        elif vote.vote != vote_value:
-            vote.vote = vote_value
+            continue
+        field_changed = False
+        if vote.vote != payload["vote"]:
+            vote.vote = payload["vote"]
+            field_changed = True
+        if (
+            vote.legislator_id is None
+            and payload["legislator_id"] is not None
+            and vote.legislator_id != payload["legislator_id"]
+        ):
+            vote.legislator_id = payload["legislator_id"]
+            field_changed = True
+        if field_changed:
             _touch_syncable(db, vote)
             changed = True
     return changed
 
 
-def _find_legislator_by_name(
-    db: Session, full_name: str, chamber_type: ChamberType | None = None
-) -> Legislator | None:
-    normalized_name = full_name.strip()
-    if not normalized_name:
-        return None
-
-    if chamber_type == ChamberType.SENATE:
-        legislator = _find_legislator_by_senado_vote_name(db, normalized_name)
-        if legislator is not None:
-            return legislator
-
-    stmt = select(Legislator).where(
-        func.lower(Legislator.full_name) == normalized_name.lower()
-    )
-    if chamber_type is not None:
-        stmt = stmt.where(Legislator.chamber_type == chamber_type)
-    stmt = stmt.limit(1)
-    return db.execute(stmt).scalar_one_or_none()
-
-
-def _parse_senado_vote_display_name(display_name: str) -> dict[str, str] | None:
-    normalized_display = (display_name or "").strip()
-    if not normalized_display or "," not in normalized_display:
-        return None
-
-    surname_part, first_name_part = [
-        part.strip() for part in normalized_display.split(",", maxsplit=1)
-    ]
-    if not surname_part or not first_name_part:
-        return None
-
-    surname_tokens = surname_part.split()
-    if not surname_tokens:
-        return None
-
-    maternal_initial = ""
-    paternal_tokens = surname_tokens
-    trailing_token = surname_tokens[-1].rstrip(".")
-    if re.fullmatch(r"[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]", trailing_token or ""):
-        maternal_initial = trailing_token.upper()
-        paternal_tokens = surname_tokens[:-1]
-
-    paternal_last_name = " ".join(paternal_tokens).strip()
-    first_name = first_name_part.strip()
-    if not paternal_last_name or not first_name:
-        return None
-
-    return {
-        "first_name": first_name,
-        "paternal_last_name": paternal_last_name,
-        "maternal_initial": maternal_initial,
-    }
-
-
-def _senado_vote_name_matches_legislator(
-    display_name: str,
-    legislator: Legislator,
-) -> bool:
-    parsed = _parse_senado_vote_display_name(display_name)
-    if parsed is None:
-        return False
-
-    stored_first_name = _normalize_person_name(legislator.first_name or "")
-    parsed_first_name = _normalize_person_name(parsed["first_name"])
-    if stored_first_name != parsed_first_name:
-        stored_first_token = stored_first_name.split()[0] if stored_first_name else ""
-        parsed_first_token = parsed_first_name.split()[0] if parsed_first_name else ""
-        if not stored_first_token or stored_first_token != parsed_first_token:
-            return False
-
-    stored_last_name = _normalize_person_name(legislator.last_name or "")
-    paternal_last_name = _normalize_person_name(parsed["paternal_last_name"])
-    if not stored_last_name.startswith(paternal_last_name):
-        return False
-
-    maternal_initial = _normalize_person_name(parsed["maternal_initial"])
-    if not maternal_initial:
-        return True
-
-    remaining_last_name = stored_last_name[len(paternal_last_name) :].strip()
-    return bool(remaining_last_name) and remaining_last_name[0] == maternal_initial
-
-
-def _find_legislator_by_senado_vote_name(
-    db: Session, display_name: str
-) -> Legislator | None:
-    parsed = _parse_senado_vote_display_name(display_name)
-    if parsed is None:
-        return None
-
-    candidates = (
-        db.execute(
-            select(Legislator)
-            .where(Legislator.chamber_type == ChamberType.SENATE)
-            .order_by(Legislator.is_active.desc(), Legislator.id.asc())
-        )
-        .scalars()
-        .all()
-    )
-    for legislator in candidates:
-        if _senado_vote_name_matches_legislator(display_name, legislator):
-            return legislator
-    return None
-
-
 def _resolve_vote_legislator(
-    db: Session, payload: dict[str, Any], chamber_type: ChamberType | None = None
+    db: Session, external_id: str, voting_date: date
 ) -> int | None:
-    external_id = (payload.get("legislator_external_id") or "").strip() or None
-    full_name = (
-        payload.get("_legislator_name") or payload.get("legislator_name") or ""
-    ).strip()
-    first_name = (payload.get("legislator_first_name") or "").strip()
-    last_name = (payload.get("legislator_last_name") or "").strip()
+    """Resolve an upstream chamber bridge to a canonical ``Legislator.id``.
 
-    if external_id:
-        legislator = db.execute(
-            select(Legislator).where(Legislator.bcn_id == external_id).limit(1)
-        ).scalar_one_or_none()
-        if legislator is not None:
-            return legislator.id
-
-        legislator = _find_legislator_by_name(db, full_name, chamber_type)
-        if legislator is not None and (
-            legislator.bcn_id is None or legislator.bcn_id == external_id
-        ):
-            if legislator.bcn_id != external_id:
-                legislator.bcn_id = external_id
-                _touch_syncable(db, legislator)
-                db.flush()
-            return legislator.id
-
-        chamber_label = "Senador" if chamber_type == ChamberType.SENATE else "Diputado"
-        external_ref = external_id.rsplit(":", 1)[-1]
-        normalized_first_name = first_name or chamber_label
-        normalized_last_name = last_name or external_ref or "Desconocido"
-        normalized_full_name = (
-            full_name
-            or " ".join(
-                part for part in [normalized_first_name, normalized_last_name] if part
-            ).strip()
+    The resolver joins ``LegislatorTerm.chamber_external_id`` with a date
+    window covering ``voting_date`` (per ADR-0015). Returns ``None`` when no
+    term matches — callers save the vote orphaned and rely on
+    :func:`_reconcile_orphan_votes` to claim it after the term arrives.
+    """
+    term = db.execute(
+        select(LegislatorTerm)
+        .where(
+            LegislatorTerm.chamber_external_id == external_id,
+            LegislatorTerm.start_date <= voting_date,
+            or_(
+                LegislatorTerm.end_date.is_(None),
+                LegislatorTerm.end_date >= voting_date,
+            ),
         )
-        legislator = Legislator(
-            bcn_id=external_id,
-            first_name=normalized_first_name[:100],
-            last_name=normalized_last_name[:100],
-            full_name=normalized_full_name[:200],
-            chamber_type=chamber_type or ChamberType.DEPUTIES,
-            is_active=False,
-        )
-        db.add(legislator)
-        db.flush()
-        return legislator.id
-
-    legislator = _find_legislator_by_name(db, full_name, chamber_type)
-    return legislator.id if legislator is not None else None
+        .order_by(LegislatorTerm.start_date.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+    return term.legislator_id if term is not None else None
 
 
 def upsert_norma(
@@ -1307,114 +1339,305 @@ def update_bill_ai_summary(
     return bill
 
 
-def upsert_legislator(db: Session, data: dict[str, Any]) -> Legislator:
-    if data.get("chamber_type") == ChamberType.SENATE:
-        party = _resolve_party_from_senado(db, data.get("_party_name"))
-        if party is None:
-            logger.info("Party not found: %s", data.get("_party_name"))
-    else:
-        party = _upsert_party_from_opendata(
-            db, data.get("_party_name"), data.get("_party_alias")
+def _normalize_match_name(value: str) -> str:
+    """Lowercase + strip-accents key used for cross-chamber person matching.
+
+    Same shape used at vote-level resolution (``_normalize_person_name``) — kept
+    on a dedicated helper to make the name-match intent explicit. See ADR-0015.
+    """
+    return _normalize_person_name(value or "")
+
+
+def _find_legislator_candidates(
+    db: Session, paternal: str, maternal: str, first: str
+) -> list[Legislator]:
+    """Return existing ``Legislator`` rows whose normalized name matches.
+
+    Match key is ``(paternal, maternal, first)`` lowercased + accents stripped.
+    The senator catalog and OpenData deputies expose the parts separately, so
+    we can be exact rather than substring-matching ``full_name``. See ADR-0015.
+    """
+    paternal_key = _normalize_match_name(paternal)
+    maternal_key = _normalize_match_name(maternal)
+    first_key = _normalize_match_name(first)
+    if not paternal_key or not first_key:
+        return []
+    candidates = db.execute(select(Legislator)).scalars().all()
+    matches: list[Legislator] = []
+    for candidate in candidates:
+        c_first = _normalize_match_name(candidate.first_name or "")
+        c_last = _normalize_match_name(candidate.last_name or "")
+        if not c_first.startswith(first_key) and not first_key.startswith(c_first):
+            continue
+        last_combined = f"{paternal_key} {maternal_key}".strip()
+        if c_last == last_combined:
+            matches.append(candidate)
+            continue
+        if maternal_key and c_last == paternal_key:
+            matches.append(candidate)
+    return matches
+
+
+def _terms_overlap(
+    a_start: date, a_end: date | None, b_start: date, b_end: date | None
+) -> bool:
+    a_end = a_end or date(9999, 12, 31)
+    b_end = b_end or date(9999, 12, 31)
+    return a_start <= b_end and b_start <= a_end
+
+
+def _disambiguate_by_term_overlap(
+    candidates: list[Legislator], seed_terms: list[dict[str, Any]]
+) -> Legislator | None:
+    """Pick the candidate whose existing terms overlap the seed's term windows.
+
+    Both sides describe the same person if at least one seed term aligns with
+    a candidate's existing term (same chamber, overlapping dates). With
+    Chilean two-apellido naming this resolves nearly every same-name
+    collision. Returns ``None`` if zero or several candidates overlap (the
+    caller writes a merge-review row).
+    """
+    if len(candidates) <= 1:
+        return candidates[0] if candidates else None
+
+    seed_windows: list[tuple[ChamberType, date, date | None]] = []
+    for term in seed_terms:
+        start = _parse_date(term.get("start_date"))
+        if start is None:
+            continue
+        chamber = _coerce_enum(ChamberType, term.get("chamber_type"))
+        if chamber is None:
+            continue
+        seed_windows.append((chamber, start, _parse_date(term.get("end_date"))))
+
+    if not seed_windows:
+        return None
+
+    overlapping: list[Legislator] = []
+    for candidate in candidates:
+        for existing in candidate.terms:
+            if existing.chamber is None:
+                continue
+            for chamber_type, start, end in seed_windows:
+                if existing.chamber.chamber_type != chamber_type:
+                    continue
+                if _terms_overlap(existing.start_date, existing.end_date, start, end):
+                    overlapping.append(candidate)
+                    break
+            if candidate in overlapping:
+                break
+
+    if len(overlapping) == 1:
+        return overlapping[0]
+    return None
+
+
+def _write_merge_candidate(
+    db: Session, seed: dict[str, Any], candidate_ids: list[int]
+) -> None:
+    """Defer ambiguous cross-chamber matches to manual admin review."""
+    existing = db.execute(
+        select(LegislatorMergeCandidate)
+        .where(LegislatorMergeCandidate.source == seed.get("source"))
+        .where(
+            LegislatorMergeCandidate.source_external_id
+            == str(seed.get("source_external_id") or "")
         )
-    district = None
-    if data.get("_district_number"):
-        district = db.execute(
-            select(District).where(District.number == data["_district_number"])
+        .where(LegislatorMergeCandidate.resolved_legislator_id.is_(None))
+    ).scalar_one_or_none()
+    if existing is not None:
+        if existing.candidate_legislator_ids != candidate_ids:
+            existing.candidate_legislator_ids = candidate_ids
+            _touch_syncable(db, existing)
+        return
+    db.add(
+        LegislatorMergeCandidate(
+            source=(seed.get("source") or "")[:50],
+            source_external_id=str(seed.get("source_external_id") or "")[:100],
+            first_name=(seed.get("first_name") or "")[:100],
+            last_name=(seed.get("last_name") or "")[:200],
+            full_name=(seed.get("full_name") or "")[:200],
+            candidate_legislator_ids=candidate_ids,
+            payload={"terms": seed.get("terms") or []},
+        )
+    )
+    db.flush()
+
+
+def _merge_legislator_seed(db: Session, seed: dict[str, Any]) -> Legislator | None:
+    """Resolve a normalized seed to an existing ``Legislator`` (if any).
+
+    Priority: (1) ``bcn_uri`` exact match, (2) chamber bridge match against
+    an existing ``LegislatorTerm``, (3) normalized-name match disambiguated by
+    term-window overlap. Ambiguous name matches are written to the merge
+    review queue and ``None`` is returned (caller creates a new legislator
+    for now; admin can re-link later). See ADR-0015.
+    """
+    bcn_uri = (seed.get("bcn_uri") or "").strip() or None
+    if bcn_uri:
+        legislator = db.execute(
+            select(Legislator).where(Legislator.bcn_uri == bcn_uri)
         ).scalar_one_or_none()
-    circumscription = _get_or_create_circumscription(
+        if legislator is not None:
+            return legislator
+
+    for term in seed.get("terms") or []:
+        external_id = (term.get("chamber_external_id") or "").strip()
+        if not external_id:
+            continue
+        existing_term = db.execute(
+            select(LegislatorTerm)
+            .options(selectinload(LegislatorTerm.legislator))
+            .where(LegislatorTerm.chamber_external_id == external_id)
+            .limit(1)
+        ).scalar_one_or_none()
+        if existing_term is not None:
+            return existing_term.legislator
+
+    candidates = _find_legislator_candidates(
         db,
-        data.get("_circumscription_number"),
-        data.get("_circumscription"),
+        seed.get("paternal_last_name") or "",
+        seed.get("maternal_last_name") or "",
+        seed.get("first_name") or "",
     )
+    if not candidates:
+        return None
+    if len(candidates) == 1:
+        return candidates[0]
+    resolved = _disambiguate_by_term_overlap(candidates, seed.get("terms") or [])
+    if resolved is not None:
+        return resolved
+    _write_merge_candidate(db, seed, [c.id for c in candidates])
+    return None
 
-    insert_stmt = pg_insert(Legislator).values(
-        bcn_id=data["bcn_id"],
-        first_name=(data.get("first_name") or "")[:100],
-        last_name=(data.get("last_name") or "")[:100],
-        full_name=(data.get("full_name") or "")[:200],
-        gender=(data.get("gender") or "")[:1] or None,
-        birth_date=_parse_date(data.get("birth_date")),
-        email=(data.get("email") or "")[:255] or None,
-        phone=(data.get("phone") or "")[:50] or None,
-        photo_url=(data.get("photo_url") or "")[:500] or None,
-        photo_thumbnail_url=(data.get("photo_thumbnail_url") or "")[:500] or None,
-        profile_url=(data.get("profile_url") or "")[:500] or None,
-        chamber_type=_coerce_enum(
-            ChamberType,
-            data.get("chamber_type"),
-            ChamberType.DEPUTIES,
-        ),
-        party_id=party.id if party else None,
-        district_id=district.id if district else None,
-        circumscription_id=circumscription.id if circumscription else None,
-        is_active=bool(data.get("is_active", True)),
-    )
-    legislator_id = db.execute(
-        insert_stmt.on_conflict_do_update(
-            index_elements=["bcn_id"],
-            set_={
-                "first_name": insert_stmt.excluded.first_name,
-                "last_name": insert_stmt.excluded.last_name,
-                "full_name": insert_stmt.excluded.full_name,
-                "gender": insert_stmt.excluded.gender,
-                "birth_date": insert_stmt.excluded.birth_date,
-                "email": insert_stmt.excluded.email,
-                "phone": insert_stmt.excluded.phone,
-                "photo_url": insert_stmt.excluded.photo_url,
-                "photo_thumbnail_url": insert_stmt.excluded.photo_thumbnail_url,
-                "profile_url": insert_stmt.excluded.profile_url,
-                "chamber_type": insert_stmt.excluded.chamber_type,
-                "party_id": insert_stmt.excluded.party_id,
-                "district_id": insert_stmt.excluded.district_id,
-                "circumscription_id": insert_stmt.excluded.circumscription_id,
-                "is_active": insert_stmt.excluded.is_active,
-                "updated_at": func.now(),
-                "sync_version": global_sync_version_seq.next_value(),
-            },
-        ).returning(Legislator.id)
-    ).scalar_one()
 
+def _apply_seed_fields(legislator: Legislator, seed: dict[str, Any]) -> bool:
+    """Fill empty person-level fields from the seed without overwriting set ones.
+
+    Person-level data accumulates across ingest sources (OpenData has birth
+    date and gender; senado.cl carries photos and phone). We only write a
+    field when the new value is non-empty and the existing column is empty,
+    so a deputy-side payload doesn't blank out the senator-side photo (and
+    vice versa).
+    """
+    changed = False
+
+    def _maybe(column: str, value: object, *, max_len: int | None = None) -> None:
+        nonlocal changed
+        if value is None:
+            return
+        if isinstance(value, str):
+            value = value.strip()
+            if not value:
+                return
+            if max_len is not None:
+                value = value[:max_len]
+        current = getattr(legislator, column)
+        if current is None or current == "":
+            setattr(legislator, column, value)
+            changed = True
+
+    _maybe("first_name", seed.get("first_name"), max_len=100)
+    _maybe("last_name", seed.get("last_name"), max_len=100)
+    _maybe("full_name", seed.get("full_name"), max_len=200)
+    _maybe("gender", seed.get("gender"), max_len=1)
+    birth = _parse_date(seed.get("birth_date"))
+    if birth is not None and legislator.birth_date is None:
+        legislator.birth_date = birth
+        changed = True
+    _maybe("email", seed.get("email"), max_len=255)
+    _maybe("phone", seed.get("phone"), max_len=50)
+    _maybe("photo_url", seed.get("photo_url"), max_len=500)
+    _maybe("photo_thumbnail_url", seed.get("photo_thumbnail_url"), max_len=500)
+    _maybe("profile_url", seed.get("profile_url"), max_len=500)
+    _maybe("bcn_uri", seed.get("bcn_uri"), max_len=500)
+    _maybe("bcn_wiki_url", seed.get("bcn_wiki_url"), max_len=500)
+    return changed
+
+
+def upsert_legislator(db: Session, data: dict[str, Any]) -> Legislator:
+    """Upsert one person (and their stints) from a normalized roster seed.
+
+    The seed is the unified shape emitted by
+    :class:`app.ingestors.parsers.legislators.LegislatorParser`: person-level
+    fields plus a ``terms`` list of per-stint payloads. The function
+    resolves the canonical :class:`Legislator` via :func:`_merge_legislator_seed`
+    (creating it if needed), applies person-level fields without overwriting
+    populated columns, then reconciles the term list. See ADR-0015.
+    """
+    legislator = _merge_legislator_seed(db, data)
+    if legislator is None:
+        legislator = Legislator(
+            first_name=(data.get("first_name") or "")[:100] or "Desconocido",
+            last_name=(data.get("last_name") or "")[:100] or "Desconocido",
+            full_name=(data.get("full_name") or "")[:200] or "Desconocido",
+            gender=(data.get("gender") or "")[:1] or None,
+            birth_date=_parse_date(data.get("birth_date")),
+            email=(data.get("email") or "")[:255] or None,
+            phone=(data.get("phone") or "")[:50] or None,
+            photo_url=(data.get("photo_url") or "")[:500] or None,
+            photo_thumbnail_url=(data.get("photo_thumbnail_url") or "")[:500] or None,
+            profile_url=(data.get("profile_url") or "")[:500] or None,
+            bcn_uri=(data.get("bcn_uri") or "")[:500] or None,
+            bcn_wiki_url=(data.get("bcn_wiki_url") or "")[:500] or None,
+        )
+        db.add(legislator)
+        db.flush()
+        changed_person = False
+    else:
+        changed_person = _apply_seed_fields(legislator, data)
+
+    # Need terms loaded for reconciliation.
     legislator = db.execute(
         select(Legislator)
         .options(selectinload(Legislator.terms))
-        .where(Legislator.id == legislator_id)
+        .where(Legislator.id == legislator.id)
     ).scalar_one()
-    if _reconcile_terms(db, legislator, data.get("_militancias") or []):
+
+    changed_terms = _reconcile_terms(db, legislator, data.get("terms") or [])
+    if changed_person or changed_terms:
         _touch_syncable(db, legislator)
     db.flush()
     return legislator
 
 
 def enrich_legislator_profile(
-    db: Session, bcn_id: str, fields: dict[str, Any]
+    db: Session,
+    bcn_uri: str | None = None,
+    fields: dict[str, Any] | None = None,
+    *,
+    chamber_external_id: str | None = None,
 ) -> Legislator | None:
     """Partially update an existing legislator with scraped/queried profile data.
 
-    Matches by ``bcn_id`` and writes ONLY enrichment columns: district (via
-    ``district_number``), photos, biography, profile URL, plus the BCN-sourced
-    ``bcn_uri``, ``bcn_wiki_url``, ``profession``, ``twitter_handle``, and
-    ``gender``. Never touches party, name, or ``is_active`` — OpenData-sourced
-    identity/party data (ADR-0012) and chamber-sourced active flag stay
-    authoritative. Returns ``None`` if no legislator matches (caller should log
-    and skip).
+    Matches by ``bcn_uri`` (preferred — the cross-chamber identity) or by
+    ``chamber_external_id`` via an existing :class:`LegislatorTerm`. Writes
+    only enrichment columns: photos, biography, profile URL, plus the
+    BCN-sourced ``bcn_uri``, ``bcn_wiki_url``, ``profession``,
+    ``twitter_handle``, and ``gender``. Never touches name; per-stint
+    fields (district, party) belong on terms and are not touched here.
+    Returns ``None`` if no legislator matches. See ADR-0015.
     """
-    legislator = db.execute(
-        select(Legislator).where(Legislator.bcn_id == bcn_id)
-    ).scalar_one_or_none()
+    fields = fields or {}
+    legislator: Legislator | None = None
+    bcn_uri = (bcn_uri or "").strip() or None
+    if bcn_uri:
+        legislator = db.execute(
+            select(Legislator).where(Legislator.bcn_uri == bcn_uri)
+        ).scalar_one_or_none()
+    if legislator is None and chamber_external_id:
+        term = db.execute(
+            select(LegislatorTerm)
+            .options(selectinload(LegislatorTerm.legislator))
+            .where(LegislatorTerm.chamber_external_id == chamber_external_id)
+            .limit(1)
+        ).scalar_one_or_none()
+        if term is not None:
+            legislator = term.legislator
     if legislator is None:
         return None
 
     changed = False
-
-    district_number = fields.get("district_number")
-    if district_number:
-        district = db.execute(
-            select(District).where(District.number == district_number)
-        ).scalar_one_or_none()
-        if district is not None and legislator.district_id != district.id:
-            legislator.district_id = district.id
-            changed = True
-
     for column, max_len in (
         ("photo_url", 500),
         ("photo_thumbnail_url", 500),
@@ -1446,50 +1669,71 @@ def enrich_legislator_profile(
     return legislator
 
 
-def upsert_parliamentary_appointment(
+def upsert_term_appointment(
     db: Session,
     *,
-    legislator_id: int,
+    bcn_uri: str,
     bcn_appointment_uri: str,
     chamber_type: ChamberType,
     start_date: date,
     end_date: date,
-) -> ParliamentaryAppointment:
-    """Idempotently upsert a BCN parliamentary appointment.
+) -> LegislatorTerm | None:
+    """Upsert a SPARQL-sourced appointment into the :class:`LegislatorTerm` table.
 
-    The BCN ``PositionPeriod`` URI (``bcn_appointment_uri``) is the natural
-    upsert key — re-runs over the same appointment update the existing row
-    rather than duplicating it. See ADR-0012.
+    Matches the legislator by ``bcn_uri`` (the BCN person URI is the
+    cross-chamber identity). Within that legislator's terms, looks for an
+    existing row keyed by ``bcn_appointment_uri`` (the BCN PositionPeriod
+    URI) and updates it; otherwise opens a new term. Returns ``None`` if
+    no legislator matches the URI — the caller logs and skips. See ADR-0015.
     """
+    legislator = db.execute(
+        select(Legislator).where(Legislator.bcn_uri == bcn_uri)
+    ).scalar_one_or_none()
+    if legislator is None:
+        return None
+
     chamber = _get_or_create_chamber(db, chamber_type)
+    period = _resolve_term_period(db, start_date)
+    if period is None:
+        return None
+
     existing = db.execute(
-        select(ParliamentaryAppointment).where(
-            ParliamentaryAppointment.bcn_appointment_uri == bcn_appointment_uri
+        select(LegislatorTerm).where(
+            LegislatorTerm.bcn_appointment_uri == bcn_appointment_uri
         )
     ).scalar_one_or_none()
     if existing is None:
-        appointment = ParliamentaryAppointment(
-            legislator_id=legislator_id,
+        # Try to match an existing chamber+start term (so SPARQL just stamps
+        # the URI onto a term that another source already opened).
+        existing = db.execute(
+            select(LegislatorTerm).where(
+                LegislatorTerm.legislator_id == legislator.id,
+                LegislatorTerm.chamber_id == chamber.id,
+                LegislatorTerm.start_date == start_date,
+            )
+        ).scalar_one_or_none()
+    if existing is None:
+        term = LegislatorTerm(
+            legislator_id=legislator.id,
+            period_id=period.id,
             chamber_id=chamber.id,
             bcn_appointment_uri=bcn_appointment_uri,
             start_date=start_date,
             end_date=end_date,
         )
-        db.add(appointment)
+        db.add(term)
         db.flush()
-        return appointment
+        _reconcile_orphan_votes(db, term)
+        return term
 
     changed = False
-    if existing.legislator_id != legislator_id:
-        existing.legislator_id = legislator_id
+    if existing.legislator_id != legislator.id:
+        existing.legislator_id = legislator.id
         changed = True
-    if existing.chamber_id != chamber.id:
-        existing.chamber_id = chamber.id
+    if existing.bcn_appointment_uri != bcn_appointment_uri:
+        existing.bcn_appointment_uri = bcn_appointment_uri
         changed = True
-    if existing.start_date != start_date:
-        existing.start_date = start_date
-        changed = True
-    if existing.end_date != end_date:
+    if existing.end_date != end_date and end_date is not None:
         existing.end_date = end_date
         changed = True
     if changed:

@@ -1,9 +1,12 @@
-from sqlalchemy import ColumnElement, case, func
+from datetime import date
+
+from sqlalchemy import ColumnElement, case, func, or_, select
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.models.core import Circumscription, District, Region, Topic
 from app.models.enums import ChamberType, VoteChoice
 from app.models.legislature import (
+    Chamber,
     Committee,
     CommitteeMembership,
     Legislator,
@@ -19,11 +22,38 @@ MAX_LIMIT = 200
 DEFAULT_RECORD_LIMIT = 60
 TOPIC_AFFINITY_LIMIT = 8
 
-# Sentinel value for `party` query param meaning "Legislator.party_id IS NULL".
+# Sentinel value for `party` query param meaning "currently has no party".
 # Independents are not a party (see CONTEXT.md "Independent legislator") so we
 # can't filter them by abbreviation. A sentinel keeps the API contract simple
 # without inventing an Independent party row.
 PARTY_INDEPENDENT_SENTINEL = "__independent__"
+
+
+def active_term_subquery(today: date | None = None):
+    """Scalar subquery returning ids of legislators with an open term today.
+
+    ``Legislator`` no longer carries a stored chamber/party/is_active — those
+    are properties of the active :class:`LegislatorTerm`. List/filter queries
+    use this subquery to express "currently serving" without the legacy
+    column. See ADR-0015.
+    """
+    today = today or date.today()
+    return (
+        select(LegislatorTerm.legislator_id)
+        .where(LegislatorTerm.start_date <= today)
+        .where(or_(LegislatorTerm.end_date.is_(None), LegislatorTerm.end_date >= today))
+    )
+
+
+def _active_term_with_chamber_subquery(chamber: ChamberType, today: date | None = None):
+    today = today or date.today()
+    return (
+        select(LegislatorTerm.legislator_id)
+        .join(Chamber, Chamber.id == LegislatorTerm.chamber_id)
+        .where(LegislatorTerm.start_date <= today)
+        .where(or_(LegislatorTerm.end_date.is_(None), LegislatorTerm.end_date >= today))
+        .where(Chamber.chamber_type == chamber)
+    )
 
 
 def _count_choice(choice: VoteChoice):
@@ -130,10 +160,23 @@ def list_legislators(
     offset: int,
     limit: int,
 ) -> tuple[int, list[Legislator]]:
+    """List legislators with filters on the *currently active* term.
+
+    Filters that target chamber/party/district/circumscription/is_active now
+    resolve against the active :class:`LegislatorTerm` (those columns were
+    removed from ``Legislator`` per ADR-0015). The query loads the term tree
+    eagerly so the API can project ``current_*`` properties without N+1.
+    """
+    today = date.today()
     query = db.query(Legislator).options(
-        joinedload(Legislator.party).selectinload(PoliticalParty.bloc_affiliations),
-        joinedload(Legislator.district),
-        joinedload(Legislator.circumscription),
+        selectinload(Legislator.terms).options(
+            joinedload(LegislatorTerm.chamber),
+            joinedload(LegislatorTerm.party).selectinload(
+                PoliticalParty.bloc_affiliations
+            ),
+            joinedload(LegislatorTerm.district),
+            joinedload(LegislatorTerm.circumscription),
+        ),
         # voting_lean (on LegislatorSummary) reads this; eager-load to avoid N+1.
         selectinload(Legislator.voting_stats),
     )
@@ -142,41 +185,86 @@ def list_legislators(
     filters: list[ColumnElement[bool]] = []
     if q:
         filters.append(Legislator.full_name.ilike(f"%{q}%"))
+
+    # Party filter: needs to look at the *active* term's party.
     if party == PARTY_INDEPENDENT_SENTINEL:
-        filters.append(Legislator.party_id.is_(None))
+        # Active term exists, but its party_id is NULL.
+        active_with_party = active_term_subquery(today).where(
+            LegislatorTerm.party_id.isnot(None)
+        )
+        filters.append(Legislator.id.in_(active_term_subquery(today)))
+        filters.append(~Legislator.id.in_(active_with_party))
     elif party:
-        filters.append(
-            Legislator.party.has(PoliticalParty.abbreviation == party),
+        party_filter = (
+            active_term_subquery(today)
+            .join(PoliticalParty, PoliticalParty.id == LegislatorTerm.party_id)
+            .where(PoliticalParty.abbreviation == party)
         )
+        filters.append(Legislator.id.in_(party_filter))
+
     if district is not None:
-        filters.append(Legislator.district.has(District.number == district))
-    if circumscription is not None:
-        filters.append(
-            Legislator.circumscription.has(Circumscription.number == circumscription),
+        district_filter = (
+            active_term_subquery(today)
+            .join(District, District.id == LegislatorTerm.district_id)
+            .where(District.number == district)
         )
+        filters.append(Legislator.id.in_(district_filter))
+
+    if circumscription is not None:
+        circ_filter = (
+            active_term_subquery(today)
+            .join(
+                Circumscription, Circumscription.id == LegislatorTerm.circumscription_id
+            )
+            .where(Circumscription.number == circumscription)
+        )
+        filters.append(Legislator.id.in_(circ_filter))
+
     if region is not None:
         if chamber_type == ChamberType.DEPUTIES:
-            filters.append(Legislator.district.has(District.region_id == region))
+            region_filter = (
+                active_term_subquery(today)
+                .join(District, District.id == LegislatorTerm.district_id)
+                .where(District.region_id == region)
+            )
+            filters.append(Legislator.id.in_(region_filter))
         elif chamber_type == ChamberType.SENATE:
-            filters.append(
-                Legislator.circumscription.has(
-                    Circumscription.regions.any(Region.id == region),
-                ),
+            region_filter = (
+                active_term_subquery(today)
+                .join(
+                    Circumscription,
+                    Circumscription.id == LegislatorTerm.circumscription_id,
+                )
+                .where(Circumscription.regions.any(Region.id == region))
             )
+            filters.append(Legislator.id.in_(region_filter))
         else:
-            # No chamber selected: match a legislator whose district OR
-            # circumscription is in the region. Senators' circumscriptions are
-            # many-to-many with regions (see app/models/core.py).
-            filters.append(
-                Legislator.district.has(District.region_id == region)
-                | Legislator.circumscription.has(
-                    Circumscription.regions.any(Region.id == region),
-                ),
+            district_filter = (
+                active_term_subquery(today)
+                .join(District, District.id == LegislatorTerm.district_id)
+                .where(District.region_id == region)
             )
+            circ_filter = (
+                active_term_subquery(today)
+                .join(
+                    Circumscription,
+                    Circumscription.id == LegislatorTerm.circumscription_id,
+                )
+                .where(Circumscription.regions.any(Region.id == region))
+            )
+            filters.append(
+                or_(
+                    Legislator.id.in_(district_filter),
+                    Legislator.id.in_(circ_filter),
+                )
+            )
+
     if chamber_type is not None:
-        filters.append(Legislator.chamber_type == chamber_type)
+        filters.append(
+            Legislator.id.in_(_active_term_with_chamber_subquery(chamber_type, today))
+        )
     if not include_inactive:
-        filters.append(Legislator.is_active.is_(True))
+        filters.append(Legislator.id.in_(active_term_subquery(today)))
 
     for clause in filters:
         query = query.filter(clause)
@@ -196,12 +284,13 @@ def get_legislator(db: Session, legislator_id: int) -> Legislator | None:
     return (
         db.query(Legislator)
         .options(
-            joinedload(Legislator.party).selectinload(PoliticalParty.bloc_affiliations),
-            joinedload(Legislator.district),
-            joinedload(Legislator.circumscription),
             selectinload(Legislator.terms).options(
                 joinedload(LegislatorTerm.chamber),
-                joinedload(LegislatorTerm.party),
+                joinedload(LegislatorTerm.party).selectinload(
+                    PoliticalParty.bloc_affiliations
+                ),
+                joinedload(LegislatorTerm.district),
+                joinedload(LegislatorTerm.circumscription),
             ),
             selectinload(Legislator.committee_memberships).options(
                 joinedload(CommitteeMembership.committee).joinedload(Committee.chamber),

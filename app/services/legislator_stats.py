@@ -188,6 +188,10 @@ def _base_stats(db: Session) -> dict[int, dict]:
     def _sum(choice: VoteChoice):
         return func.coalesce(func.sum(case((Vote.vote == choice, 1), else_=0)), 0)
 
+    # Orphan votes (legislator_id IS NULL, per ADR-0015) carry a chamber
+    # bridge but no resolved legislator yet — the reconciler attaches them
+    # when the matching LegislatorTerm arrives. They are excluded from
+    # per-legislator stats; the next refresh after resolution picks them up.
     rows = (
         db.query(
             Vote.legislator_id.label("legislator_id"),
@@ -197,6 +201,7 @@ def _base_stats(db: Session) -> dict[int, dict]:
             _sum(VoteChoice.ABSTAIN).label("abstentions"),
             _sum(VoteChoice.ABSENT).label("absences"),
         )
+        .filter(Vote.legislator_id.isnot(None))
         .group_by(Vote.legislator_id)
         .all()
     )
@@ -252,6 +257,11 @@ def _period_votes(
                 ),
             ),
         )
+        # Orphan votes (legislator_id IS NULL, per ADR-0015) carry no
+        # attributable legislator and would pollute the per-legislator
+        # aggregations downstream. The reconciler claims them when the
+        # matching LegislatorTerm arrives; the next refresh picks them up.
+        .filter(Vote.legislator_id.isnot(None))
         .filter(Vote.vote.in_(PARTY_CHOICES))
     )
     if period_start is not None:
@@ -284,8 +294,16 @@ def refresh_legislator_voting_stats(db: Session) -> int:
     base = _base_stats(db)
     period_start = _current_period_start(db)
     party_bloc, default_bloc = _bloc_maps(db)
+    today = date.today()
     current_party = {
-        lid: pid for lid, pid in db.query(Legislator.id, Legislator.party_id).all()
+        lid: pid
+        for lid, pid in db.query(LegislatorTerm.legislator_id, LegislatorTerm.party_id)
+        .filter(
+            LegislatorTerm.start_date <= today,
+            or_(LegislatorTerm.end_date.is_(None), LegislatorTerm.end_date >= today),
+        )
+        .order_by(LegislatorTerm.legislator_id, LegislatorTerm.start_date.desc())
+        .all()
     }
 
     def voter_bloc(legislator_id: int, party_id: int | None) -> Bloc | None:

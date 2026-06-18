@@ -5,7 +5,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.models.enums import BillOrigin, BillStatus, BillType, ChamberType
-from app.models.legislature import Chamber, Legislator
+from app.models.legislature import Chamber, Legislator, LegislatorTerm
 from app.models.proyecto import (
     Bill,
     BillAuthorship,
@@ -133,7 +133,12 @@ def _full_options():
         joinedload(Bill.current_committee),
         selectinload(Bill.topics),
         selectinload(Bill.authorships).options(
-            joinedload(BillAuthorship.legislator).options(joinedload(Legislator.party))
+            joinedload(BillAuthorship.legislator).options(
+                # ``current_party`` reads from active term; eager-load terms
+                # + their party + chamber to avoid N+1. See ADR-0015.
+                selectinload(Legislator.terms).joinedload(LegislatorTerm.party),
+                selectinload(Legislator.terms).joinedload(LegislatorTerm.chamber),
+            )
         ),
         selectinload(Bill.stages).options(
             joinedload(BillStage.chamber),

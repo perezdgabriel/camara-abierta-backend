@@ -4,7 +4,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.models.enums import ChamberType, SignalType, VotingResult
-from app.models.legislature import Chamber, Legislator
+from app.models.legislature import Chamber, Legislator, LegislatorTerm
 from app.models.votacion import Vote, VotingSession, VotingSessionSignal
 
 DEFAULT_OFFSET = 0
@@ -94,7 +94,14 @@ def get_voting_session(db: Session, voting_session_id: int) -> VotingSession | N
             joinedload(VotingSession.bill),
             selectinload(VotingSession.signals),
             selectinload(VotingSession.votes).options(
-                joinedload(Vote.legislator).joinedload(Legislator.party),
+                # ``Legislator.current_party`` reads from the active term;
+                # eager-load terms/party/chamber to avoid N+1. See ADR-0015.
+                joinedload(Vote.legislator)
+                .selectinload(Legislator.terms)
+                .joinedload(LegislatorTerm.party),
+                joinedload(Vote.legislator)
+                .selectinload(Legislator.terms)
+                .joinedload(LegislatorTerm.chamber),
             ),
         )
         .filter(VotingSession.id == voting_session_id)

@@ -1,11 +1,15 @@
 from datetime import date, datetime, timedelta
 
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, joinedload
 
 from app.models.core import Topic
 from app.models.enums import BillStatus, ChamberType
-from app.models.legislature import Legislator, PoliticalParty
+from app.models.legislature import (
+    Chamber,
+    LegislatorTerm,
+    PoliticalParty,
+)
 from app.models.proyecto import Bill, BillEvent, BillUrgency, bill_topics
 from app.models.votacion import VotingSession
 from app.services import proyectos as bills_svc
@@ -74,27 +78,40 @@ def _topic_distribution(db: Session) -> list[tuple[Topic, int]]:
 
 
 def _chamber_composition(db: Session) -> list[tuple[PoliticalParty | None, int]]:
-    rows = (
-        db.query(PoliticalParty, func.count(Legislator.id).label("count"))
-        .join(Legislator, Legislator.party_id == PoliticalParty.id)
+    """Count active deputies grouped by current party.
+
+    Chamber/party/is_active live on :class:`LegislatorTerm` since ADR-0015,
+    so the composition query joins through the active term rather than the
+    legacy ``Legislator.party_id`` column. Each active term contributes one
+    counted seat — a person with overlapping terms (rare data error) would
+    double-count, so we DISTINCT on legislator id.
+    """
+    today = date.today()
+    active_deputy_term = (
+        db.query(LegislatorTerm.legislator_id, LegislatorTerm.party_id)
+        .join(Chamber, Chamber.id == LegislatorTerm.chamber_id)
         .filter(
-            Legislator.chamber_type == ChamberType.DEPUTIES,
-            Legislator.is_active.is_(True),
+            LegislatorTerm.start_date <= today,
+            or_(LegislatorTerm.end_date.is_(None), LegislatorTerm.end_date >= today),
+            Chamber.chamber_type == ChamberType.DEPUTIES,
         )
+        .distinct(LegislatorTerm.legislator_id)
+        .subquery()
+    )
+
+    rows = (
+        db.query(PoliticalParty, func.count(active_deputy_term.c.legislator_id))
+        .join(PoliticalParty, PoliticalParty.id == active_deputy_term.c.party_id)
         .group_by(PoliticalParty.id)
-        .order_by(func.count(Legislator.id).desc())
+        .order_by(func.count(active_deputy_term.c.legislator_id).desc())
         .all()
     )
     result: list[tuple[PoliticalParty | None, int]] = [
         (party, count) for party, count in rows
     ]
     ind_count = (
-        db.query(func.count(Legislator.id))
-        .filter(
-            Legislator.party_id.is_(None),
-            Legislator.chamber_type == ChamberType.DEPUTIES,
-            Legislator.is_active.is_(True),
-        )
+        db.query(func.count(active_deputy_term.c.legislator_id))
+        .filter(active_deputy_term.c.party_id.is_(None))
         .scalar()
         or 0
     )

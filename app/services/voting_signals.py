@@ -20,7 +20,7 @@ from datetime import date, datetime, time, timedelta
 from typing import Any
 
 from sqlalchemy import and_, func, or_
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.models.enums import ChamberType, SignalType, VoteChoice, VotingResult
 from app.models.legislature import Chamber, Legislator, LegislatorTerm, PoliticalParty
@@ -159,11 +159,12 @@ def compute_alto_ausentismo(db: Session, session: VotingSession) -> SignalResult
 
 
 def _legislator_brief_dict(legislator: Legislator) -> dict[str, Any]:
-    party = legislator.party
+    party = legislator.current_party
+    chamber = legislator.current_chamber_type
     return {
         "id": legislator.id,
         "full_name": legislator.full_name,
-        "chamber_type": legislator.chamber_type.value,
+        "chamber_type": chamber.value if chamber is not None else None,
         "party": (
             {
                 "id": party.id,
@@ -287,7 +288,10 @@ def compute_quiebre_bloque(db: Session, session: VotingSession) -> SignalResult 
             continue
         dissenter_objs = (
             db.query(Legislator)
-            .options(joinedload(Legislator.party))
+            .options(
+                selectinload(Legislator.terms).joinedload(LegislatorTerm.party),
+                selectinload(Legislator.terms).joinedload(LegislatorTerm.chamber),
+            )
             .filter(Legislator.id.in_(party_dissenter_ids))
             .all()
             if party_dissenter_ids
