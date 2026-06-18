@@ -91,18 +91,50 @@ class VotingSession(SyncableMixin, Base):
 
 
 class Vote(SyncableMixin, Base):
+    """An individual legislator's vote within a :class:`VotingSession`.
+
+    ``legislator_external_id`` is the per-stint chamber bridge from the
+    upstream payload (``camara:{Id}`` for chamber votes, ``senado:{PARLID}``
+    for senate votes) and is always populated — it remains on the row after
+    resolution to support idempotent orphan reconciliation and traceability.
+
+    When the resolver can match the bridge to a :class:`LegislatorTerm` whose
+    date window covers ``voting_session.voting_date``, ``legislator_id`` is
+    set to the canonical legislator. When no term matches (e.g. a brand-new
+    legislator who has not been ingested yet), the row is saved orphaned —
+    ``legislator_id IS NULL`` — and a reconciler fills it in once the term
+    arrives. See ADR-0015.
+    """
+
     __tablename__ = "votes"
     __table_args__ = (
-        UniqueConstraint(
-            "voting_session_id", "legislator_id", name="uq_votes_session_legislator"
+        # One resolved vote per (session, legislator).
+        Index(
+            "uq_votes_session_legislator",
+            "voting_session_id",
+            "legislator_id",
+            unique=True,
+            postgresql_where="legislator_id IS NOT NULL",
+        ),
+        # One orphan vote per (session, bridge ID) while the legislator is
+        # still unknown — prevents duplicate orphans across re-ingestion.
+        Index(
+            "uq_votes_session_external_orphan",
+            "voting_session_id",
+            "legislator_external_id",
+            unique=True,
+            postgresql_where="legislator_id IS NULL",
         ),
     )
 
     voting_session_id: Mapped[int] = mapped_column(
         ForeignKey("voting_sessions.id", ondelete="CASCADE"), nullable=False
     )
-    legislator_id: Mapped[int] = mapped_column(
-        ForeignKey("legislators.id", ondelete="CASCADE"), nullable=False
+    legislator_id: Mapped[int | None] = mapped_column(
+        ForeignKey("legislators.id", ondelete="CASCADE")
+    )
+    legislator_external_id: Mapped[str] = mapped_column(
+        String(50), nullable=False, index=True
     )
     vote: Mapped[VoteChoice] = mapped_column(
         SqlEnum(
@@ -112,7 +144,7 @@ class Vote(SyncableMixin, Base):
     )
 
     voting_session: Mapped[VotingSession] = relationship(back_populates="votes")
-    legislator: Mapped[Legislator] = relationship(back_populates="votes")
+    legislator: Mapped[Legislator | None] = relationship(back_populates="votes")
 
     def __str__(self) -> str:
         return f"{self.vote} - legislador {self.legislator_id}"

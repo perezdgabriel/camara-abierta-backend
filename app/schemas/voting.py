@@ -33,16 +33,27 @@ class BillBrief(ORMModel):
 
 
 class LegislatorBrief(ORMModel):
+    """Lightweight legislator reference for vote rows.
+
+    ``chamber_type`` / ``party`` now derive from the active term (ADR-0015);
+    Pydantic reads them via the property aliases.
+    """
+
     id: int
     full_name: str
-    chamber_type: ChamberType
-    party: PartyBrief | None = None
+    chamber_type: ChamberType | None = Field(
+        default=None, validation_alias="current_chamber_type"
+    )
+    party: PartyBrief | None = Field(default=None, validation_alias="current_party")
 
 
 class VoteDetail(ORMModel):
     id: int
     vote: VoteChoice
-    legislator: LegislatorBrief
+    # Nullable: orphan votes (per ADR-0015) carry a bridge ID but no
+    # resolved legislator until a matching LegislatorTerm arrives.
+    legislator: LegislatorBrief | None = None
+    legislator_external_id: str
 
 
 class SignalRef(ORMModel):

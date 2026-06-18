@@ -1,9 +1,19 @@
 from __future__ import annotations
 
-from datetime import date
-from typing import TYPE_CHECKING
+from datetime import date, datetime
+from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import Boolean, Date, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    Date,
+    DateTime,
+    ForeignKey,
+    Index,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy import Enum as SqlEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -29,7 +39,6 @@ class PoliticalParty(SyncableMixin, Base):
     color: Mapped[str | None] = mapped_column(String(7))
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
-    legislators: Mapped[list["Legislator"]] = relationship(back_populates="party")
     coalitions: Mapped[list["CoalitionMembership"]] = relationship(
         back_populates="party"
     )
@@ -187,9 +196,21 @@ class Chamber(SyncableMixin, Base):
 
 
 class Legislator(SyncableMixin, Base):
+    """A physical parliamentarian, identity-stable across chambers and stints.
+
+    ``Legislator`` represents the person; all chamber-scoped facts (chamber,
+    party, district/circumscription, the upstream chamber bridge ID, dates,
+    end reason) live on dated :class:`LegislatorTerm` rows. A senator who was
+    previously a deputy is one ``Legislator`` with multiple terms.
+
+    ``bcn_uri`` is the canonical cross-chamber identity (BCN's person URI).
+    Chamber-side bridge IDs (``camara:{Id}``, ``senado:{PARLID}``) live on
+    each term, since they are valid only during the matching stint and a
+    person can carry different bridges across stints. See ADR-0015.
+    """
+
     __tablename__ = "legislators"
 
-    bcn_id: Mapped[str | None] = mapped_column(String(50), unique=True)
     bcn_uri: Mapped[str | None] = mapped_column(String(500), unique=True)
     first_name: Mapped[str] = mapped_column(String(100), nullable=False)
     last_name: Mapped[str] = mapped_column(String(100), nullable=False)
@@ -208,25 +229,6 @@ class Legislator(SyncableMixin, Base):
     twitter_handle: Mapped[str | None] = mapped_column(String(50))
     instagram_handle: Mapped[str | None] = mapped_column(String(50))
     facebook_url: Mapped[str | None] = mapped_column(String(500))
-    chamber_type: Mapped[ChamberType] = mapped_column(
-        SqlEnum(
-            ChamberType,
-            name="legislator_chamber_type",
-            native_enum=False,
-            validate_strings=True,
-        ),
-        nullable=False,
-    )
-    party_id: Mapped[int | None] = mapped_column(
-        ForeignKey("political_parties.id", ondelete="SET NULL")
-    )
-    district_id: Mapped[int | None] = mapped_column(
-        ForeignKey("districts.id", ondelete="SET NULL")
-    )
-    circumscription_id: Mapped[int | None] = mapped_column(
-        ForeignKey("circumscriptions.id", ondelete="SET NULL")
-    )
-    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     default_bloc: Mapped[Bloc | None] = mapped_column(
         SqlEnum(
             Bloc,
@@ -236,14 +238,8 @@ class Legislator(SyncableMixin, Base):
         )
     )
 
-    party: Mapped[PoliticalParty | None] = relationship(back_populates="legislators")
-    district: Mapped[District | None] = relationship(back_populates="legislators")
-    circumscription: Mapped[Circumscription | None] = relationship(
-        back_populates="legislators"
-    )
-    terms: Mapped[list["LegislatorTerm"]] = relationship(back_populates="legislator")
-    appointments: Mapped[list["ParliamentaryAppointment"]] = relationship(
-        back_populates="legislator"
+    terms: Mapped[list["LegislatorTerm"]] = relationship(
+        back_populates="legislator", order_by="LegislatorTerm.start_date.desc()"
     )
     committee_memberships: Mapped[list["CommitteeMembership"]] = relationship(
         back_populates="legislator"
@@ -255,6 +251,65 @@ class Legislator(SyncableMixin, Base):
     voting_stats: Mapped["LegislatorVotingStats"] = relationship(
         back_populates="legislator", uselist=False
     )
+
+    @property
+    def active_term(self) -> "LegislatorTerm | None":
+        """The currently-open term, or ``None`` if no term covers today.
+
+        Reads from the eager-loadable ``terms`` relationship; callers should
+        ``selectinload(Legislator.terms)`` to avoid N+1. When multiple terms
+        are open simultaneously (rare — usually a data error) the most-recently
+        started one wins.
+        """
+        today = date.today()
+        active = [
+            term
+            for term in self.terms
+            if term.start_date <= today
+            and (term.end_date is None or term.end_date >= today)
+        ]
+        if not active:
+            return None
+        return max(active, key=lambda term: term.start_date)
+
+    @property
+    def is_active(self) -> bool:
+        """``True`` when the legislator has an open ``LegislatorTerm``.
+
+        Replaces the legacy stored flag — derived from terms, never written.
+        See CONTEXT.md "Active legislator".
+        """
+        return self.active_term is not None
+
+    @property
+    def current_chamber_type(self) -> ChamberType | None:
+        term = self.active_term
+        return term.chamber.chamber_type if term and term.chamber else None
+
+    @property
+    def current_party(self) -> PoliticalParty | None:
+        term = self.active_term
+        return term.party if term else None
+
+    @property
+    def current_party_id(self) -> int | None:
+        term = self.active_term
+        return term.party_id if term else None
+
+    @property
+    def current_district(self) -> District | None:
+        term = self.active_term
+        return term.district if term else None
+
+    @property
+    def current_circumscription(self) -> Circumscription | None:
+        term = self.active_term
+        return term.circumscription if term else None
+
+    @property
+    def current_chamber_external_id(self) -> str | None:
+        term = self.active_term
+        return term.chamber_external_id if term else None
 
     @property
     def voting_lean(self) -> dict | None:
@@ -279,7 +334,11 @@ class Legislator(SyncableMixin, Base):
         """Disciplina partidaria for the API. Only for current party members —
         an independent has no party to measure against (see web CONTEXT.md)."""
         stats = self.voting_stats
-        if stats is None or self.party_id is None or stats.discipline_decided == 0:
+        if (
+            stats is None
+            or self.current_party_id is None
+            or stats.discipline_decided == 0
+        ):
             return None
         return {
             "rate": (
@@ -296,7 +355,33 @@ class Legislator(SyncableMixin, Base):
 
 
 class LegislatorTerm(SyncableMixin, Base):
+    """A dated chamber stint with the party, district/circumscription, and
+    upstream chamber bridge ID active during that window.
+
+    Canonical home for everything chamber-scoped about a parliamentarian.
+    One row per per-stint party window: a four-year deputy who switches
+    party once produces two contiguous terms sharing the same chamber and
+    bridge. ``chamber_external_id`` is the upstream ID for the chamber
+    holding the stint (``camara:{OpenData Id}`` for deputy stints,
+    ``senado:{ID_PARLAMENTARIO}`` for senate stints) and is the primary
+    join key from votes to legislators. ``bcn_appointment_uri`` (BCN
+    ``PositionPeriod`` URI) is the SPARQL-side upsert key, populated only
+    when the out-of-band BCN SPARQL enrichment runs. See ADR-0015.
+    """
+
     __tablename__ = "legislator_terms"
+    __table_args__ = (
+        Index(
+            "ix_legislator_terms_bridge_window",
+            "chamber_external_id",
+            "start_date",
+            "end_date",
+        ),
+        UniqueConstraint(
+            "bcn_appointment_uri",
+            name="uq_legislator_terms_bcn_appointment_uri",
+        ),
+    )
 
     legislator_id: Mapped[int] = mapped_column(
         ForeignKey("legislators.id", ondelete="CASCADE"), nullable=False
@@ -310,6 +395,14 @@ class LegislatorTerm(SyncableMixin, Base):
     party_id: Mapped[int | None] = mapped_column(
         ForeignKey("political_parties.id", ondelete="SET NULL")
     )
+    district_id: Mapped[int | None] = mapped_column(
+        ForeignKey("districts.id", ondelete="SET NULL")
+    )
+    circumscription_id: Mapped[int | None] = mapped_column(
+        ForeignKey("circumscriptions.id", ondelete="SET NULL")
+    )
+    chamber_external_id: Mapped[str | None] = mapped_column(String(50))
+    bcn_appointment_uri: Mapped[str | None] = mapped_column(String(500))
     start_date: Mapped[date] = mapped_column(Date, nullable=False)
     end_date: Mapped[date | None] = mapped_column(Date)
     end_reason: Mapped[str | None] = mapped_column(String(200))
@@ -318,34 +411,37 @@ class LegislatorTerm(SyncableMixin, Base):
     period: Mapped[LegislativePeriod] = relationship(back_populates="terms")
     chamber: Mapped[Chamber] = relationship()
     party: Mapped[PoliticalParty | None] = relationship()
+    district: Mapped[District | None] = relationship()
+    circumscription: Mapped[Circumscription | None] = relationship()
 
 
-class ParliamentaryAppointment(SyncableMixin, Base):
-    """A single parliamentary appointment (BCN ``PositionPeriod``).
+class LegislatorMergeCandidate(SyncableMixin, Base):
+    """A pending cross-chamber person merge that name + period overlap could
+    not auto-resolve.
 
-    One row per ``bcnbio:hasParliamentaryAppointment`` triple in the BCN graph:
-    the formal, dated record that legislator X served in chamber Y from
-    ``start_date`` to ``end_date``. Distinct from :class:`LegislatorTerm`, which
-    tracks party-membership windows derived from OpenData militancias and may
-    record several rows per appointment (one per party change). See ADR-0012.
+    Written when ingesting a senator with a deputy-history (or a deputy who
+    was previously a senator) whose normalized name matches several existing
+    ``Legislator`` rows and whose `PERIODOS`/militancia date ranges don't
+    disambiguate cleanly. Resolved manually via the sqladmin panel by
+    setting ``resolved_legislator_id`` and ``resolved_at``. See ADR-0015.
     """
 
-    __tablename__ = "parliamentary_appointments"
+    __tablename__ = "legislator_merge_candidates"
 
-    legislator_id: Mapped[int] = mapped_column(
-        ForeignKey("legislators.id", ondelete="CASCADE"), nullable=False
+    source: Mapped[str] = mapped_column(String(50), nullable=False)
+    source_external_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    first_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    last_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    full_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    candidate_legislator_ids: Mapped[list[int]] = mapped_column(JSON, nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    resolved_legislator_id: Mapped[int | None] = mapped_column(
+        ForeignKey("legislators.id", ondelete="SET NULL")
     )
-    chamber_id: Mapped[int] = mapped_column(
-        ForeignKey("chambers.id", ondelete="RESTRICT"), nullable=False
-    )
-    bcn_appointment_uri: Mapped[str] = mapped_column(
-        String(500), nullable=False, unique=True
-    )
-    start_date: Mapped[date] = mapped_column(Date, nullable=False)
-    end_date: Mapped[date] = mapped_column(Date, nullable=False)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
-    legislator: Mapped[Legislator] = relationship(back_populates="appointments")
-    chamber: Mapped[Chamber] = relationship()
+    def __str__(self) -> str:
+        return f"{self.source}:{self.source_external_id} → {self.full_name}"
 
 
 class Committee(SyncableMixin, Base):

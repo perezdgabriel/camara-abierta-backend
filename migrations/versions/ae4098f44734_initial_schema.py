@@ -1,8 +1,8 @@
 """initial_schema
 
-Revision ID: 85185b6768e9
+Revision ID: ae4098f44734
 Revises: 
-Create Date: 2026-06-15 11:27:44.421635
+Create Date: 2026-06-17 16:33:36.153925
 """
 
 from alembic import op
@@ -11,7 +11,7 @@ from sqlalchemy.dialects import postgresql
 
 
 # revision identifiers, used by Alembic.
-revision = '85185b6768e9'
+revision = 'ae4098f44734'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -114,6 +114,36 @@ def upgrade() -> None:
     )
     op.create_index(op.f('ix_legislative_periods_deleted_at'), 'legislative_periods', ['deleted_at'], unique=False)
     op.create_index(op.f('ix_legislative_periods_sync_version'), 'legislative_periods', ['sync_version'], unique=False)
+    op.create_table('legislators',
+    sa.Column('bcn_uri', sa.String(length=500), nullable=True),
+    sa.Column('first_name', sa.String(length=100), nullable=False),
+    sa.Column('last_name', sa.String(length=100), nullable=False),
+    sa.Column('full_name', sa.String(length=200), nullable=False),
+    sa.Column('gender', sa.String(length=1), nullable=True),
+    sa.Column('birth_date', sa.Date(), nullable=True),
+    sa.Column('profession', sa.String(length=200), nullable=True),
+    sa.Column('biography', sa.Text(), nullable=True),
+    sa.Column('photo_url', sa.String(length=500), nullable=True),
+    sa.Column('photo_thumbnail_url', sa.String(length=500), nullable=True),
+    sa.Column('profile_url', sa.String(length=500), nullable=True),
+    sa.Column('bcn_wiki_url', sa.String(length=500), nullable=True),
+    sa.Column('email', sa.String(length=255), nullable=True),
+    sa.Column('phone', sa.String(length=50), nullable=True),
+    sa.Column('website', sa.String(length=500), nullable=True),
+    sa.Column('twitter_handle', sa.String(length=50), nullable=True),
+    sa.Column('instagram_handle', sa.String(length=50), nullable=True),
+    sa.Column('facebook_url', sa.String(length=500), nullable=True),
+    sa.Column('default_bloc', sa.Enum('OFICIALISMO', 'OPOSICION', name='legislator_default_bloc', native_enum=False), nullable=True),
+    sa.Column('id', sa.BigInteger(), nullable=False),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.Column('deleted_at', sa.DateTime(timezone=True), nullable=True),
+    sa.Column('sync_version', sa.BigInteger(), server_default=sa.text("nextval('global_sync_version_seq')"), nullable=False),
+    sa.PrimaryKeyConstraint('id', name=op.f('pk_legislators')),
+    sa.UniqueConstraint('bcn_uri', name=op.f('uq_legislators_bcn_uri'))
+    )
+    op.create_index(op.f('ix_legislators_deleted_at'), 'legislators', ['deleted_at'], unique=False)
+    op.create_index(op.f('ix_legislators_sync_version'), 'legislators', ['sync_version'], unique=False)
     op.create_table('official_gazette_norms',
     sa.Column('date', sa.Date(), nullable=False),
     sa.Column('edition', sa.Text(), nullable=True),
@@ -316,6 +346,54 @@ def upgrade() -> None:
     )
     op.create_index(op.f('ix_legislative_sessions_deleted_at'), 'legislative_sessions', ['deleted_at'], unique=False)
     op.create_index(op.f('ix_legislative_sessions_sync_version'), 'legislative_sessions', ['sync_version'], unique=False)
+    op.create_table('legislator_merge_candidates',
+    sa.Column('source', sa.String(length=50), nullable=False),
+    sa.Column('source_external_id', sa.String(length=100), nullable=False),
+    sa.Column('first_name', sa.String(length=100), nullable=False),
+    sa.Column('last_name', sa.String(length=200), nullable=False),
+    sa.Column('full_name', sa.String(length=200), nullable=False),
+    sa.Column('candidate_legislator_ids', sa.JSON(), nullable=False),
+    sa.Column('payload', sa.JSON(), nullable=False),
+    sa.Column('resolved_legislator_id', sa.BigInteger(), nullable=True),
+    sa.Column('resolved_at', sa.DateTime(timezone=True), nullable=True),
+    sa.Column('id', sa.BigInteger(), nullable=False),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.Column('deleted_at', sa.DateTime(timezone=True), nullable=True),
+    sa.Column('sync_version', sa.BigInteger(), server_default=sa.text("nextval('global_sync_version_seq')"), nullable=False),
+    sa.ForeignKeyConstraint(['resolved_legislator_id'], ['legislators.id'], name=op.f('fk_legislator_merge_candidates_resolved_legislator_id_legislators'), ondelete='SET NULL'),
+    sa.PrimaryKeyConstraint('id', name=op.f('pk_legislator_merge_candidates'))
+    )
+    op.create_index(op.f('ix_legislator_merge_candidates_deleted_at'), 'legislator_merge_candidates', ['deleted_at'], unique=False)
+    op.create_index(op.f('ix_legislator_merge_candidates_sync_version'), 'legislator_merge_candidates', ['sync_version'], unique=False)
+    op.create_table('legislator_voting_stats',
+    sa.Column('legislator_id', sa.BigInteger(), nullable=False),
+    sa.Column('total_sessions', sa.Integer(), nullable=False),
+    sa.Column('votes_for', sa.Integer(), nullable=False),
+    sa.Column('votes_against', sa.Integer(), nullable=False),
+    sa.Column('abstentions', sa.Integer(), nullable=False),
+    sa.Column('absences', sa.Integer(), nullable=False),
+    sa.Column('attendance_percentage', sa.Numeric(precision=5, scale=2), nullable=False),
+    sa.Column('participation_rate', sa.Numeric(precision=5, scale=2), nullable=False),
+    sa.Column('inferred_bloc', sa.Enum('OFICIALISMO', 'OPOSICION', name='legislator_inferred_bloc', native_enum=False), nullable=True),
+    sa.Column('lean_agreed', sa.Integer(), nullable=False),
+    sa.Column('lean_contested', sa.Integer(), nullable=False),
+    sa.Column('lean_seats', sa.Boolean(), nullable=False),
+    sa.Column('discipline_rate', sa.Numeric(precision=5, scale=2), nullable=True),
+    sa.Column('discipline_with', sa.Integer(), nullable=False),
+    sa.Column('discipline_decided', sa.Integer(), nullable=False),
+    sa.Column('stats_updated_at', sa.DateTime(), nullable=False),
+    sa.Column('id', sa.BigInteger(), nullable=False),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.Column('deleted_at', sa.DateTime(timezone=True), nullable=True),
+    sa.Column('sync_version', sa.BigInteger(), server_default=sa.text("nextval('global_sync_version_seq')"), nullable=False),
+    sa.ForeignKeyConstraint(['legislator_id'], ['legislators.id'], name=op.f('fk_legislator_voting_stats_legislator_id_legislators'), ondelete='CASCADE'),
+    sa.PrimaryKeyConstraint('id', name=op.f('pk_legislator_voting_stats')),
+    sa.UniqueConstraint('legislator_id', name=op.f('uq_legislator_voting_stats_legislator_id'))
+    )
+    op.create_index(op.f('ix_legislator_voting_stats_deleted_at'), 'legislator_voting_stats', ['deleted_at'], unique=False)
+    op.create_index(op.f('ix_legislator_voting_stats_sync_version'), 'legislator_voting_stats', ['sync_version'], unique=False)
     op.create_table('provinces',
     sa.Column('number', sa.SmallInteger(), nullable=False),
     sa.Column('name', sa.String(length=200), nullable=False),
@@ -377,6 +455,23 @@ def upgrade() -> None:
     )
     op.create_index(op.f('ix_bills_deleted_at'), 'bills', ['deleted_at'], unique=False)
     op.create_index(op.f('ix_bills_sync_version'), 'bills', ['sync_version'], unique=False)
+    op.create_table('committee_memberships',
+    sa.Column('committee_id', sa.BigInteger(), nullable=False),
+    sa.Column('legislator_id', sa.BigInteger(), nullable=False),
+    sa.Column('role', sa.String(length=20), nullable=False),
+    sa.Column('start_date', sa.Date(), nullable=False),
+    sa.Column('end_date', sa.Date(), nullable=True),
+    sa.Column('id', sa.BigInteger(), nullable=False),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.Column('deleted_at', sa.DateTime(timezone=True), nullable=True),
+    sa.Column('sync_version', sa.BigInteger(), server_default=sa.text("nextval('global_sync_version_seq')"), nullable=False),
+    sa.ForeignKeyConstraint(['committee_id'], ['committees.id'], name=op.f('fk_committee_memberships_committee_id_committees'), ondelete='CASCADE'),
+    sa.ForeignKeyConstraint(['legislator_id'], ['legislators.id'], name=op.f('fk_committee_memberships_legislator_id_legislators'), ondelete='CASCADE'),
+    sa.PrimaryKeyConstraint('id', name=op.f('pk_committee_memberships'))
+    )
+    op.create_index(op.f('ix_committee_memberships_deleted_at'), 'committee_memberships', ['deleted_at'], unique=False)
+    op.create_index(op.f('ix_committee_memberships_sync_version'), 'committee_memberships', ['sync_version'], unique=False)
     op.create_table('communes',
     sa.Column('number', sa.SmallInteger(), nullable=False),
     sa.Column('name', sa.String(length=200), nullable=False),
@@ -398,46 +493,35 @@ def upgrade() -> None:
     )
     op.create_index(op.f('ix_communes_deleted_at'), 'communes', ['deleted_at'], unique=False)
     op.create_index(op.f('ix_communes_sync_version'), 'communes', ['sync_version'], unique=False)
-    op.create_table('legislators',
-    sa.Column('bcn_id', sa.String(length=50), nullable=True),
-    sa.Column('bcn_uri', sa.String(length=500), nullable=True),
-    sa.Column('first_name', sa.String(length=100), nullable=False),
-    sa.Column('last_name', sa.String(length=100), nullable=False),
-    sa.Column('full_name', sa.String(length=200), nullable=False),
-    sa.Column('gender', sa.String(length=1), nullable=True),
-    sa.Column('birth_date', sa.Date(), nullable=True),
-    sa.Column('profession', sa.String(length=200), nullable=True),
-    sa.Column('biography', sa.Text(), nullable=True),
-    sa.Column('photo_url', sa.String(length=500), nullable=True),
-    sa.Column('photo_thumbnail_url', sa.String(length=500), nullable=True),
-    sa.Column('profile_url', sa.String(length=500), nullable=True),
-    sa.Column('bcn_wiki_url', sa.String(length=500), nullable=True),
-    sa.Column('email', sa.String(length=255), nullable=True),
-    sa.Column('phone', sa.String(length=50), nullable=True),
-    sa.Column('website', sa.String(length=500), nullable=True),
-    sa.Column('twitter_handle', sa.String(length=50), nullable=True),
-    sa.Column('instagram_handle', sa.String(length=50), nullable=True),
-    sa.Column('facebook_url', sa.String(length=500), nullable=True),
-    sa.Column('chamber_type', sa.Enum('DEPUTIES', 'SENATE', name='legislator_chamber_type', native_enum=False), nullable=False),
+    op.create_table('legislator_terms',
+    sa.Column('legislator_id', sa.BigInteger(), nullable=False),
+    sa.Column('period_id', sa.BigInteger(), nullable=False),
+    sa.Column('chamber_id', sa.BigInteger(), nullable=False),
     sa.Column('party_id', sa.BigInteger(), nullable=True),
     sa.Column('district_id', sa.BigInteger(), nullable=True),
     sa.Column('circumscription_id', sa.BigInteger(), nullable=True),
-    sa.Column('is_active', sa.Boolean(), nullable=False),
-    sa.Column('default_bloc', sa.Enum('OFICIALISMO', 'OPOSICION', name='legislator_default_bloc', native_enum=False), nullable=True),
+    sa.Column('chamber_external_id', sa.String(length=50), nullable=True),
+    sa.Column('bcn_appointment_uri', sa.String(length=500), nullable=True),
+    sa.Column('start_date', sa.Date(), nullable=False),
+    sa.Column('end_date', sa.Date(), nullable=True),
+    sa.Column('end_reason', sa.String(length=200), nullable=True),
     sa.Column('id', sa.BigInteger(), nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.Column('deleted_at', sa.DateTime(timezone=True), nullable=True),
     sa.Column('sync_version', sa.BigInteger(), server_default=sa.text("nextval('global_sync_version_seq')"), nullable=False),
-    sa.ForeignKeyConstraint(['circumscription_id'], ['circumscriptions.id'], name=op.f('fk_legislators_circumscription_id_circumscriptions'), ondelete='SET NULL'),
-    sa.ForeignKeyConstraint(['district_id'], ['districts.id'], name=op.f('fk_legislators_district_id_districts'), ondelete='SET NULL'),
-    sa.ForeignKeyConstraint(['party_id'], ['political_parties.id'], name=op.f('fk_legislators_party_id_political_parties'), ondelete='SET NULL'),
-    sa.PrimaryKeyConstraint('id', name=op.f('pk_legislators')),
-    sa.UniqueConstraint('bcn_id', name=op.f('uq_legislators_bcn_id')),
-    sa.UniqueConstraint('bcn_uri', name=op.f('uq_legislators_bcn_uri'))
+    sa.ForeignKeyConstraint(['chamber_id'], ['chambers.id'], name=op.f('fk_legislator_terms_chamber_id_chambers'), ondelete='RESTRICT'),
+    sa.ForeignKeyConstraint(['circumscription_id'], ['circumscriptions.id'], name=op.f('fk_legislator_terms_circumscription_id_circumscriptions'), ondelete='SET NULL'),
+    sa.ForeignKeyConstraint(['district_id'], ['districts.id'], name=op.f('fk_legislator_terms_district_id_districts'), ondelete='SET NULL'),
+    sa.ForeignKeyConstraint(['legislator_id'], ['legislators.id'], name=op.f('fk_legislator_terms_legislator_id_legislators'), ondelete='CASCADE'),
+    sa.ForeignKeyConstraint(['party_id'], ['political_parties.id'], name=op.f('fk_legislator_terms_party_id_political_parties'), ondelete='SET NULL'),
+    sa.ForeignKeyConstraint(['period_id'], ['legislative_periods.id'], name=op.f('fk_legislator_terms_period_id_legislative_periods'), ondelete='RESTRICT'),
+    sa.PrimaryKeyConstraint('id', name=op.f('pk_legislator_terms')),
+    sa.UniqueConstraint('bcn_appointment_uri', name='uq_legislator_terms_bcn_appointment_uri')
     )
-    op.create_index(op.f('ix_legislators_deleted_at'), 'legislators', ['deleted_at'], unique=False)
-    op.create_index(op.f('ix_legislators_sync_version'), 'legislators', ['sync_version'], unique=False)
+    op.create_index('ix_legislator_terms_bridge_window', 'legislator_terms', ['chamber_external_id', 'start_date', 'end_date'], unique=False)
+    op.create_index(op.f('ix_legislator_terms_deleted_at'), 'legislator_terms', ['deleted_at'], unique=False)
+    op.create_index(op.f('ix_legislator_terms_sync_version'), 'legislator_terms', ['sync_version'], unique=False)
     op.create_table('bill_authorships',
     sa.Column('bill_id', sa.BigInteger(), nullable=False),
     sa.Column('legislator_id', sa.BigInteger(), nullable=False),
@@ -516,90 +600,6 @@ def upgrade() -> None:
     )
     op.create_index(op.f('ix_bill_urgencies_deleted_at'), 'bill_urgencies', ['deleted_at'], unique=False)
     op.create_index(op.f('ix_bill_urgencies_sync_version'), 'bill_urgencies', ['sync_version'], unique=False)
-    op.create_table('committee_memberships',
-    sa.Column('committee_id', sa.BigInteger(), nullable=False),
-    sa.Column('legislator_id', sa.BigInteger(), nullable=False),
-    sa.Column('role', sa.String(length=20), nullable=False),
-    sa.Column('start_date', sa.Date(), nullable=False),
-    sa.Column('end_date', sa.Date(), nullable=True),
-    sa.Column('id', sa.BigInteger(), nullable=False),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
-    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
-    sa.Column('deleted_at', sa.DateTime(timezone=True), nullable=True),
-    sa.Column('sync_version', sa.BigInteger(), server_default=sa.text("nextval('global_sync_version_seq')"), nullable=False),
-    sa.ForeignKeyConstraint(['committee_id'], ['committees.id'], name=op.f('fk_committee_memberships_committee_id_committees'), ondelete='CASCADE'),
-    sa.ForeignKeyConstraint(['legislator_id'], ['legislators.id'], name=op.f('fk_committee_memberships_legislator_id_legislators'), ondelete='CASCADE'),
-    sa.PrimaryKeyConstraint('id', name=op.f('pk_committee_memberships'))
-    )
-    op.create_index(op.f('ix_committee_memberships_deleted_at'), 'committee_memberships', ['deleted_at'], unique=False)
-    op.create_index(op.f('ix_committee_memberships_sync_version'), 'committee_memberships', ['sync_version'], unique=False)
-    op.create_table('legislator_terms',
-    sa.Column('legislator_id', sa.BigInteger(), nullable=False),
-    sa.Column('period_id', sa.BigInteger(), nullable=False),
-    sa.Column('chamber_id', sa.BigInteger(), nullable=False),
-    sa.Column('party_id', sa.BigInteger(), nullable=True),
-    sa.Column('start_date', sa.Date(), nullable=False),
-    sa.Column('end_date', sa.Date(), nullable=True),
-    sa.Column('end_reason', sa.String(length=200), nullable=True),
-    sa.Column('id', sa.BigInteger(), nullable=False),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
-    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
-    sa.Column('deleted_at', sa.DateTime(timezone=True), nullable=True),
-    sa.Column('sync_version', sa.BigInteger(), server_default=sa.text("nextval('global_sync_version_seq')"), nullable=False),
-    sa.ForeignKeyConstraint(['chamber_id'], ['chambers.id'], name=op.f('fk_legislator_terms_chamber_id_chambers'), ondelete='RESTRICT'),
-    sa.ForeignKeyConstraint(['legislator_id'], ['legislators.id'], name=op.f('fk_legislator_terms_legislator_id_legislators'), ondelete='CASCADE'),
-    sa.ForeignKeyConstraint(['party_id'], ['political_parties.id'], name=op.f('fk_legislator_terms_party_id_political_parties'), ondelete='SET NULL'),
-    sa.ForeignKeyConstraint(['period_id'], ['legislative_periods.id'], name=op.f('fk_legislator_terms_period_id_legislative_periods'), ondelete='RESTRICT'),
-    sa.PrimaryKeyConstraint('id', name=op.f('pk_legislator_terms'))
-    )
-    op.create_index(op.f('ix_legislator_terms_deleted_at'), 'legislator_terms', ['deleted_at'], unique=False)
-    op.create_index(op.f('ix_legislator_terms_sync_version'), 'legislator_terms', ['sync_version'], unique=False)
-    op.create_table('legislator_voting_stats',
-    sa.Column('legislator_id', sa.BigInteger(), nullable=False),
-    sa.Column('total_sessions', sa.Integer(), nullable=False),
-    sa.Column('votes_for', sa.Integer(), nullable=False),
-    sa.Column('votes_against', sa.Integer(), nullable=False),
-    sa.Column('abstentions', sa.Integer(), nullable=False),
-    sa.Column('absences', sa.Integer(), nullable=False),
-    sa.Column('attendance_percentage', sa.Numeric(precision=5, scale=2), nullable=False),
-    sa.Column('participation_rate', sa.Numeric(precision=5, scale=2), nullable=False),
-    sa.Column('inferred_bloc', sa.Enum('OFICIALISMO', 'OPOSICION', name='legislator_inferred_bloc', native_enum=False), nullable=True),
-    sa.Column('lean_agreed', sa.Integer(), nullable=False),
-    sa.Column('lean_contested', sa.Integer(), nullable=False),
-    sa.Column('lean_seats', sa.Boolean(), nullable=False),
-    sa.Column('discipline_rate', sa.Numeric(precision=5, scale=2), nullable=True),
-    sa.Column('discipline_with', sa.Integer(), nullable=False),
-    sa.Column('discipline_decided', sa.Integer(), nullable=False),
-    sa.Column('stats_updated_at', sa.DateTime(), nullable=False),
-    sa.Column('id', sa.BigInteger(), nullable=False),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
-    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
-    sa.Column('deleted_at', sa.DateTime(timezone=True), nullable=True),
-    sa.Column('sync_version', sa.BigInteger(), server_default=sa.text("nextval('global_sync_version_seq')"), nullable=False),
-    sa.ForeignKeyConstraint(['legislator_id'], ['legislators.id'], name=op.f('fk_legislator_voting_stats_legislator_id_legislators'), ondelete='CASCADE'),
-    sa.PrimaryKeyConstraint('id', name=op.f('pk_legislator_voting_stats')),
-    sa.UniqueConstraint('legislator_id', name=op.f('uq_legislator_voting_stats_legislator_id'))
-    )
-    op.create_index(op.f('ix_legislator_voting_stats_deleted_at'), 'legislator_voting_stats', ['deleted_at'], unique=False)
-    op.create_index(op.f('ix_legislator_voting_stats_sync_version'), 'legislator_voting_stats', ['sync_version'], unique=False)
-    op.create_table('parliamentary_appointments',
-    sa.Column('legislator_id', sa.BigInteger(), nullable=False),
-    sa.Column('chamber_id', sa.BigInteger(), nullable=False),
-    sa.Column('bcn_appointment_uri', sa.String(length=500), nullable=False),
-    sa.Column('start_date', sa.Date(), nullable=False),
-    sa.Column('end_date', sa.Date(), nullable=False),
-    sa.Column('id', sa.BigInteger(), nullable=False),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
-    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
-    sa.Column('deleted_at', sa.DateTime(timezone=True), nullable=True),
-    sa.Column('sync_version', sa.BigInteger(), server_default=sa.text("nextval('global_sync_version_seq')"), nullable=False),
-    sa.ForeignKeyConstraint(['chamber_id'], ['chambers.id'], name=op.f('fk_parliamentary_appointments_chamber_id_chambers'), ondelete='RESTRICT'),
-    sa.ForeignKeyConstraint(['legislator_id'], ['legislators.id'], name=op.f('fk_parliamentary_appointments_legislator_id_legislators'), ondelete='CASCADE'),
-    sa.PrimaryKeyConstraint('id', name=op.f('pk_parliamentary_appointments')),
-    sa.UniqueConstraint('bcn_appointment_uri', name=op.f('uq_parliamentary_appointments_bcn_appointment_uri'))
-    )
-    op.create_index(op.f('ix_parliamentary_appointments_deleted_at'), 'parliamentary_appointments', ['deleted_at'], unique=False)
-    op.create_index(op.f('ix_parliamentary_appointments_sync_version'), 'parliamentary_appointments', ['sync_version'], unique=False)
     op.create_table('bill_documents',
     sa.Column('bill_id', sa.BigInteger(), nullable=False),
     sa.Column('bill_stage_id', sa.BigInteger(), nullable=True),
@@ -681,7 +681,8 @@ def upgrade() -> None:
     op.create_index(op.f('ix_voting_sessions_sync_version'), 'voting_sessions', ['sync_version'], unique=False)
     op.create_table('votes',
     sa.Column('voting_session_id', sa.BigInteger(), nullable=False),
-    sa.Column('legislator_id', sa.BigInteger(), nullable=False),
+    sa.Column('legislator_id', sa.BigInteger(), nullable=True),
+    sa.Column('legislator_external_id', sa.String(length=50), nullable=False),
     sa.Column('vote', sa.Enum('FOR', 'AGAINST', 'ABSTAIN', 'PAIRED', 'DISPENSED', 'ABSENT', name='vote_choice', native_enum=False), nullable=False),
     sa.Column('id', sa.BigInteger(), nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
@@ -690,11 +691,13 @@ def upgrade() -> None:
     sa.Column('sync_version', sa.BigInteger(), server_default=sa.text("nextval('global_sync_version_seq')"), nullable=False),
     sa.ForeignKeyConstraint(['legislator_id'], ['legislators.id'], name=op.f('fk_votes_legislator_id_legislators'), ondelete='CASCADE'),
     sa.ForeignKeyConstraint(['voting_session_id'], ['voting_sessions.id'], name=op.f('fk_votes_voting_session_id_voting_sessions'), ondelete='CASCADE'),
-    sa.PrimaryKeyConstraint('id', name=op.f('pk_votes')),
-    sa.UniqueConstraint('voting_session_id', 'legislator_id', name='uq_votes_session_legislator')
+    sa.PrimaryKeyConstraint('id', name=op.f('pk_votes'))
     )
     op.create_index(op.f('ix_votes_deleted_at'), 'votes', ['deleted_at'], unique=False)
+    op.create_index(op.f('ix_votes_legislator_external_id'), 'votes', ['legislator_external_id'], unique=False)
     op.create_index(op.f('ix_votes_sync_version'), 'votes', ['sync_version'], unique=False)
+    op.create_index('uq_votes_session_external_orphan', 'votes', ['voting_session_id', 'legislator_external_id'], unique=True, postgresql_where='legislator_id IS NULL')
+    op.create_index('uq_votes_session_legislator', 'votes', ['voting_session_id', 'legislator_id'], unique=True, postgresql_where='legislator_id IS NOT NULL')
     op.create_table('voting_session_signals',
     sa.Column('voting_session_id', sa.BigInteger(), nullable=False),
     sa.Column('signal_type', sa.Enum('QUIEBRE_BLOQUE', 'DIVERGENCIA_CAMARAS', 'VOTACION_DIVIDIDA', 'ALTO_AUSENTISMO', name='signal_type', native_enum=False), nullable=False),
@@ -723,7 +726,10 @@ def downgrade() -> None:
     op.drop_index(op.f('ix_voting_session_signals_signal_type'), table_name='voting_session_signals')
     op.drop_index(op.f('ix_voting_session_signals_deleted_at'), table_name='voting_session_signals')
     op.drop_table('voting_session_signals')
+    op.drop_index('uq_votes_session_legislator', table_name='votes', postgresql_where='legislator_id IS NOT NULL')
+    op.drop_index('uq_votes_session_external_orphan', table_name='votes', postgresql_where='legislator_id IS NULL')
     op.drop_index(op.f('ix_votes_sync_version'), table_name='votes')
+    op.drop_index(op.f('ix_votes_legislator_external_id'), table_name='votes')
     op.drop_index(op.f('ix_votes_deleted_at'), table_name='votes')
     op.drop_table('votes')
     op.drop_index(op.f('ix_voting_sessions_sync_version'), table_name='voting_sessions')
@@ -736,18 +742,6 @@ def downgrade() -> None:
     op.drop_index(op.f('ix_bill_documents_sync_version'), table_name='bill_documents')
     op.drop_index(op.f('ix_bill_documents_deleted_at'), table_name='bill_documents')
     op.drop_table('bill_documents')
-    op.drop_index(op.f('ix_parliamentary_appointments_sync_version'), table_name='parliamentary_appointments')
-    op.drop_index(op.f('ix_parliamentary_appointments_deleted_at'), table_name='parliamentary_appointments')
-    op.drop_table('parliamentary_appointments')
-    op.drop_index(op.f('ix_legislator_voting_stats_sync_version'), table_name='legislator_voting_stats')
-    op.drop_index(op.f('ix_legislator_voting_stats_deleted_at'), table_name='legislator_voting_stats')
-    op.drop_table('legislator_voting_stats')
-    op.drop_index(op.f('ix_legislator_terms_sync_version'), table_name='legislator_terms')
-    op.drop_index(op.f('ix_legislator_terms_deleted_at'), table_name='legislator_terms')
-    op.drop_table('legislator_terms')
-    op.drop_index(op.f('ix_committee_memberships_sync_version'), table_name='committee_memberships')
-    op.drop_index(op.f('ix_committee_memberships_deleted_at'), table_name='committee_memberships')
-    op.drop_table('committee_memberships')
     op.drop_index(op.f('ix_bill_urgencies_sync_version'), table_name='bill_urgencies')
     op.drop_index(op.f('ix_bill_urgencies_deleted_at'), table_name='bill_urgencies')
     op.drop_table('bill_urgencies')
@@ -761,12 +755,16 @@ def downgrade() -> None:
     op.drop_index(op.f('ix_bill_authorships_sync_version'), table_name='bill_authorships')
     op.drop_index(op.f('ix_bill_authorships_deleted_at'), table_name='bill_authorships')
     op.drop_table('bill_authorships')
-    op.drop_index(op.f('ix_legislators_sync_version'), table_name='legislators')
-    op.drop_index(op.f('ix_legislators_deleted_at'), table_name='legislators')
-    op.drop_table('legislators')
+    op.drop_index(op.f('ix_legislator_terms_sync_version'), table_name='legislator_terms')
+    op.drop_index(op.f('ix_legislator_terms_deleted_at'), table_name='legislator_terms')
+    op.drop_index('ix_legislator_terms_bridge_window', table_name='legislator_terms')
+    op.drop_table('legislator_terms')
     op.drop_index(op.f('ix_communes_sync_version'), table_name='communes')
     op.drop_index(op.f('ix_communes_deleted_at'), table_name='communes')
     op.drop_table('communes')
+    op.drop_index(op.f('ix_committee_memberships_sync_version'), table_name='committee_memberships')
+    op.drop_index(op.f('ix_committee_memberships_deleted_at'), table_name='committee_memberships')
+    op.drop_table('committee_memberships')
     op.drop_index(op.f('ix_bills_sync_version'), table_name='bills')
     op.drop_index(op.f('ix_bills_deleted_at'), table_name='bills')
     op.drop_table('bills')
@@ -774,6 +772,12 @@ def downgrade() -> None:
     op.drop_index(op.f('ix_provinces_sync_version'), table_name='provinces')
     op.drop_index(op.f('ix_provinces_deleted_at'), table_name='provinces')
     op.drop_table('provinces')
+    op.drop_index(op.f('ix_legislator_voting_stats_sync_version'), table_name='legislator_voting_stats')
+    op.drop_index(op.f('ix_legislator_voting_stats_deleted_at'), table_name='legislator_voting_stats')
+    op.drop_table('legislator_voting_stats')
+    op.drop_index(op.f('ix_legislator_merge_candidates_sync_version'), table_name='legislator_merge_candidates')
+    op.drop_index(op.f('ix_legislator_merge_candidates_deleted_at'), table_name='legislator_merge_candidates')
+    op.drop_table('legislator_merge_candidates')
     op.drop_index(op.f('ix_legislative_sessions_sync_version'), table_name='legislative_sessions')
     op.drop_index(op.f('ix_legislative_sessions_deleted_at'), table_name='legislative_sessions')
     op.drop_table('legislative_sessions')
@@ -809,6 +813,9 @@ def downgrade() -> None:
     op.drop_index(op.f('ix_official_gazette_norms_sync_version'), table_name='official_gazette_norms')
     op.drop_index(op.f('ix_official_gazette_norms_deleted_at'), table_name='official_gazette_norms')
     op.drop_table('official_gazette_norms')
+    op.drop_index(op.f('ix_legislators_sync_version'), table_name='legislators')
+    op.drop_index(op.f('ix_legislators_deleted_at'), table_name='legislators')
+    op.drop_table('legislators')
     op.drop_index(op.f('ix_legislative_periods_sync_version'), table_name='legislative_periods')
     op.drop_index(op.f('ix_legislative_periods_deleted_at'), table_name='legislative_periods')
     op.drop_table('legislative_periods')

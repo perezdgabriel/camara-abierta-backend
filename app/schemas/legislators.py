@@ -6,6 +6,12 @@ from app.models.enums import Bloc, ChamberType, CommitteeType, VoteChoice
 from app.models.enums import VotingResult as VotingResultEnum
 from app.schemas.common import CountResponse, ORMModel
 
+# ``Legislator`` no longer carries chamber_type / party / district /
+# circumscription / is_active as stored columns (ADR-0015). Pydantic reads
+# from the ``current_*`` and ``is_active`` properties via ``validation_alias``
+# so the JSON contract (chamber_type / party / district / circumscription /
+# is_active) is preserved.
+
 
 class TopicBrief(ORMModel):
     id: int
@@ -100,13 +106,21 @@ class PartyDiscipline(ORMModel):
 
 class LegislatorSummary(ORMModel):
     id: int
-    bcn_id: str | None = None
+    bcn_id: str | None = Field(
+        default=None, validation_alias="current_chamber_external_id"
+    )
     full_name: str
-    chamber_type: ChamberType
+    chamber_type: ChamberType | None = Field(
+        default=None, validation_alias="current_chamber_type"
+    )
     photo_thumbnail_url: str | None = None
-    party: PartyBrief | None = None
-    district: DistrictBrief | None = None
-    circumscription: CircumscriptionBrief | None = None
+    party: PartyBrief | None = Field(default=None, validation_alias="current_party")
+    district: DistrictBrief | None = Field(
+        default=None, validation_alias="current_district"
+    )
+    circumscription: CircumscriptionBrief | None = Field(
+        default=None, validation_alias="current_circumscription"
+    )
     is_active: bool
     # Editorial bloc override, used mainly to align independents in the majority
     # simulator. Null for party members (they inherit party.current_bloc) and for

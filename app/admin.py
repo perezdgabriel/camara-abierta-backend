@@ -145,15 +145,14 @@ class LegislatorAdmin(ModelView, model=Legislator):
     icon = "fa-solid fa-user-tie"
     category = "Parlamento"
 
+    # Chamber/party/district/is_active are now derived from LegislatorTerm
+    # (see ADR-0015). sqladmin column_list only takes Column instances, so we
+    # surface the person-level columns and link out to terms for the rest.
     column_list = [
         Legislator.id,
         Legislator.full_name,
-        Legislator.chamber_type,
-        Legislator.party,
-        Legislator.district,
-        Legislator.circumscription,
-        Legislator.is_active,
         Legislator.default_bloc,
+        Legislator.bcn_uri,
     ]
     column_details_list = "__all__"
     column_searchable_list = [
@@ -161,13 +160,11 @@ class LegislatorAdmin(ModelView, model=Legislator):
         Legislator.first_name,
         Legislator.last_name,
         Legislator.email,
-        Legislator.bcn_id,
+        Legislator.bcn_uri,
     ]
     column_sortable_list = [
         Legislator.id,
         Legislator.last_name,
-        Legislator.chamber_type,
-        Legislator.is_active,
     ]
     page_size = 50
 

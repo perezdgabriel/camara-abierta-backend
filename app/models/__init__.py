@@ -11,8 +11,8 @@ from app.models.legislature import (
     LegislativePeriod,
     LegislativeSession,
     Legislator,
+    LegislatorMergeCandidate,
     LegislatorTerm,
-    ParliamentaryAppointment,
     PoliticalParty,
 )
 from app.models.proyecto import (
@@ -56,10 +56,10 @@ __all__ = [
     "LegislativePeriod",
     "LegislativeSession",
     "Legislator",
+    "LegislatorMergeCandidate",
     "LegislatorTerm",
     "LegislatorVotingStats",
     "OfficialGazetteNorm",
-    "ParliamentaryAppointment",
     "PoliticalParty",
     "Province",
     "Region",

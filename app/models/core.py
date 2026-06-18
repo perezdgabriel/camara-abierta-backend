@@ -9,7 +9,6 @@ from app.core.database import Base
 from app.models.base import SyncableMixin
 
 if TYPE_CHECKING:
-    from app.models.legislature import Legislator
     from app.models.proyecto import Bill
 
 circumscription_regions = Table(
@@ -77,7 +76,6 @@ class District(SyncableMixin, Base):
 
     region: Mapped[Region] = relationship(back_populates="districts")
     communes: Mapped[list["Commune"]] = relationship(back_populates="district")
-    legislators: Mapped[list["Legislator"]] = relationship(back_populates="district")
 
     def __str__(self) -> str:
         return f"Distrito {self.number} - {self.name}"
@@ -138,9 +136,6 @@ class Circumscription(SyncableMixin, Base):
     regions: Mapped[list[Region]] = relationship(
         secondary=circumscription_regions,
         back_populates="circumscriptions",
-    )
-    legislators: Mapped[list["Legislator"]] = relationship(
-        back_populates="circumscription"
     )
 
     def __str__(self) -> str:
