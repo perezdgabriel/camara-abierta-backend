@@ -4,6 +4,7 @@ from app.ingestors.clients.opendata_camara import OpenDataCamaraClient
 from app.ingestors.clients.senado import SenadoClient
 from app.ingestors.parsers.bills import BillParser
 from app.ingestors.parsers.legislators import LegislatorParser
+from app.ingestors.parsers.legislature import LegislatureParser
 from app.ingestors.parsers.votes import VoteParser
 from app.models.enums import (
     BillOrigin,
@@ -793,3 +794,57 @@ def test_legislator_parser_bcn_rest_enrichment_returns_none_when_all_fields_empt
         }
     )
     assert enrichment is None
+
+
+def test_legislature_parser_emits_ordinaria_kind_for_annual_cycle():
+    parsed = LegislatureParser.parse_legislature(
+        {
+            "id": "374",
+            "number": 374,
+            "type": "Ordinaria",
+            "start_date": "2026-03-11",
+            "end_date": "2027-03-11",
+        }
+    )
+    assert parsed["number"] == 374
+    assert parsed["kind"] == "ordinaria"
+    assert parsed["start_date"] == "2026-03-11"
+    assert parsed["end_date"] == "2027-03-11"
+
+
+def test_legislature_parser_maps_extraordinaria_for_pre_2005_records():
+    parsed = LegislatureParser.parse_legislature(
+        {"id": "100", "type": "Extraordinaria"}
+    )
+    assert parsed["kind"] == "extraordinaria"
+
+
+def test_session_parser_maps_especial_at_meeting_level_not_extraordinaria():
+    # At the session (meeting) level the subtype is ordinaria/especial — see
+    # CONTEXT.md "Sesión Legislativa". Upstream payloads that still say
+    # "Extraordinaria" are normalized down to especial.
+    ordinaria = LegislatureParser.parse_session(
+        {"id": "1", "number": 12, "type": "Ordinaria", "date": "2026-04-08"},
+        legislature_number=374,
+    )
+    especial = LegislatureParser.parse_session(
+        {"id": "2", "number": 13, "type": "Especial", "date": "2026-04-09"},
+        legislature_number=374,
+    )
+    extraordinaria_normalized = LegislatureParser.parse_session(
+        {"id": "3", "number": 14, "type": "Extraordinaria", "date": "2026-04-10"},
+        legislature_number=374,
+    )
+    assert ordinaria["kind"] == "ordinaria"
+    assert especial["kind"] == "especial"
+    assert extraordinaria_normalized["kind"] == "especial"
+    assert ordinaria["_legislature_number"] == 374
+
+
+def test_legislative_period_parser_handles_non_integer_id():
+    parsed = LegislatureParser.parse_legislative_period(
+        {"id": "no_un_numero", "name": "X", "start_date": "2018-03-11"}
+    )
+    # except-tuple syntax should swallow the ValueError, leaving number=None.
+    assert parsed["number"] is None
+    assert parsed["description"] == "X"

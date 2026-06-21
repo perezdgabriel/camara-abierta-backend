@@ -29,6 +29,9 @@ class VotingSession(SyncableMixin, Base):
     chamber_id: Mapped[int] = mapped_column(
         ForeignKey("chambers.id", ondelete="RESTRICT"), nullable=False
     )
+    # Points at a single Sesión (one meeting), not a Legislatura. Nullable
+    # because meeting-level ingestion is not yet wired up — votes link to the
+    # parent Legislatura via Session→Legislature. See ADR-0016.
     session_id: Mapped[int | None] = mapped_column(
         ForeignKey("legislative_sessions.id", ondelete="SET NULL")
     )

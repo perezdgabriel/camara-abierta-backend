@@ -29,6 +29,7 @@ from app.models.enums import (
     VotingResult,
     VotingType,
 )
+from app.models.enums import LegislatureKind, SessionKind
 from app.models.legislature import (
     BlocAffiliation,
     Chamber,
@@ -39,6 +40,7 @@ from app.models.legislature import (
     Legislator,
     LegislatorMergeCandidate,
     LegislatorTerm,
+    Legislature,
     PoliticalParty,
 )
 from app.models.proyecto import (
@@ -2070,9 +2072,23 @@ def upsert_period(db: Session, data: dict[str, Any]) -> LegislativePeriod:
     return period
 
 
-def upsert_session(db: Session, data: dict[str, Any]) -> LegislativeSession:
-    chamber = _get_or_create_chamber(db, data.get("_chamber_type") or "deputies")
+def upsert_legislature(db: Session, data: dict[str, Any]) -> Legislature:
+    """Upsert a ``Legislature`` (1-year cycle) keyed on its historical ``number``.
+
+    The parent ``LegislativePeriod`` is resolved by ``start_date``: we pick the
+    most recently-started period whose start is on or before this legislatura's
+    start. Assumes contiguous periods (half-open ``[start, end)``); see
+    CONTEXT.md "Legislatura" + ADR-0016.
+    """
+
     start_date_value = _parse_date(data.get("start_date")) or date.today()
+    end_date_value = _parse_date(data.get("end_date")) or start_date_value
+    kind_value = (data.get("kind") or "ordinaria").strip().lower()
+    try:
+        kind_enum = LegislatureKind(kind_value)
+    except ValueError:
+        kind_enum = LegislatureKind.ORDINARIA
+
     period = (
         db.execute(
             select(LegislativePeriod)
@@ -2084,35 +2100,118 @@ def upsert_session(db: Session, data: dict[str, Any]) -> LegislativeSession:
     )
     if period is None:
         raise ValueError(
-            f"No legislative period found for session start_date={start_date_value}"
+            f"No legislative period found for legislature start_date={start_date_value}"
         )
+
+    insert_stmt = pg_insert(Legislature).values(
+        number=int(data["number"]),
+        period_id=period.id,
+        start_date=start_date_value,
+        end_date=end_date_value,
+        kind=kind_enum,
+        description=(data.get("description") or "")[:200] or None,
+    )
+    legislature_id = db.execute(
+        insert_stmt.on_conflict_do_update(
+            index_elements=["number"],
+            set_={
+                "period_id": insert_stmt.excluded.period_id,
+                "start_date": insert_stmt.excluded.start_date,
+                "end_date": insert_stmt.excluded.end_date,
+                "kind": insert_stmt.excluded.kind,
+                "description": insert_stmt.excluded.description,
+                "updated_at": func.now(),
+                "sync_version": global_sync_version_seq.next_value(),
+            },
+        ).returning(Legislature.id)
+    ).scalar_one()
+    legislature = db.get(Legislature, legislature_id)
+    if legislature is None:
+        raise RuntimeError(f"Failed to load legislature id={legislature_id}")
+    return legislature
+
+
+def upsert_meeting_session(db: Session, data: dict[str, Any]) -> LegislativeSession:
+    """Upsert a ``LegislativeSession`` (single Sesión meeting).
+
+    The parent ``Legislature`` is resolved by ``_legislature_number`` when
+    provided; otherwise by start_date falling within the half-open Legislature
+    window. ``committee_id`` is null for Sala (plenary) sessions and points at
+    the relevant ``Committee`` for Comisión sessions.
+    """
+
+    chamber = _get_or_create_chamber(db, data.get("_chamber_type") or "deputies")
+    start_date_value = _parse_date(data.get("start_date")) or date.today()
+    end_date_value = _parse_date(data.get("end_date"))
+
+    legislature: Legislature | None = None
+    legislature_number = data.get("_legislature_number")
+    if legislature_number is not None:
+        legislature = db.execute(
+            select(Legislature).where(Legislature.number == int(legislature_number))
+        ).scalar_one_or_none()
+    if legislature is None:
+        legislature = (
+            db.execute(
+                select(Legislature)
+                .where(Legislature.start_date <= start_date_value)
+                .where(Legislature.end_date > start_date_value)
+                .order_by(Legislature.start_date.desc())
+            )
+            .scalars()
+            .first()
+        )
+    if legislature is None:
+        raise ValueError(
+            f"No legislature found for session start_date={start_date_value} "
+            f"number={legislature_number}"
+        )
+
+    committee_id: int | None = None
+    committee_external_id = data.get("_committee_external_id")
+    if committee_external_id is not None:
+        committee = db.execute(
+            select(Committee).where(Committee.id == int(committee_external_id))
+        ).scalar_one_or_none()
+        if committee is not None:
+            committee_id = committee.id
+
+    kind_value = (data.get("kind") or "ordinaria").strip().lower()
+    try:
+        kind_enum = SessionKind(kind_value)
+    except ValueError:
+        kind_enum = SessionKind.ORDINARIA
 
     session = db.execute(
         select(LegislativeSession)
-        .where(LegislativeSession.period_id == period.id)
+        .where(LegislativeSession.legislature_id == legislature.id)
+        .where(LegislativeSession.chamber_id == chamber.id)
         .where(LegislativeSession.number == int(data["number"]))
         .where(
-            LegislativeSession.session_type
-            == (data.get("session_type") or "ordinary")[:30]
+            LegislativeSession.committee_id.is_(None)
+            if committee_id is None
+            else LegislativeSession.committee_id == committee_id
         )
-        .where(LegislativeSession.chamber_id == chamber.id)
     ).scalar_one_or_none()
     if session is None:
         session = LegislativeSession(
             number=int(data["number"]),
-            session_type=(data.get("session_type") or "ordinary")[:30],
-            period_id=period.id,
+            kind=kind_enum,
+            legislature_id=legislature.id,
             chamber_id=chamber.id,
+            committee_id=committee_id,
             start_date=start_date_value,
-            end_date=_parse_date(data.get("end_date")),
+            end_date=end_date_value,
         )
         db.add(session)
     else:
         changed = False
+        if session.kind != kind_enum:
+            session.kind = kind_enum
+            changed = True
         if session.start_date != start_date_value:
             session.start_date = start_date_value
             changed = True
-        end_date_value = _parse_date(data.get("end_date"))
         if session.end_date != end_date_value:
             session.end_date = end_date_value
             changed = True

@@ -23,6 +23,8 @@ All categorical string fields use formal Python enums. Current vocabulary:
 - `VotingResult`: approved, rejected, tie
 - `ChamberType`: deputies, senate
 - `CommitteeType`: permanent, special, investigative, mixed
+- `LegislatureKind`: ordinaria, extraordinaria (annual Legislatura — post-2005 always `ordinaria`)
+- `SessionKind`: ordinaria, especial (single Sesión Legislativa — distinct from `LegislatureKind`)
 
 **Sponsoring ministries**:
 Optional zero-to-many ministries attached to a bill as upstream metadata from the Chamber of Deputies. They are historical bill-scoped labels, not a shared platform-wide ministry catalog.
@@ -70,6 +72,18 @@ Internal tool (`sqladmin`) for manual data management. Used to update reference 
 
 **Topics**:
 Hierarchical tags for bills (e.g. "Education" → "Higher Education"). Pre-defined reference data, but new topics can appear when fetching bills from upstream APIs. Also creatable via the admin panel.
+
+**Período Legislativo**:
+The 4-year presidential and Chamber-of-Deputies cycle — all 155 deputies are elected together, anchored to the presidential mandate. Stored as `LegislativePeriod`. Date range is half-open `[start_date, end_date)`; the 2026–2030 period is `[2026-03-11, 2030-03-11)`. `number` is the historical period count. Senators serve 8-year terms with half renewing each period; `LegislatorTerm.period_id` ties each stint to its covering period. See ADR-0016.
+_Avoid_: treating period boundaries as inclusive; calling the 1-year cycle a "period"
+
+**Legislatura**:
+The 1-year working cycle of Congress. Post-2005 reform — a `Legislatura Ordinaria` runs continuously from March 11 of one year to March 10 of the following, broken only by the traditional February receso legislativo. Stored as `Legislature`, with `number` the **historical sequential count** dating to the 19th century (e.g. `Legislatura 374` = 2026–2027), populated from upstream — never synthesized. Date range is half-open `[Mar 11 year N, Mar 11 year N+1)`. `Legislature.period_id` ties each Legislatura to its covering Período. `kind` is `LegislatureKind {ordinaria, extraordinaria}` for historical fidelity; new rows are `ordinaria`. The recess is not a stored fact — it's observable as the absence of Sesiones in February. See ADR-0016.
+_Avoid_: storing the annual cycle in `LegislativeSession`; calling it a "session"; synthesizing the historical number when upstream omits it
+
+**Sesión Legislativa**:
+A single scheduled meeting (typically Tue–Thu) where parliamentarians gather in the Sala (Chamber floor) or in a Comisión (Committee) to debate, vote on bills, or exercise oversight. Stored as `LegislativeSession` — the model represents *the meeting*, not the annual cycle. `legislature_id` ties each meeting to its covering Legislatura. `kind` is `SessionKind {ordinaria, especial}` — ordinarias are the regular mandated meetings on predetermined days; especiales are convened outside regular hours (e.g. minister interpellations or urgent national issues). Venue is encoded by `committee_id`: null = Sala (plenary); non-null = Comisión meeting of that committee. `chamber_id` is retained (committees themselves belong to one chamber). The daily agenda (`Tabla`) is not yet modeled. See ADR-0016.
+_Avoid_: using `ordinary`/`extraordinary` as session subtype labels (that's the *Legislatura* vocabulary, not the Sesión vocabulary); reading `LegislativeSession` rows as annual cycles; assuming every Sesión is plenary
 
 **Political Party**:
 A registered party in the Chilean Congress. `PoliticalParty.name` is the full official name; `PoliticalParty.abbreviation` is the short identifier (e.g. "PS", "RN"). OpenData Camara is the authoritative source — `abbreviation` is set from the `Alias` field in the upstream XML. Senado returns only an abbreviation (e.g. "P.S.") and is used for lookup only, never to create party records.

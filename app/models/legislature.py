@@ -20,7 +20,13 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.database import Base
 from app.models.base import SyncableMixin
 from app.models.core import Circumscription, District
-from app.models.enums import Bloc, ChamberType, CommitteeType
+from app.models.enums import (
+    Bloc,
+    ChamberType,
+    CommitteeType,
+    LegislatureKind,
+    SessionKind,
+)
 
 if TYPE_CHECKING:
     from app.models.proyecto import Bill, BillAuthorship
@@ -151,6 +157,13 @@ class CoalitionMembership(SyncableMixin, Base):
 
 
 class LegislativePeriod(SyncableMixin, Base):
+    """The 4-year presidential / Chamber-of-Deputies cycle.
+
+    Date range is half-open ``[start_date, end_date)`` — ``end_date`` is the
+    start of the next period (Mar 11), not the last day actually covered. See
+    CONTEXT.md "Período Legislativo" and ADR-0016.
+    """
+
     __tablename__ = "legislative_periods"
 
     number: Mapped[int] = mapped_column(nullable=False, unique=True)
@@ -158,11 +171,49 @@ class LegislativePeriod(SyncableMixin, Base):
     end_date: Mapped[date] = mapped_column(Date, nullable=False)
     description: Mapped[str | None] = mapped_column(String(200))
 
-    sessions: Mapped[list["LegislativeSession"]] = relationship(back_populates="period")
+    legislatures: Mapped[list["Legislature"]] = relationship(back_populates="period")
     terms: Mapped[list["LegislatorTerm"]] = relationship(back_populates="period")
 
     def __str__(self) -> str:
         return f"Periodo {self.number}"
+
+
+class Legislature(SyncableMixin, Base):
+    """The 1-year working cycle of Congress (e.g. Legislatura 374 = 2026–2027).
+
+    ``number`` is the historical sequential count dating to the 19th century,
+    sourced from upstream — never synthesized. Date range is half-open
+    ``[Mar 11 year N, Mar 11 year N+1)``. See CONTEXT.md "Legislatura" and
+    ADR-0016.
+    """
+
+    __tablename__ = "legislatures"
+
+    number: Mapped[int] = mapped_column(nullable=False, unique=True)
+    period_id: Mapped[int] = mapped_column(
+        ForeignKey("legislative_periods.id", ondelete="RESTRICT"), nullable=False
+    )
+    start_date: Mapped[date] = mapped_column(Date, nullable=False)
+    end_date: Mapped[date] = mapped_column(Date, nullable=False)
+    kind: Mapped[LegislatureKind] = mapped_column(
+        SqlEnum(
+            LegislatureKind,
+            name="legislature_kind",
+            native_enum=False,
+            validate_strings=True,
+        ),
+        nullable=False,
+        default=LegislatureKind.ORDINARIA,
+    )
+    description: Mapped[str | None] = mapped_column(String(200))
+
+    period: Mapped[LegislativePeriod] = relationship(back_populates="legislatures")
+    sessions: Mapped[list["LegislativeSession"]] = relationship(
+        back_populates="legislature"
+    )
+
+    def __str__(self) -> str:
+        return f"Legislatura {self.number}"
 
 
 class Chamber(SyncableMixin, Base):
@@ -520,25 +571,46 @@ class CommitteeMembership(SyncableMixin, Base):
 
 
 class LegislativeSession(SyncableMixin, Base):
+    """A single scheduled meeting (Sesión Legislativa).
+
+    Venue is encoded by ``committee_id``: ``None`` means a plenary Sala
+    session; non-null means a Comisión meeting of that committee. ``chamber_id``
+    is retained because committees themselves belong to one chamber. See
+    CONTEXT.md "Sesión Legislativa" and ADR-0016.
+    """
+
     __tablename__ = "legislative_sessions"
 
     number: Mapped[int] = mapped_column(nullable=False)
-    session_type: Mapped[str] = mapped_column(String(30), nullable=False)
-    period_id: Mapped[int] = mapped_column(
-        ForeignKey("legislative_periods.id", ondelete="RESTRICT"), nullable=False
+    kind: Mapped[SessionKind] = mapped_column(
+        SqlEnum(
+            SessionKind,
+            name="session_kind",
+            native_enum=False,
+            validate_strings=True,
+        ),
+        nullable=False,
+        default=SessionKind.ORDINARIA,
+    )
+    legislature_id: Mapped[int] = mapped_column(
+        ForeignKey("legislatures.id", ondelete="RESTRICT"), nullable=False
     )
     chamber_id: Mapped[int] = mapped_column(
         ForeignKey("chambers.id", ondelete="RESTRICT"), nullable=False
+    )
+    committee_id: Mapped[int | None] = mapped_column(
+        ForeignKey("committees.id", ondelete="SET NULL")
     )
     start_date: Mapped[date | None] = mapped_column(Date)
     end_date: Mapped[date | None] = mapped_column(Date)
     description: Mapped[str | None] = mapped_column(String(200))
 
-    period: Mapped[LegislativePeriod] = relationship(back_populates="sessions")
+    legislature: Mapped[Legislature] = relationship(back_populates="sessions")
     chamber: Mapped[Chamber] = relationship(back_populates="sessions")
+    committee: Mapped["Committee | None"] = relationship()
     voting_sessions: Mapped[list["VotingSession"]] = relationship(
         back_populates="session"
     )
 
     def __str__(self) -> str:
-        return f"Sesion {self.number} ({self.session_type})"
+        return f"Sesion {self.number} ({self.kind.value})"

@@ -45,7 +45,7 @@ from app.tasks.legislators import (
     sync_legislator_bcn_enrichment,
     sync_parliamentary_appointment,
 )
-from app.tasks.legislature import sync_period, sync_session
+from app.tasks.legislature import sync_legislature, sync_period
 from app.tasks.reference import sync_topic
 from app.tasks.voting import sync_voting_session
 
@@ -1185,11 +1185,11 @@ def run_ingest_legislature(*, dry_run: bool = False) -> dict[str, Any]:
                     parsed = LegislatureParser.parse_legislature(raw)
                     if parsed.get("number") and parsed.get("start_date"):
                         if not dry_run:
-                            _dispatch(sync_session, parsed)
+                            _dispatch(sync_legislature, parsed)
                         dispatched += 1
                 except Exception:
                     logger.exception(
-                        "Failed to parse legislative session from OpenDataCamaraClient"
+                        "Failed to parse legislature from OpenDataCamaraClient"
                     )
                     errors += 1
     except Exception:
@@ -1218,12 +1218,10 @@ def run_ingest_legislature(*, dry_run: bool = False) -> dict[str, Any]:
                     parsed = LegislatureParser.parse_legislature(raw)
                     if parsed.get("number") and parsed.get("start_date"):
                         if not dry_run:
-                            _dispatch(sync_session, parsed)
+                            _dispatch(sync_legislature, parsed)
                         dispatched += 1
                 except Exception:
-                    logger.exception(
-                        "Failed to parse legislative session from CamaraClient"
-                    )
+                    logger.exception("Failed to parse legislature from CamaraClient")
                     errors += 1
     except Exception:
         logger.exception("Failed to fetch legislature data from CamaraClient")

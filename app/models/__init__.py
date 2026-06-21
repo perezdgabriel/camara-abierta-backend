@@ -13,6 +13,7 @@ from app.models.legislature import (
     Legislator,
     LegislatorMergeCandidate,
     LegislatorTerm,
+    Legislature,
     PoliticalParty,
 )
 from app.models.proyecto import (
@@ -59,6 +60,7 @@ __all__ = [
     "LegislatorMergeCandidate",
     "LegislatorTerm",
     "LegislatorVotingStats",
+    "Legislature",
     "OfficialGazetteNorm",
     "PoliticalParty",
     "Province",

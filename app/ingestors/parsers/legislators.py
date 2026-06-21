@@ -75,8 +75,16 @@ REST_ACRONYM_TO_PARTY_ACRONIM = {
 }
 
 # Chilean legislative period boundaries: parliamentarians take office on
-# March 11 and end the day before. PERIODOS only carries the year as a
-# string, so we synthesize the boundary date.
+# March 11 and end on March 10 of the year their term closes. PERIODOS only
+# carries the year as a string, so we synthesize the boundary date.
+#
+# ``LegislatorTerm`` ranges are stored **inclusive** on both ends — all term
+# queries (``_term_on``, ``_resolve_term_period``, vote-time party joins) use
+# ``start_date <= d AND end_date >= d``. This differs from the *half-open*
+# convention used for ``LegislativePeriod`` / ``Legislature`` /
+# ``LegislativeSession`` (where ``end_date`` is the start of the next, see
+# CONTEXT.md "Período Legislativo" + ADR-0016). Keep these two conventions
+# distinct; do not mix them.
 PERIOD_START_MONTH = 3
 PERIOD_START_DAY = 11
 PERIOD_END_MONTH = 3

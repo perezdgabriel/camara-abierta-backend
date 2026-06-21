@@ -1,8 +1,8 @@
 """initial_schema
 
-Revision ID: ae4098f44734
+Revision ID: c9f8120b1dfb
 Revises: 
-Create Date: 2026-06-17 16:33:36.153925
+Create Date: 2026-06-21 18:26:53.565074
 """
 
 from alembic import op
@@ -11,7 +11,7 @@ from sqlalchemy.dialects import postgresql
 
 
 # revision identifiers, used by Alembic.
-revision = 'ae4098f44734'
+revision = 'c9f8120b1dfb'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -327,25 +327,6 @@ def upgrade() -> None:
     )
     op.create_index(op.f('ix_districts_deleted_at'), 'districts', ['deleted_at'], unique=False)
     op.create_index(op.f('ix_districts_sync_version'), 'districts', ['sync_version'], unique=False)
-    op.create_table('legislative_sessions',
-    sa.Column('number', sa.Integer(), nullable=False),
-    sa.Column('session_type', sa.String(length=30), nullable=False),
-    sa.Column('period_id', sa.BigInteger(), nullable=False),
-    sa.Column('chamber_id', sa.BigInteger(), nullable=False),
-    sa.Column('start_date', sa.Date(), nullable=True),
-    sa.Column('end_date', sa.Date(), nullable=True),
-    sa.Column('description', sa.String(length=200), nullable=True),
-    sa.Column('id', sa.BigInteger(), nullable=False),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
-    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
-    sa.Column('deleted_at', sa.DateTime(timezone=True), nullable=True),
-    sa.Column('sync_version', sa.BigInteger(), server_default=sa.text("nextval('global_sync_version_seq')"), nullable=False),
-    sa.ForeignKeyConstraint(['chamber_id'], ['chambers.id'], name=op.f('fk_legislative_sessions_chamber_id_chambers'), ondelete='RESTRICT'),
-    sa.ForeignKeyConstraint(['period_id'], ['legislative_periods.id'], name=op.f('fk_legislative_sessions_period_id_legislative_periods'), ondelete='RESTRICT'),
-    sa.PrimaryKeyConstraint('id', name=op.f('pk_legislative_sessions'))
-    )
-    op.create_index(op.f('ix_legislative_sessions_deleted_at'), 'legislative_sessions', ['deleted_at'], unique=False)
-    op.create_index(op.f('ix_legislative_sessions_sync_version'), 'legislative_sessions', ['sync_version'], unique=False)
     op.create_table('legislator_merge_candidates',
     sa.Column('source', sa.String(length=50), nullable=False),
     sa.Column('source_external_id', sa.String(length=100), nullable=False),
@@ -394,6 +375,24 @@ def upgrade() -> None:
     )
     op.create_index(op.f('ix_legislator_voting_stats_deleted_at'), 'legislator_voting_stats', ['deleted_at'], unique=False)
     op.create_index(op.f('ix_legislator_voting_stats_sync_version'), 'legislator_voting_stats', ['sync_version'], unique=False)
+    op.create_table('legislatures',
+    sa.Column('number', sa.Integer(), nullable=False),
+    sa.Column('period_id', sa.BigInteger(), nullable=False),
+    sa.Column('start_date', sa.Date(), nullable=False),
+    sa.Column('end_date', sa.Date(), nullable=False),
+    sa.Column('kind', sa.Enum('ORDINARIA', 'EXTRAORDINARIA', name='legislature_kind', native_enum=False), nullable=False),
+    sa.Column('description', sa.String(length=200), nullable=True),
+    sa.Column('id', sa.BigInteger(), nullable=False),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.Column('deleted_at', sa.DateTime(timezone=True), nullable=True),
+    sa.Column('sync_version', sa.BigInteger(), server_default=sa.text("nextval('global_sync_version_seq')"), nullable=False),
+    sa.ForeignKeyConstraint(['period_id'], ['legislative_periods.id'], name=op.f('fk_legislatures_period_id_legislative_periods'), ondelete='RESTRICT'),
+    sa.PrimaryKeyConstraint('id', name=op.f('pk_legislatures')),
+    sa.UniqueConstraint('number', name=op.f('uq_legislatures_number'))
+    )
+    op.create_index(op.f('ix_legislatures_deleted_at'), 'legislatures', ['deleted_at'], unique=False)
+    op.create_index(op.f('ix_legislatures_sync_version'), 'legislatures', ['sync_version'], unique=False)
     op.create_table('provinces',
     sa.Column('number', sa.SmallInteger(), nullable=False),
     sa.Column('name', sa.String(length=200), nullable=False),
@@ -493,6 +492,27 @@ def upgrade() -> None:
     )
     op.create_index(op.f('ix_communes_deleted_at'), 'communes', ['deleted_at'], unique=False)
     op.create_index(op.f('ix_communes_sync_version'), 'communes', ['sync_version'], unique=False)
+    op.create_table('legislative_sessions',
+    sa.Column('number', sa.Integer(), nullable=False),
+    sa.Column('kind', sa.Enum('ORDINARIA', 'ESPECIAL', name='session_kind', native_enum=False), nullable=False),
+    sa.Column('legislature_id', sa.BigInteger(), nullable=False),
+    sa.Column('chamber_id', sa.BigInteger(), nullable=False),
+    sa.Column('committee_id', sa.BigInteger(), nullable=True),
+    sa.Column('start_date', sa.Date(), nullable=True),
+    sa.Column('end_date', sa.Date(), nullable=True),
+    sa.Column('description', sa.String(length=200), nullable=True),
+    sa.Column('id', sa.BigInteger(), nullable=False),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.Column('deleted_at', sa.DateTime(timezone=True), nullable=True),
+    sa.Column('sync_version', sa.BigInteger(), server_default=sa.text("nextval('global_sync_version_seq')"), nullable=False),
+    sa.ForeignKeyConstraint(['chamber_id'], ['chambers.id'], name=op.f('fk_legislative_sessions_chamber_id_chambers'), ondelete='RESTRICT'),
+    sa.ForeignKeyConstraint(['committee_id'], ['committees.id'], name=op.f('fk_legislative_sessions_committee_id_committees'), ondelete='SET NULL'),
+    sa.ForeignKeyConstraint(['legislature_id'], ['legislatures.id'], name=op.f('fk_legislative_sessions_legislature_id_legislatures'), ondelete='RESTRICT'),
+    sa.PrimaryKeyConstraint('id', name=op.f('pk_legislative_sessions'))
+    )
+    op.create_index(op.f('ix_legislative_sessions_deleted_at'), 'legislative_sessions', ['deleted_at'], unique=False)
+    op.create_index(op.f('ix_legislative_sessions_sync_version'), 'legislative_sessions', ['sync_version'], unique=False)
     op.create_table('legislator_terms',
     sa.Column('legislator_id', sa.BigInteger(), nullable=False),
     sa.Column('period_id', sa.BigInteger(), nullable=False),
@@ -759,6 +779,9 @@ def downgrade() -> None:
     op.drop_index(op.f('ix_legislator_terms_deleted_at'), table_name='legislator_terms')
     op.drop_index('ix_legislator_terms_bridge_window', table_name='legislator_terms')
     op.drop_table('legislator_terms')
+    op.drop_index(op.f('ix_legislative_sessions_sync_version'), table_name='legislative_sessions')
+    op.drop_index(op.f('ix_legislative_sessions_deleted_at'), table_name='legislative_sessions')
+    op.drop_table('legislative_sessions')
     op.drop_index(op.f('ix_communes_sync_version'), table_name='communes')
     op.drop_index(op.f('ix_communes_deleted_at'), table_name='communes')
     op.drop_table('communes')
@@ -772,15 +795,15 @@ def downgrade() -> None:
     op.drop_index(op.f('ix_provinces_sync_version'), table_name='provinces')
     op.drop_index(op.f('ix_provinces_deleted_at'), table_name='provinces')
     op.drop_table('provinces')
+    op.drop_index(op.f('ix_legislatures_sync_version'), table_name='legislatures')
+    op.drop_index(op.f('ix_legislatures_deleted_at'), table_name='legislatures')
+    op.drop_table('legislatures')
     op.drop_index(op.f('ix_legislator_voting_stats_sync_version'), table_name='legislator_voting_stats')
     op.drop_index(op.f('ix_legislator_voting_stats_deleted_at'), table_name='legislator_voting_stats')
     op.drop_table('legislator_voting_stats')
     op.drop_index(op.f('ix_legislator_merge_candidates_sync_version'), table_name='legislator_merge_candidates')
     op.drop_index(op.f('ix_legislator_merge_candidates_deleted_at'), table_name='legislator_merge_candidates')
     op.drop_table('legislator_merge_candidates')
-    op.drop_index(op.f('ix_legislative_sessions_sync_version'), table_name='legislative_sessions')
-    op.drop_index(op.f('ix_legislative_sessions_deleted_at'), table_name='legislative_sessions')
-    op.drop_table('legislative_sessions')
     op.drop_index(op.f('ix_districts_sync_version'), table_name='districts')
     op.drop_index(op.f('ix_districts_deleted_at'), table_name='districts')
     op.drop_table('districts')

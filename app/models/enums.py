@@ -72,6 +72,30 @@ class CommitteeType(str, Enum):
     MIXED = "mixed"
 
 
+class LegislatureKind(str, Enum):
+    """The kind of an annual Legislatura.
+
+    Post-2005 reform every Legislatura is ``ORDINARIA`` and runs continuously
+    Mar 11 → Mar 10 next year; ``EXTRAORDINARIA`` is retained for historical
+    fidelity (pre-2005 records). See CONTEXT.md "Legislatura".
+    """
+
+    ORDINARIA = "ordinaria"
+    EXTRAORDINARIA = "extraordinaria"
+
+
+class SessionKind(str, Enum):
+    """The kind of a single Sesión Legislativa (one meeting).
+
+    Distinct from :class:`LegislatureKind` — ``ESPECIAL`` is a session convened
+    outside regular hours (e.g. minister interpellations or urgent topics), not
+    an "extraordinary" annual cycle. See CONTEXT.md "Sesión Legislativa".
+    """
+
+    ORDINARIA = "ordinaria"
+    ESPECIAL = "especial"
+
+
 class Bloc(str, Enum):
     """Structural political alignment of a party (or independent legislator).
 

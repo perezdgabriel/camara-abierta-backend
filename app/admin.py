@@ -18,6 +18,7 @@ from app.models.legislature import (
     LegislativePeriod,
     LegislativeSession,
     Legislator,
+    Legislature,
     PoliticalParty,
 )
 from app.models.proyecto import Bill, BillEvent, BillStage, BillUrgency
@@ -253,6 +254,24 @@ class LegislativePeriodAdmin(ModelView, model=LegislativePeriod):
     column_sortable_list = [LegislativePeriod.number, LegislativePeriod.start_date]
 
 
+class LegislatureAdmin(ModelView, model=Legislature):
+    name = "Legislatura"
+    name_plural = "Legislaturas"
+    icon = "fa-solid fa-landmark"
+    category = "Parlamento"
+
+    column_list = [
+        Legislature.id,
+        Legislature.number,
+        Legislature.kind,
+        Legislature.period,
+        Legislature.start_date,
+        Legislature.end_date,
+    ]
+    column_sortable_list = [Legislature.number, Legislature.start_date]
+    page_size = 50
+
+
 class LegislativeSessionAdmin(ModelView, model=LegislativeSession):
     name = "Sesión"
     name_plural = "Sesiones Legislativas"
@@ -262,9 +281,10 @@ class LegislativeSessionAdmin(ModelView, model=LegislativeSession):
     column_list = [
         LegislativeSession.id,
         LegislativeSession.number,
-        LegislativeSession.session_type,
+        LegislativeSession.kind,
         LegislativeSession.chamber,
-        LegislativeSession.period,
+        LegislativeSession.legislature,
+        LegislativeSession.committee,
         LegislativeSession.start_date,
         LegislativeSession.end_date,
     ]
@@ -521,6 +541,7 @@ _ALL_VIEWS = [
     BlocAffiliationAdmin,
     ChamberAdmin,
     LegislativePeriodAdmin,
+    LegislatureAdmin,
     LegislativeSessionAdmin,
     CommitteeAdmin,
     # Legislación
