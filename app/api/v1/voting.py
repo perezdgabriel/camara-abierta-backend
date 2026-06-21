@@ -93,7 +93,9 @@ def get_voting_session(voting_session_id: int, db: Session = Depends(get_db)):
     )
     if voting_session is None:
         raise HTTPException(status_code=404, detail="Voting session not found")
-    return VotingSessionDetail.model_validate(voting_session)
+    detail = VotingSessionDetail.model_validate(voting_session)
+    detail.votes = voting_service.build_vote_details(voting_session)
+    return detail
 
 
 def _parse_window(window: str) -> int:

@@ -6,6 +6,11 @@ from sqlalchemy.orm import Session, joinedload, selectinload
 from app.models.enums import ChamberType, SignalType, VotingResult
 from app.models.legislature import Chamber, Legislator, LegislatorTerm
 from app.models.votacion import Vote, VotingSession, VotingSessionSignal
+from app.schemas.voting import (
+    LegislatorBrief,
+    PartyBrief,
+    VoteDetail,
+)
 
 DEFAULT_OFFSET = 0
 DEFAULT_LIMIT = 50
@@ -94,8 +99,10 @@ def get_voting_session(db: Session, voting_session_id: int) -> VotingSession | N
             joinedload(VotingSession.bill),
             selectinload(VotingSession.signals),
             selectinload(VotingSession.votes).options(
-                # ``Legislator.current_party`` reads from the active term;
-                # eager-load terms/party/chamber to avoid N+1. See ADR-0015.
+                # Vote-time party reads walk ``Legislator.terms`` for the term
+                # covering ``VotingSession.voting_date`` — eager-load
+                # terms/party/chamber to avoid N+1. See CONTEXT.md
+                # "Vote-time party" and ADR-0015.
                 joinedload(Vote.legislator)
                 .selectinload(Legislator.terms)
                 .joinedload(LegislatorTerm.party),
@@ -107,3 +114,34 @@ def get_voting_session(db: Session, voting_session_id: int) -> VotingSession | N
         .filter(VotingSession.id == voting_session_id)
         .first()
     )
+
+
+def build_vote_details(session: VotingSession) -> list[VoteDetail]:
+    """Vote rows with party/chamber_type resolved at ``voting_date``.
+
+    Resolves through ``Legislator.party_on`` / ``chamber_type_on`` so that a
+    historical session renders each legislator's party as it was on the date
+    of the vote, not today's active term. Orphan votes (no resolved
+    legislator) pass through with ``legislator=None``.
+    """
+    d = session.voting_date.date()
+    rows: list[VoteDetail] = []
+    for vote in session.votes:
+        legislator_brief: LegislatorBrief | None = None
+        if vote.legislator is not None:
+            party = vote.legislator.party_on(d)
+            legislator_brief = LegislatorBrief(
+                id=vote.legislator.id,
+                full_name=vote.legislator.full_name,
+                chamber_type=vote.legislator.chamber_type_on(d),
+                party=PartyBrief.model_validate(party) if party else None,
+            )
+        rows.append(
+            VoteDetail(
+                id=vote.id,
+                vote=vote.vote,
+                legislator=legislator_brief,
+                legislator_external_id=vote.legislator_external_id,
+            )
+        )
+    return rows

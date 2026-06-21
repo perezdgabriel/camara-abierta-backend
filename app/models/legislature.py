@@ -311,6 +311,30 @@ class Legislator(SyncableMixin, Base):
         term = self.active_term
         return term.chamber_external_id if term else None
 
+    def _term_on(self, d: date) -> "LegislatorTerm | None":
+        matches = [
+            term
+            for term in self.terms
+            if term.start_date <= d and (term.end_date is None or term.end_date >= d)
+        ]
+        if not matches:
+            return None
+        return max(matches, key=lambda term: term.start_date)
+
+    def party_on(self, d: date) -> "PoliticalParty | None":
+        """The party from the term whose window covers ``d``.
+
+        Used for vote rows so that historical sessions render the legislator's
+        party at the time of the vote, not today's. See CONTEXT.md
+        "Vote-time party".
+        """
+        term = self._term_on(d)
+        return term.party if term else None
+
+    def chamber_type_on(self, d: date) -> ChamberType | None:
+        term = self._term_on(d)
+        return term.chamber.chamber_type if term and term.chamber else None
+
     @property
     def voting_lean(self) -> dict | None:
         """Inclinación de voto for the API, projected from ``voting_stats``.

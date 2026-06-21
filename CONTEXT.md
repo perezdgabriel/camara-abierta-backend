@@ -76,8 +76,12 @@ A registered party in the Chilean Congress. `PoliticalParty.name` is the full of
 _Avoid_: creating party records from Senado data
 
 **Independent legislator**:
-A legislator with no current party affiliation. `Legislator.party_id` is null. Senado signals this via "Independiente" (and variants) in the `PARTIDO` field. This is not a party — it means unaffiliated. In the UI, independents are displayed with the label "Ind." (badge/list) or "Independiente" (full name), and the color `#6b7280` (gray).
-_Avoid_: "Independientes" as a party name; treating null party as missing data
+A legislator with no party affiliation on the relevant term — `current_party` is null (no open `LegislatorTerm` with a party today) or `party_on(date)` is null (no covering term carried a party at that date). Senado signals this via "Independiente" (and variants) in the `PARTIDO` field. This is not a party — it means unaffiliated. In the UI, independents are displayed with the label "Ind." (badge/list) or "Independiente" (full name), and the color `#6b7280` (gray).
+_Avoid_: "Independientes" as a party name; treating null party as missing data; reading a stored `Legislator.party_id` (removed by ADR-0015)
+
+**Vote-time party**:
+The party / chamber shown on a vote row is read from the `LegislatorTerm` whose date window covers `VotingSession.voting_date`, not from `Legislator.current_party`. Voting-session-detail responses go through `voting.build_vote_details`, which uses `Legislator.party_on(voting_date)` and `chamber_type_on(voting_date)`. Roster, profile, and dashboard reads continue to use `current_*` (today's term) because their question is "who they are now", not "how they voted then". See ADR-0015.
+_Avoid_: rendering historical votes through today's active term — closed terms turn into spurious independents; reusing `current_party` for any per-vote display
 
 **Legislator identity**:
 A `Legislator` is the person, not the seat. One `Legislator` entity represents a single physical parliamentarian regardless of how many chambers or stints they have served — a senator who was previously a deputy is one `Legislator`, not two. Per-stint facts (chamber, party, district/circumscription, the upstream chamber bridge ID) live on `LegislatorTerm` rows; the `Legislator` row itself carries only person-level data (name, gender, birth date, photo, biographic enrichment) plus `bcn_uri` as the cross-chamber identity column. See ADR-0015.

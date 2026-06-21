@@ -35,16 +35,15 @@ class BillBrief(ORMModel):
 class LegislatorBrief(ORMModel):
     """Lightweight legislator reference for vote rows.
 
-    ``chamber_type`` / ``party`` now derive from the active term (ADR-0015);
-    Pydantic reads them via the property aliases.
+    ``chamber_type`` / ``party`` are vote-time values resolved by
+    ``voting.build_vote_details`` from the ``LegislatorTerm`` covering
+    ``VotingSession.voting_date``. See CONTEXT.md "Vote-time party".
     """
 
     id: int
     full_name: str
-    chamber_type: ChamberType | None = Field(
-        default=None, validation_alias="current_chamber_type"
-    )
-    party: PartyBrief | None = Field(default=None, validation_alias="current_party")
+    chamber_type: ChamberType | None = None
+    party: PartyBrief | None = None
 
 
 class VoteDetail(ORMModel):
