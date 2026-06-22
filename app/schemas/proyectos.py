@@ -130,6 +130,7 @@ class VotingResult(ORMModel):
     quorum_type: str | None = None
     session_ref: str | None = None
     stage_label: str | None = None
+    bill_stage_id: int | None = None
     article_text: str | None = None
     constitutional_procedure_id: int | None = None
     constitutional_procedure_label: str | None = None

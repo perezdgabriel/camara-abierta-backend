@@ -3,6 +3,7 @@ from enum import StrEnum
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload, selectinload
+from sqlalchemy.orm.attributes import set_committed_value
 
 from app.models.enums import BillOrigin, BillStatus, BillType, ChamberType
 from app.models.legislature import Chamber, Legislator, LegislatorTerm
@@ -191,6 +192,38 @@ def bill_to_summary_extra(bill: Bill) -> dict:
         "last_activity_date": last_activity_date,
         "votes_summary": votes_summary,
     }
+
+
+def _stage_for_session(
+    session: VotingSession, stages: list[BillStage]
+) -> BillStage | None:
+    voting_day = session.voting_date.date()
+    candidates: list[BillStage] = []
+    for stage in stages:
+        if stage.chamber_id is not None and stage.chamber_id != session.chamber_id:
+            continue
+        if stage.start_date and stage.start_date > voting_day:
+            continue
+        if stage.end_date is not None and stage.end_date < voting_day:
+            continue
+        candidates.append(stage)
+    if not candidates:
+        return None
+    candidates.sort(key=lambda s: s.start_date, reverse=True)
+    return candidates[0]
+
+
+def attribute_voting_sessions_to_stages(bill: Bill) -> None:
+    """Compute each session's ``bill_stage_id`` from stage windows + chamber.
+
+    Read-time attribution: the ingestor leaves the column null today, so we
+    derive it here and push it onto the in-memory ORM instances without
+    marking them dirty (``set_committed_value``). The DB row is unchanged.
+    """
+    stages = list(bill.stages or [])
+    for session in bill.voting_sessions or []:
+        match = _stage_for_session(session, stages)
+        set_committed_value(session, "bill_stage_id", match.id if match else None)
 
 
 def list_bills_by_ids(db: Session, bill_ids: list[int]) -> list[Bill]:

@@ -25,6 +25,7 @@ def _to_summary(bill) -> BillSummary:
 
 def _to_detail(bill) -> BillDetail:
     extra = svc.bill_to_summary_extra(bill)
+    svc.attribute_voting_sessions_to_stages(bill)
     return BillDetail.model_validate({**bill.__dict__, **extra})
 
 
@@ -103,6 +104,7 @@ def get_bill_voting(bill_id: int, db: Session = Depends(get_db)):
     bill = svc.get_bill(db, bill_id)
     if bill is None:
         raise HTTPException(status_code=404, detail="Proyecto no encontrado")
+    svc.attribute_voting_sessions_to_stages(bill)
     sessions = sorted(bill.voting_sessions, key=lambda v: v.voting_date)
     return [VotingResult.model_validate(v) for v in sessions]
 
