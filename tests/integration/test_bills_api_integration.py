@@ -219,3 +219,89 @@ def test_get_bill_picks_latest_start_date_when_stage_windows_overlap(
     body = response.json()
     attribution = {s["id"]: s["bill_stage_id"] for s in body["voting_sessions"]}
     assert attribution[overlap.id] == mixed.id
+
+
+def test_get_bill_attributes_documents_to_stages_by_date_window(client, db_session):
+    bill, first_stage = _make_bill_with_two_stages(db_session)
+    second_stage = next(s for s in bill.stages if s != first_stage)
+
+    payload = make_initial_bill_payload()
+    payload["bulletin_number"] = bill.bulletin_number
+    payload["stages"] = [
+        {
+            "stage_type": first_stage.stage_type,
+            "start_date": first_stage.start_date.isoformat(),
+            "_chamber_type": ChamberType.SENATE,
+            "description": first_stage.description or "",
+        },
+        {
+            "stage_type": second_stage.stage_type,
+            "start_date": second_stage.start_date.isoformat(),
+            "_chamber_type": ChamberType.DEPUTIES,
+            "description": second_stage.description or "",
+        },
+    ]
+    payload["documents"] = [
+        {
+            "document_type": "report",
+            "title": "Informe en primer trámite",
+            "document_url": "https://example.test/informe-1.pdf",
+            "document_date": "2026-05-15",
+        },
+        {
+            "document_type": "official_communication",
+            "title": "Oficio en segundo trámite",
+            "document_url": "https://example.test/oficio-1.pdf",
+            "document_date": "2026-06-10",
+        },
+        {
+            "document_type": "report",
+            "title": "Informe previo a los trámites",
+            "document_url": "https://example.test/informe-orphan.pdf",
+            "document_date": "2026-04-20",
+        },
+        {
+            "document_type": "comparison",
+            "title": "Texto comparado sin fecha",
+            "document_url": "https://example.test/comparado.pdf",
+            "document_date": None,
+        },
+    ]
+    upsert_bill(db_session, payload)
+    db_session.flush()
+
+    response = client.get(f"/api/v1/bills/{bill.id}")
+
+    assert response.status_code == 200
+    body = response.json()
+    attribution = {d["title"]: d["bill_stage_id"] for d in body["documents"]}
+    assert attribution["Informe en primer trámite"] == first_stage.id
+    assert attribution["Oficio en segundo trámite"] == second_stage.id
+    assert attribution["Informe previo a los trámites"] is None
+    assert attribution["Texto comparado sin fecha"] is None
+
+
+def test_get_bill_persists_full_official_communication_document_type(
+    client, db_session
+):
+    """Regression: BillDocument.document_type used to be String(20), silently
+    truncating ``official_communication`` to ``official_communicati`` on insert.
+    """
+    payload = make_initial_bill_payload()
+    payload["documents"] = [
+        {
+            "document_type": "official_communication",
+            "title": "Oficio de prueba",
+            "document_url": "https://example.test/oficio.pdf",
+            "document_date": "2026-05-15",
+        },
+    ]
+    bill, _ = upsert_bill(db_session, payload)
+    db_session.flush()
+
+    response = client.get(f"/api/v1/bills/{bill.id}")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body["documents"]) == 1
+    assert body["documents"][0]["document_type"] == "official_communication"

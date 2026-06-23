@@ -219,7 +219,7 @@ class BillDocument(SyncableMixin, Base):
     bill_stage_id: Mapped[int | None] = mapped_column(
         ForeignKey("bill_stages.id", ondelete="SET NULL")
     )
-    document_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    document_type: Mapped[str] = mapped_column(String(50), nullable=False)
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
     document_url: Mapped[str | None] = mapped_column(String(500))

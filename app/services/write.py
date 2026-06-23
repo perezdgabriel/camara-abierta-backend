@@ -587,7 +587,7 @@ def _reconcile_documents(
     changed = False
 
     for payload in documents:
-        document_type = (payload.get("document_type") or "other")[:20]
+        document_type = (payload.get("document_type") or "other")[:50]
         title = (payload.get("title") or "").strip()[:500]
         document_url = (payload.get("document_url") or "").strip()[:500]
         document_date = _parse_date(payload.get("document_date"))

@@ -10,6 +10,7 @@ from app.models.legislature import Chamber, Legislator, LegislatorTerm
 from app.models.proyecto import (
     Bill,
     BillAuthorship,
+    BillDocument,
     BillEvent,
     BillStage,
     BillUrgency,
@@ -224,6 +225,39 @@ def attribute_voting_sessions_to_stages(bill: Bill) -> None:
     for session in bill.voting_sessions or []:
         match = _stage_for_session(session, stages)
         set_committed_value(session, "bill_stage_id", match.id if match else None)
+
+
+def _stage_for_document(
+    document: BillDocument, stages: list[BillStage]
+) -> BillStage | None:
+    if document.document_date is None:
+        return None
+    doc_day = document.document_date
+    candidates: list[BillStage] = []
+    for stage in stages:
+        if stage.start_date and stage.start_date > doc_day:
+            continue
+        if stage.end_date is not None and stage.end_date < doc_day:
+            continue
+        candidates.append(stage)
+    if not candidates:
+        return None
+    candidates.sort(key=lambda s: s.start_date, reverse=True)
+    return candidates[0]
+
+
+def attribute_documents_to_stages(bill: Bill) -> None:
+    """Compute each document's ``bill_stage_id`` from stage windows.
+
+    Mirrors :func:`attribute_voting_sessions_to_stages` but without the chamber
+    filter — ``bill_documents`` has no chamber column, and an informe/oficio
+    fired during a trámite is attributed by date window alone. Comparados (no
+    ``document_date``) stay null and surface as orphans on the frontend.
+    """
+    stages = list(bill.stages or [])
+    for document in bill.documents or []:
+        match = _stage_for_document(document, stages)
+        set_committed_value(document, "bill_stage_id", match.id if match else None)
 
 
 def list_bills_by_ids(db: Session, bill_ids: list[int]) -> list[Bill]:
