@@ -1,6 +1,6 @@
 # Calendar events as an editorial layer
 
-**Status:** Accepted, 2026-06-24.
+**Status:** Accepted, 2026-06-24. Amended 2026-06-24 — added `votacion` kind (see §3 below).
 
 ## Context
 
@@ -73,12 +73,21 @@ ingestor — not a schema change:
 Per `CONTEXT.md`'s enum discipline ("All categorical string fields use
 formal Python enums"). The kinds are:
 
-`sesion, comision, interpelacion, mensaje, plazo, otro`
+`sesion, votacion, comision, interpelacion, mensaje, plazo, otro`
 
 `otro` is the escape valve for editorial moments that don't fit the named
 buckets; if it dominates after a few weeks of curation, that's the signal
 to add a new enum value rather than reach for free-text. Kind drives UI
 rendering and gives a future scraper a structural slot to target.
+
+**`votacion` (added 2026-06-24).** Originally lumped under `sesion`. The
+frontend swap revealed the lump was load-bearing: a *Sesión* is the
+meeting block ("Sala Diputados — 13:00"), a *Votación* is a discrete
+announced vote ("Vota Boletín 100-06 — 14:30"). The dashboard widget is
+literally named *Próximas votaciones* on this distinction, and clients
+will agendize votaciones as their own row even when they sit inside a
+Sesión. This is exactly the "add a new enum value rather than reach for
+free-text" signal anticipated above, applied before `otro` proliferated.
 
 ### 4. Linkages: nullable single FKs to `Bill`, `Legislator`, `Committee`
 

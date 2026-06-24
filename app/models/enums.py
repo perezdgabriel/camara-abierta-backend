@@ -115,9 +115,16 @@ class CalendarEventKind(str, Enum):
     gives future agenda scrapers a structural slot. ``OTRO`` is the escape
     valve for moments that don't fit the named kinds. See CONTEXT.md
     "Calendar event".
+
+    ``SESION`` and ``VOTACION`` are deliberately distinct: a Sesión is a
+    chamber/comisión meeting block (the container), a Votación is a
+    discrete announced vote (one item, possibly nested in a Sesión but
+    often surfaced independently in client agendas — the dashboard
+    widget is named *Próximas votaciones* precisely on this split).
     """
 
     SESION = "sesion"
+    VOTACION = "votacion"
     COMISION = "comision"
     INTERPELACION = "interpelacion"
     MENSAJE = "mensaje"
