@@ -1,8 +1,8 @@
 """initial_schema
 
-Revision ID: c9f8120b1dfb
+Revision ID: 0081d8d054bf
 Revises: 
-Create Date: 2026-06-21 18:26:53.565074
+Create Date: 2026-06-24 12:21:37.607576
 """
 
 from alembic import op
@@ -11,7 +11,7 @@ from sqlalchemy.dialects import postgresql
 
 
 # revision identifiers, used by Alembic.
-revision = 'c9f8120b1dfb'
+revision = '0081d8d054bf'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -620,10 +620,37 @@ def upgrade() -> None:
     )
     op.create_index(op.f('ix_bill_urgencies_deleted_at'), 'bill_urgencies', ['deleted_at'], unique=False)
     op.create_index(op.f('ix_bill_urgencies_sync_version'), 'bill_urgencies', ['sync_version'], unique=False)
+    op.create_table('calendar_events',
+    sa.Column('kind', sa.Enum('SESION', 'COMISION', 'INTERPELACION', 'MENSAJE', 'PLAZO', 'OTRO', name='calendar_event_kind', native_enum=False), nullable=False),
+    sa.Column('starts_at', sa.DateTime(timezone=True), nullable=False),
+    sa.Column('ends_at', sa.DateTime(timezone=True), nullable=True),
+    sa.Column('title', sa.String(length=300), nullable=False),
+    sa.Column('description', sa.Text(), nullable=True),
+    sa.Column('location', sa.String(length=200), nullable=True),
+    sa.Column('chamber_type', sa.Enum('DEPUTIES', 'SENATE', name='calendar_event_chamber_type', native_enum=False), nullable=True),
+    sa.Column('bill_id', sa.BigInteger(), nullable=True),
+    sa.Column('legislator_id', sa.BigInteger(), nullable=True),
+    sa.Column('committee_id', sa.BigInteger(), nullable=True),
+    sa.Column('source', sa.Enum('MANUAL', name='calendar_event_source', native_enum=False), nullable=False),
+    sa.Column('external_ref', sa.String(length=200), nullable=True),
+    sa.Column('id', sa.BigInteger(), nullable=False),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.Column('deleted_at', sa.DateTime(timezone=True), nullable=True),
+    sa.Column('sync_version', sa.BigInteger(), server_default=sa.text("nextval('global_sync_version_seq')"), nullable=False),
+    sa.ForeignKeyConstraint(['bill_id'], ['bills.id'], name=op.f('fk_calendar_events_bill_id_bills'), ondelete='SET NULL'),
+    sa.ForeignKeyConstraint(['committee_id'], ['committees.id'], name=op.f('fk_calendar_events_committee_id_committees'), ondelete='SET NULL'),
+    sa.ForeignKeyConstraint(['legislator_id'], ['legislators.id'], name=op.f('fk_calendar_events_legislator_id_legislators'), ondelete='SET NULL'),
+    sa.PrimaryKeyConstraint('id', name=op.f('pk_calendar_events')),
+    sa.UniqueConstraint('source', 'external_ref', name='uq_calendar_events_source_external_ref')
+    )
+    op.create_index(op.f('ix_calendar_events_deleted_at'), 'calendar_events', ['deleted_at'], unique=False)
+    op.create_index('ix_calendar_events_starts_at', 'calendar_events', ['starts_at'], unique=False)
+    op.create_index(op.f('ix_calendar_events_sync_version'), 'calendar_events', ['sync_version'], unique=False)
     op.create_table('bill_documents',
     sa.Column('bill_id', sa.BigInteger(), nullable=False),
     sa.Column('bill_stage_id', sa.BigInteger(), nullable=True),
-    sa.Column('document_type', sa.String(length=20), nullable=False),
+    sa.Column('document_type', sa.String(length=50), nullable=False),
     sa.Column('title', sa.String(length=500), nullable=False),
     sa.Column('description', sa.Text(), nullable=True),
     sa.Column('document_url', sa.String(length=500), nullable=True),
@@ -762,6 +789,10 @@ def downgrade() -> None:
     op.drop_index(op.f('ix_bill_documents_sync_version'), table_name='bill_documents')
     op.drop_index(op.f('ix_bill_documents_deleted_at'), table_name='bill_documents')
     op.drop_table('bill_documents')
+    op.drop_index(op.f('ix_calendar_events_sync_version'), table_name='calendar_events')
+    op.drop_index('ix_calendar_events_starts_at', table_name='calendar_events')
+    op.drop_index(op.f('ix_calendar_events_deleted_at'), table_name='calendar_events')
+    op.drop_table('calendar_events')
     op.drop_index(op.f('ix_bill_urgencies_sync_version'), table_name='bill_urgencies')
     op.drop_index(op.f('ix_bill_urgencies_deleted_at'), table_name='bill_urgencies')
     op.drop_table('bill_urgencies')
