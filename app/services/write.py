@@ -435,21 +435,83 @@ def _reconcile_topics(db: Session, bill: Bill, topic_names: list[str]) -> bool:
     return changed
 
 
+_AUTHORSHIP_NON_ALPHA_RE = re.compile(r"[^a-z0-9\s]")
+_AUTHORSHIP_WHITESPACE_RE = re.compile(r"\s+")
+
+
+def _canonicalize_legislator_name(name: str) -> str:
+    """Normalize a legislator name for authorship matching.
+
+    Folds the upstream ``Apellido_paterno Apellido_materno, Nombres`` form
+    into the DB ``Nombres Apellido_paterno Apellido_materno`` form, then
+    strips accents, lowercases, and collapses whitespace and punctuation
+    so both sides land on the same key.
+    """
+    if "," in name:
+        last, first = name.split(",", 1)
+        name = f"{first.strip()} {last.strip()}"
+    name = name.lower()
+    name = unicodedata.normalize("NFD", name)
+    name = "".join(c for c in name if not unicodedata.combining(c))
+    name = _AUTHORSHIP_NON_ALPHA_RE.sub(" ", name)
+    return _AUTHORSHIP_WHITESPACE_RE.sub(" ", name).strip()
+
+
+def _build_legislator_lookup(db: Session) -> dict[str, int]:
+    """Map ``canonicalize(Legislator.full_name) -> Legislator.id``.
+
+    Collisions (two legislators normalizing to the same key) are logged at
+    ERROR and dropped from the lookup — matching them later would be
+    ambiguous, so we prefer a logged miss over a silent wrong-match.
+    """
+    lookup: dict[str, int] = {}
+    seen_full_names: dict[str, str] = {}
+    collided: set[str] = set()
+    for legislator_id, full_name in db.execute(
+        select(Legislator.id, Legislator.full_name)
+    ):
+        key = _canonicalize_legislator_name(full_name or "")
+        if not key:
+            continue
+        if key in collided:
+            continue
+        prior = seen_full_names.get(key)
+        if prior is not None:
+            logger.error(
+                "Legislator canonical-key collision on %r: %r and %r both "
+                "normalize to the same key; both skipped from authorship matching",
+                key,
+                prior,
+                full_name,
+            )
+            collided.add(key)
+            lookup.pop(key, None)
+            continue
+        seen_full_names[key] = full_name
+        lookup[key] = legislator_id
+    return lookup
+
+
 def _reconcile_authorships(
     db: Session, bill: Bill, authors: list[dict[str, Any]]
 ) -> bool:
+    lookup = _build_legislator_lookup(db)
+
     desired_legislator_ids: set[int] = set()
     for author in authors:
         name = (author.get("name") or "").strip()
         if not name:
             continue
-        legislator_id = db.execute(
-            select(Legislator.id).where(
-                func.lower(Legislator.full_name) == name.lower()
+        key = _canonicalize_legislator_name(name)
+        legislator_id = lookup.get(key)
+        if legislator_id is None:
+            logger.warning(
+                "Unmatched authorship name on bill %s: %r",
+                bill.bulletin_number,
+                name,
             )
-        ).scalar_one_or_none()
-        if legislator_id is not None:
-            desired_legislator_ids.add(legislator_id)
+            continue
+        desired_legislator_ids.add(legislator_id)
 
     current_by_legislator = {auth.legislator_id: auth for auth in bill.authorships}
     changed = False

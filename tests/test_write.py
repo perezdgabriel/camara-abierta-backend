@@ -263,3 +263,145 @@ def test_parse_datetime_returns_sentinel_for_unparseable_input(caplog):
     assert any(
         "unparseable upstream value" in record.message for record in caplog.records
     )
+
+
+# ── Authorship matching (canonical-key) ──────────────────────────────────
+
+
+def test_canonicalize_handles_upstream_comma_swap_and_accents():
+    upstream = write._canonicalize_legislator_name("Núñez Urrutia, Paulina")
+    db_form = write._canonicalize_legislator_name("Paulina Núñez Urrutia")
+    assert upstream == db_form == "paulina nunez urrutia"
+
+
+def test_canonicalize_collapses_double_spaces_and_strips_punctuation():
+    upstream = write._canonicalize_legislator_name("Araya  Guerrero, Jaime")
+    db_form = write._canonicalize_legislator_name("Jaime Araya Guerrero")
+    assert upstream == db_form == "jaime araya guerrero"
+
+
+def test_canonicalize_handles_apostrophes_and_particles():
+    # O'Higgins-style apostrophe and the "Y" particle observed in upstream data
+    assert (
+        write._canonicalize_legislator_name("Cuello Peña Y Lillo, Luis")
+        == write._canonicalize_legislator_name("Luis Cuello Peña y Lillo")
+        == "luis cuello pena y lillo"
+    )
+    assert (
+        write._canonicalize_legislator_name("O'Higgins, Bernardo")
+        == write._canonicalize_legislator_name("Bernardo O'Higgins")
+    )
+
+
+def test_canonicalize_returns_empty_for_blank_and_punct_only():
+    assert write._canonicalize_legislator_name("") == ""
+    assert write._canonicalize_legislator_name("   ,  ") == ""
+
+
+class _FakeBill:
+    def __init__(self, bulletin: str, authorships=None):
+        self.id = 100
+        self.bulletin_number = bulletin
+        self.authorships = list(authorships or [])
+
+
+class _LegislatorRowsDB:
+    """Fake DB whose execute() yields the seeded (id, full_name) rows."""
+
+    def __init__(self, rows):
+        self._rows = list(rows)
+        self.added: list[object] = []
+        self.deleted: list[object] = []
+
+    def execute(self, stmt):
+        return iter(self._rows)
+
+    def add(self, obj):
+        self.added.append(obj)
+
+    def delete(self, obj):
+        self.deleted.append(obj)
+
+
+def test_reconcile_authorships_matches_upstream_format_names():
+    db = _LegislatorRowsDB(
+        [
+            (1, "Paulina Núñez Urrutia"),
+            (2, "Jaime Araya Guerrero"),
+            (3, "Luis Cuello Peña y Lillo"),
+        ]
+    )
+    bill = _FakeBill(bulletin="100-06")
+
+    changed = write._reconcile_authorships(
+        db,
+        bill,
+        [
+            {"name": "Núñez Urrutia, Paulina"},
+            {"name": "Araya  Guerrero, Jaime"},
+            {"name": "Cuello Peña Y Lillo, Luis"},
+        ],
+    )
+
+    assert changed is True
+    assert {a.legislator_id for a in db.added} == {1, 2, 3}
+    assert all(a.bill_id == 100 and a.author_type == "author" for a in db.added)
+
+
+def test_reconcile_authorships_warns_on_unmatched_name(caplog):
+    caplog.set_level("WARNING", logger="app.services.write")
+    db = _LegislatorRowsDB([(1, "Paulina Núñez Urrutia")])
+    bill = _FakeBill(bulletin="200-07")
+
+    write._reconcile_authorships(
+        db,
+        bill,
+        [
+            {"name": "Núñez Urrutia, Paulina"},  # matches
+            {"name": "Nadie Existe"},  # unmatched
+        ],
+    )
+
+    assert {a.legislator_id for a in db.added} == {1}
+    unmatched_warnings = [
+        r for r in caplog.records
+        if r.levelname == "WARNING" and "Unmatched authorship name" in r.message
+    ]
+    assert len(unmatched_warnings) == 1
+    assert "200-07" in unmatched_warnings[0].message
+    assert "Nadie Existe" in unmatched_warnings[0].message
+
+
+def test_reconcile_authorships_logs_collision_and_skips_both(caplog):
+    caplog.set_level("ERROR", logger="app.services.write")
+    # Two legislators normalize to the same key — both should be excluded
+    # from the lookup, so even the literal upstream name won't match.
+    db = _LegislatorRowsDB(
+        [
+            (1, "Paulina Núñez Urrutia"),
+            (2, "Paulina Nunez Urrutia"),  # same key after accent strip
+        ]
+    )
+    bill = _FakeBill(bulletin="300-08")
+
+    write._reconcile_authorships(
+        db, bill, [{"name": "Núñez Urrutia, Paulina"}]
+    )
+
+    assert db.added == []
+    collision_errors = [
+        r for r in caplog.records
+        if r.levelname == "ERROR" and "canonical-key collision" in r.message
+    ]
+    assert len(collision_errors) == 1
+
+
+def test_reconcile_authorships_deletes_no_longer_matched():
+    existing = SimpleNamespace(legislator_id=1, author_type="author")
+    bill = _FakeBill(bulletin="400-09", authorships=[existing])
+    db = _LegislatorRowsDB([(1, "Paulina Núñez Urrutia")])
+
+    write._reconcile_authorships(db, bill, [])  # upstream now empty
+
+    assert existing in db.deleted
+    assert db.added == []

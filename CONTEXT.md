@@ -40,6 +40,14 @@ _Avoid_: absent
 **Bill activity**:
 `BillEvent` is the granular legislative activity log for a bill, derived from upstream `tramitaciones`. `BillStage` remains the coarser progression model used for current-stage tracking. `last_activity_date` means the latest `BillEvent.event_date`, falling back to `Bill.entry_date` when a bill has no events.
 
+**Moción** (bill origin):
+A bill initiated by parliamentarians — modeled as `Bill.origin == BillOrigin.DEPUTIES`. The counterpart is a **Mensaje**, initiated by the Executive (`BillOrigin.EXECUTIVE`). Upstream `iniciativa` text — `Mocion`, `Moción`, `Indicacion`, `Indicación` — all map to `DEPUTIES` via `ORIGIN_MAP` in `app/ingestors/parsers/bills.py`. Mociones carry per-author identity via `BillAuthorship` rows; mensajes typically have no individual authors. Chilean rules cap signers at 10 deputies or 5 senators per moción — see `app/services/audit/mocion_authors.py` for the audit that surfaces violations and matching failures.
+_Avoid_: "moción" without context (web `CONTEXT.md` "Documento" entry uses _moción_ in the foundational-document sense — the message-or-motion text excluded from the documents list; that's the same word, different concept).
+
+**Bill authorship**:
+`BillAuthorship` joins `Bill` ↔ `Legislator` with an `author_type` (`"author"` for mociones; `"executive"` reserved for the rare mensaje-with-author case). Ingestion in `_reconcile_authorships` (`app/services/write.py`) matches the upstream `<autor><PARLAMENTARIO>` text against `Legislator.full_name` via a **canonical-key match** (case-, accent-, order-, whitespace-, and punctuation-insensitive) — `_canonicalize_legislator_name` folds the upstream `"Apellido_paterno Apellido_materno, Nombres"` format into the DB `"Nombres Apellido_paterno Apellido_materno"` form, then strips accents and collapses non-alphanumeric runs. Unmatched names emit a `WARNING` log with the bulletin and raw name so the silent-drop regression class is visible without an audit run; key collisions emit `ERROR` and both colliding legislators drop out of the lookup. `audit mocion-authors` is the periodic regression check, not the primary safety net.
+_Avoid_: treating zero-author mociones as semantically valid; reintroducing a per-name `SELECT` in the matcher (a per-call canonical-key dict is cheaper and more robust); reading "exact name match" docs that predate the canonical-key rewrite
+
 **Data collector**:
 A component that fetches external data and writes it to the database. Current implementations: `scrapers/` (browser-driven via Playwright) and `ingestors/` (API clients via httpx). The split is an implementation detail — both produce structured data for the write service.
 _Avoid_: scraper, ingestor (when referring to the concept; fine as directory names)

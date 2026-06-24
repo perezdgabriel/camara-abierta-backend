@@ -35,6 +35,7 @@ def _list_jobs(_: argparse.Namespace) -> dict[str, list[str]]:
         "loaders": ["geography"],
         "voting-signals": ["backfill", "refresh-aggregate", "seed-fixtures"],
         "legislator-stats": ["refresh"],
+        "audit": ["mocion-authors"],
     }
 
 
@@ -189,6 +190,16 @@ def _run_legislator_stats_refresh(_args: argparse.Namespace) -> dict[str, Any]:
     )
     updated = _with_session(lambda db: refresh(db))
     return {"job": "legislator-stats-refresh", "legislators_updated": updated}
+
+
+def _run_audit_mocion_authors(args: argparse.Namespace) -> dict[str, Any]:
+    audit_run = _load_attr("app.services.audit.mocion_authors", "run")
+    payload = _with_session(
+        lambda db: audit_run(
+            db, reparse=args.reparse, export_csv=args.export_csv
+        )
+    )
+    return {"job": "audit-mocion-authors", **payload}
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -474,6 +485,39 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Recompute and upsert the legislator_voting_stats table.",
     )
     refresh_stats_parser.set_defaults(runner=_run_legislator_stats_refresh)
+
+    audit_parser = subparsers.add_parser(
+        "audit",
+        help="Run data-quality audits across ingested entities.",
+    )
+    audit_subparsers = audit_parser.add_subparsers(dest="audit_command")
+    audit_subparsers.required = True
+
+    mocion_authors_parser = audit_subparsers.add_parser(
+        "mocion-authors",
+        help=(
+            "Report authorship coverage for mociones (bills with "
+            "origin=deputies). Prints a human-readable summary; --reparse "
+            "re-fetches upstream XML for the 0-or-1-author subset to surface "
+            "unmatched name strings."
+        ),
+    )
+    mocion_authors_parser.add_argument(
+        "--reparse",
+        action="store_true",
+        help=(
+            "Re-fetch wspublico XML for mociones with 0 or 1 DB authors and "
+            "list the upstream author names that failed exact name-match "
+            "(with closest-match suggestions in the CSV export)."
+        ),
+    )
+    mocion_authors_parser.add_argument(
+        "--export-csv",
+        metavar="PATH",
+        default=None,
+        help="Write a detail-rows CSV (one row per moción) to PATH.",
+    )
+    mocion_authors_parser.set_defaults(runner=_run_audit_mocion_authors)
 
     return parser
 
