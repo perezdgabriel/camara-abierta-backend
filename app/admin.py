@@ -12,6 +12,7 @@ from app.models.core import Circumscription, District, Region, Topic
 from app.models.diario_oficial import OfficialGazetteNorm, Regulation, RegulationStage
 from app.models.legislature import (
     BlocAffiliation,
+    CalendarEvent,
     Chamber,
     Coalition,
     Committee,
@@ -296,6 +297,33 @@ class LegislativeSessionAdmin(ModelView, model=LegislativeSession):
     page_size = 50
 
 
+class CalendarEventAdmin(ModelView, model=CalendarEvent):
+    name = "Evento de calendario"
+    name_plural = "Eventos de calendario"
+    icon = "fa-solid fa-calendar-day"
+    category = "Parlamento"
+
+    column_list = [
+        CalendarEvent.id,
+        CalendarEvent.kind,
+        CalendarEvent.starts_at,
+        CalendarEvent.title,
+        CalendarEvent.chamber_type,
+        CalendarEvent.bill,
+        CalendarEvent.committee,
+        CalendarEvent.legislator,
+        CalendarEvent.source,
+    ]
+    column_details_list = "__all__"
+    column_searchable_list = [CalendarEvent.title, CalendarEvent.external_ref]
+    column_sortable_list = [
+        CalendarEvent.id,
+        CalendarEvent.starts_at,
+        CalendarEvent.kind,
+    ]
+    page_size = 50
+
+
 class CommitteeAdmin(ModelView, model=Committee):
     name = "Comisión"
     name_plural = "Comisiones"
@@ -544,6 +572,7 @@ _ALL_VIEWS = [
     LegislatureAdmin,
     LegislativeSessionAdmin,
     CommitteeAdmin,
+    CalendarEventAdmin,
     # Legislación
     TopicAdmin,
     BillAdmin,

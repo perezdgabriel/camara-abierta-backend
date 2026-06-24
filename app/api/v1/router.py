@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 
+from app.api.v1.calendar import router as calendar_router
 from app.api.v1.dashboard import router as dashboard_router
 from app.api.v1.legislators import router as legislators_router
 from app.api.v1.proyectos import router as proyectos_router
@@ -12,3 +13,4 @@ router.include_router(legislators_router, prefix="/legislators")
 router.include_router(voting_router, prefix="/voting-sessions")
 router.include_router(dashboard_router, prefix="/dashboard")
 router.include_router(reference_router, prefix="/reference")
+router.include_router(calendar_router, prefix="/calendar")
