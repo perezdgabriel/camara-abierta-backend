@@ -1233,6 +1233,112 @@ def run_ingest_legislature(*, dry_run: bool = False) -> dict[str, Any]:
     return _build_dispatch_result(dispatched, errors, dry_run)
 
 
+def run_ingest_tabla_semanal(
+    pdf_path: str,
+    *,
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    """Parse a Tabla Semanal PDF and upsert :class:`CalendarEvent` rows.
+
+    Unlike the network-driven ingestors, this runner is synchronous — it
+    reads the file, parses it, resolves bolet̄ínes to ``Bill`` rows, and
+    upserts events in a single ``task_session``. No Celery dispatch.
+    """
+    from pathlib import Path
+
+    from app.ingestors.parsers.tabla_semanal import parse_tabla_semanal_pdf
+    from app.models.proyecto import Bill
+    from app.services.write import upsert_calendar_event
+
+    path = Path(pdf_path)
+    if not path.is_file():
+        logger.error("Tabla Semanal PDF not found: %s", pdf_path)
+        return _build_dispatch_result(0, 1, dry_run, pdf_path=pdf_path)
+
+    try:
+        pdf_bytes = path.read_bytes()
+        events = parse_tabla_semanal_pdf(pdf_bytes)
+    except Exception:
+        logger.exception("Failed to parse Tabla Semanal PDF %s", pdf_path)
+        return _build_dispatch_result(0, 1, dry_run, pdf_path=pdf_path)
+
+    dispatched = 0
+    errors = 0
+    orphans = 0
+    by_kind: dict[str, int] = {}
+
+    bulletins_needed = {
+        ev["bulletin_number"] for ev in events if ev.get("bulletin_number")
+    }
+
+    if dry_run:
+        bill_ids: dict[str, int] = {}
+    else:
+        try:
+            with task_session() as db:
+                if bulletins_needed:
+                    rows = db.execute(
+                        select(Bill.bulletin_number, Bill.id).where(
+                            Bill.bulletin_number.in_(bulletins_needed)
+                        )
+                    ).all()
+                    bill_ids = {row[0]: row[1] for row in rows}
+                else:
+                    bill_ids = {}
+
+                for event_data in events:
+                    try:
+                        bulletin = event_data.get("bulletin_number")
+                        if bulletin:
+                            resolved = bill_ids.get(bulletin)
+                            if resolved is not None:
+                                event_data = {**event_data, "bill_id": resolved}
+                            else:
+                                orphans += 1
+                                logger.warning(
+                                    "Tabla Semanal: bolet̄ín %s not found in "
+                                    "bills; upserting calendar event with "
+                                    "bill_id=None",
+                                    bulletin,
+                                )
+                        payload = {
+                            k: v
+                            for k, v in event_data.items()
+                            if k not in ("bulletin_number", "related_bulletins")
+                        }
+                        upsert_calendar_event(db, payload)
+                        dispatched += 1
+                        kind_value = event_data["kind"].value
+                        by_kind[kind_value] = by_kind.get(kind_value, 0) + 1
+                    except Exception:
+                        logger.exception(
+                            "Failed to upsert calendar event ext_ref=%s",
+                            event_data.get("external_ref"),
+                        )
+                        errors += 1
+        except Exception:
+            logger.exception("Tabla Semanal: session failed")
+            errors += 1
+
+    if dry_run:
+        for event_data in events:
+            kind_value = event_data["kind"].value
+            by_kind[kind_value] = by_kind.get(kind_value, 0) + 1
+            if event_data.get("bulletin_number"):
+                pass
+        dispatched = len(events)
+
+    return _build_dispatch_result(
+        dispatched,
+        errors,
+        dry_run,
+        pdf_path=pdf_path,
+        parsed=len(events),
+        orphan_bulletins=orphans,
+        by_kind=by_kind,
+    )
+
+
 def run_ingest_reference_data(*, dry_run: bool = False) -> dict[str, Any]:
     dispatched = 0
     errors = 0

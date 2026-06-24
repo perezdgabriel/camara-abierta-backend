@@ -129,19 +129,23 @@ class CalendarEventKind(str, Enum):
     INTERPELACION = "interpelacion"
     MENSAJE = "mensaje"
     PLAZO = "plazo"
+    ACUSACION_CONSTITUCIONAL = "acusacion_constitucional"
+    INFORME_CEI = "informe_cei"
     OTRO = "otro"
 
 
 class CalendarEventSource(str, Enum):
     """Where a calendar event row originated.
 
-    v1 only carries ``MANUAL`` (admin-panel entry). New values land as
-    upstream agenda scrapers ship (e.g. ``camara_agenda``, ``senado_agenda``);
-    each scraper writes its own ``external_ref`` for dedup. See CONTEXT.md
+    ``MANUAL`` is the admin-panel entry path. ``TABLA_SEMANAL`` is the
+    Cámara de Diputados weekly agenda PDF parsed by ``app/ingestors/parsers/
+    tabla_semanal.py``. New values land as upstream agenda scrapers ship;
+    each writes its own ``external_ref`` for dedup. See CONTEXT.md
     "Calendar event".
     """
 
     MANUAL = "manual"
+    TABLA_SEMANAL = "tabla_semanal"
 
 
 class SignalType(str, Enum):

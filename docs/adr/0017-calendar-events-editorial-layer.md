@@ -1,6 +1,6 @@
 # Calendar events as an editorial layer
 
-**Status:** Accepted, 2026-06-24. Amended 2026-06-24 — added `votacion` kind (see §3 below).
+**Status:** Accepted, 2026-06-24. Amended 2026-06-24 — added `votacion` kind (see §3 below). Amended 2026-06-24 — Tabla Semanal CLI ingestor + two new kinds (see §7 below).
 
 ## Context
 
@@ -145,6 +145,64 @@ the single mutation entrypoint. On review, the deviation was justified:
 `(source, external_ref)` dedup logic, datetime tz coercion, and per-row
 sync stamping. Both surfaces end up at the same `calendar_events` rows
 in the same table.
+
+### 7. Tabla Semanal CLI as the first non-manual `source`
+
+`CalendarEventSource.TABLA_SEMANAL` and `app/ingestors/parsers/tabla_semanal.py`
+ship as the first non-manual writer. The CLI subcommand
+`python -m app.cli ingestors tabla-semanal --pdf <path> [--dry-run]` reads
+the Cámara de Diputados weekly agenda PDF, classifies each row, and writes
+through `upsert_calendar_event` — both the admin form *exception* (§6) and
+this CLI converge on the same row shape.
+
+**New kinds — `acusacion_constitucional` and `informe_cei`.** The Tabla
+carries two recurring row types that did not fit the existing kinds:
+
+- Constitutional accusations against current or former ministers (Art. 42
+  LOC Congreso). Forced into `interpelacion` would be semantically wrong —
+  *interpelación* is questioning a sitting minister, not impeachment of an
+  ex-minister. Forced into `otro` would lose the dashboard-filter signal
+  for what is one of the year's highest-salience events.
+- CEI report readings in Sala (Comisión Especial Investigadora informes —
+  "CEI 70", "CEI 69 y 71"). These are not committee *hearings*
+  (`comision` already covers that) but *reports presented to the Sala* —
+  a distinct beat in the legislative week.
+
+Both follow the §3 discipline: "if `otro` dominates after a few weeks of
+curation, that's the signal to add a new enum value." The Tabla Semanal
+parse made the dominance visible before the table accumulated.
+
+**Item-level rows are `kind=votacion`.** Per the agenda's intent: every
+tabled bill is announced *to be voted* this week, even when discussion
+slips. Curators / future scrapers can flip an event to `otro` post-hoc
+when the chamber actually defers. Forward-looking by design (§3).
+
+**`external_ref` shape.** Per-bill rows: `tabla-semanal:{boletin}:{YYYY-MM-DD}`.
+SESION header rows: `tabla-semanal:sesion:{YYYY-MM-DD}`. Acusación:
+`tabla-semanal:acusacion-{slug}:{YYYY-MM-DD}`. CEI: `tabla-semanal:cei-{N}:{YYYY-MM-DD}`
+(or slug fallback). Re-publication of the same week's PDF upserts in
+place. A bill that slips from this week's Tabla to next week's produces a
+new row at the new date — history is preserved automatically; cancellation
+of the slipped week is curator-driven per §5.
+
+**Refundidos: first bolet̄ín wins.** A row citing "Boletines Nos X, Y y Z,
+refundidos" uses X as the `bill_id` and the `external_ref` key. Y and Z
+are mentioned as a sentence in `description`. Avoids three near-duplicate
+rows in the calendar at the cost of the bill pages for Y and Z losing the
+event link — accepted since the refundidos relationship already lives in
+the bill ingestion path.
+
+**Unknown bolet̄ínes are orphans, not skips.** When the Tabla cites a
+bolet̄ín not yet ingested into `bills`, the calendar event is still
+created with `bill_id=None` and a `WARNING` log (same pattern as
+`_reconcile_authorships`). Re-running the CLI after the bill ingestor
+catches up resolves the link in place via the same `external_ref`. Two
+ingestion paths stay decoupled.
+
+**Local file only for v1.** The CLI takes `--pdf <path>`, not `--url`.
+URL-fetching is deferred until the upstream URL pattern at camara.cl is
+known stable enough for a scheduled scrape. Manual download → CLI run is
+the v1 workflow.
 
 ## Alternatives considered
 

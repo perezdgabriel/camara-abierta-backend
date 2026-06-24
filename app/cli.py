@@ -31,6 +31,7 @@ def _list_jobs(_: argparse.Namespace) -> dict[str, list[str]]:
             "committees",
             "legislature",
             "reference-data",
+            "tabla-semanal",
         ],
         "loaders": ["geography"],
         "voting-signals": ["backfill", "refresh-aggregate", "seed-fixtures"],
@@ -134,6 +135,14 @@ def _run_reference_data(args: argparse.Namespace) -> dict[str, Any]:
     return {"job": "reference-data", **result}
 
 
+def _run_tabla_semanal(args: argparse.Namespace) -> dict[str, Any]:
+    run_ingest_tabla_semanal = _load_attr(
+        "app.tasks.ingestors", "run_ingest_tabla_semanal"
+    )
+    result = run_ingest_tabla_semanal(pdf_path=args.pdf, dry_run=args.dry_run)
+    return {"job": "tabla-semanal", **result}
+
+
 def _run_geography(args: argparse.Namespace) -> dict[str, Any]:
     run_load_geography = _load_attr("app.geography.loader", "run_load_geography")
     result = run_load_geography(
@@ -195,9 +204,7 @@ def _run_legislator_stats_refresh(_args: argparse.Namespace) -> dict[str, Any]:
 def _run_audit_mocion_authors(args: argparse.Namespace) -> dict[str, Any]:
     audit_run = _load_attr("app.services.audit.mocion_authors", "run")
     payload = _with_session(
-        lambda db: audit_run(
-            db, reparse=args.reparse, export_csv=args.export_csv
-        )
+        lambda db: audit_run(db, reparse=args.reparse, export_csv=args.export_csv)
     )
     return {"job": "audit-mocion-authors", **payload}
 
@@ -420,6 +427,22 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Fetch and enqueue topic reference-data sync jobs.",
     )
     reference_data_parser.set_defaults(runner=_run_reference_data)
+
+    tabla_semanal_parser = ingestor_subparsers.add_parser(
+        "tabla-semanal",
+        parents=[dry_run_parent],
+        help=(
+            "Parse a Cámara de Diputados weekly agenda PDF and upsert "
+            "CalendarEvent rows (kind=sesion + per-bill votacion / "
+            "acusacion_constitucional / informe_cei). Idempotent on re-run."
+        ),
+    )
+    tabla_semanal_parser.add_argument(
+        "--pdf",
+        required=True,
+        help="Path to the Tabla Semanal PDF file.",
+    )
+    tabla_semanal_parser.set_defaults(runner=_run_tabla_semanal)
 
     geography_parser = subparsers.add_parser(
         "geography",
