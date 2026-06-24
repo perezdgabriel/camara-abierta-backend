@@ -48,6 +48,16 @@ class ChamberBrief(ORMModel):
     name: str
 
 
+class PeriodBrief(ORMModel):
+    """A 4-year ``LegislativePeriod`` projected to the API: id, sequential number,
+    and the half-open ``[start_date, end_date)`` window. See ADR-0016."""
+
+    id: int
+    number: int
+    start_date: date
+    end_date: date
+
+
 class CommitteeBrief(ORMModel):
     id: int
     name: str
@@ -73,6 +83,9 @@ class LegislatorTermItem(ORMModel):
     end_reason: str | None = None
     chamber: ChamberBrief
     party: PartyBrief | None = None
+    period: PeriodBrief
+    district: DistrictBrief | None = None
+    circumscription: CircumscriptionBrief | None = None
 
 
 class CommitteeMembershipItem(ORMModel):
@@ -144,6 +157,11 @@ class LegislatorDetail(LegislatorSummary):
     profile_url: str | None = None
     biography: str | None = None
     terms: list[LegislatorTermItem] = Field(default_factory=list)
+    # Every ``LegislativePeriod`` whose date range overlaps any of the
+    # legislator's terms, sorted most-recent first. Used by the UI to render
+    # the "Trayectoria parlamentaria" section grouped by period — a senate
+    # mandate spanning two periods shows the same term under both.
+    periods: list[PeriodBrief] = Field(default_factory=list)
     committee_memberships: list[CommitteeMembershipItem] = Field(default_factory=list)
     voting_stats: LegislatorVotingStatsSummary | None = None
     # Per-person party-unity rate this period; null for independents. See ADR-0014.

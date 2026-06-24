@@ -10,6 +10,7 @@ from app.schemas.legislators import (
     LegislatorSummary,
     LegislatorVotingResponse,
     LegislatorVotingSummary,
+    PeriodBrief,
     TopicAffinityItem,
     VotingRecordItem,
 )
@@ -81,7 +82,14 @@ def get_legislator(legislator_id: int, db: Session = Depends(get_db)):
     legislator = legislators_service.get_legislator(db=db, legislator_id=legislator_id)
     if legislator is None:
         raise HTTPException(status_code=404, detail="Legislator not found")
-    return LegislatorDetail.model_validate(legislator)
+    detail = LegislatorDetail.model_validate(legislator)
+    detail.periods = [
+        PeriodBrief.model_validate(period)
+        for period in legislators_service.get_legislator_overlapping_periods(
+            db, legislator_id
+        )
+    ]
+    return detail
 
 
 @router.get("/{legislator_id}/voting", response_model=LegislatorVotingResponse)

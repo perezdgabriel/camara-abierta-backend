@@ -10,6 +10,7 @@ from app.models.legislature import (
     Committee,
     CommitteeMembership,
     Legislator,
+    LegislativePeriod,
     LegislatorTerm,
     PoliticalParty,
 )
@@ -296,6 +297,7 @@ def get_legislator(db: Session, legislator_id: int) -> Legislator | None:
                 ),
                 joinedload(LegislatorTerm.district),
                 joinedload(LegislatorTerm.circumscription),
+                joinedload(LegislatorTerm.period),
             ),
             selectinload(Legislator.committee_memberships).options(
                 joinedload(CommitteeMembership.committee).joinedload(Committee.chamber),
@@ -304,6 +306,41 @@ def get_legislator(db: Session, legislator_id: int) -> Legislator | None:
         )
         .filter(Legislator.id == legislator_id)
         .first()
+    )
+
+
+def get_legislator_overlapping_periods(
+    db: Session, legislator_id: int
+) -> list[LegislativePeriod]:
+    """Every ``LegislativePeriod`` whose date range overlaps any of the
+    legislator's terms, sorted most-recent first.
+
+    A senate stint that crosses a March-11 boundary is one term tagged to the
+    older Período but actually overlaps two — both surface here so the UI can
+    render the term row under each. Term dates are inclusive (ADR-0015);
+    Período dates are half-open (ADR-0016), so the overlap predicate is
+    ``term.start_date < period.end_date AND (term.end_date IS NULL OR
+    term.end_date >= period.start_date)``.
+    """
+    return list(
+        db.execute(
+            select(LegislativePeriod)
+            .where(
+                select(LegislatorTerm.id)
+                .where(LegislatorTerm.legislator_id == legislator_id)
+                .where(LegislatorTerm.start_date < LegislativePeriod.end_date)
+                .where(
+                    or_(
+                        LegislatorTerm.end_date.is_(None),
+                        LegislatorTerm.end_date >= LegislativePeriod.start_date,
+                    )
+                )
+                .exists()
+            )
+            .order_by(LegislativePeriod.start_date.desc())
+        )
+        .scalars()
+        .all()
     )
 
 
@@ -321,11 +358,13 @@ def get_legislator_authored_bills(
     set mirrors :func:`app.services.proyectos.list_bills` so the resulting
     rows are ready for ``BillSummary`` rendering without N+1s.
     """
-    base_join = db.query(Bill).join(
-        BillAuthorship, BillAuthorship.bill_id == Bill.id
-    ).filter(
-        BillAuthorship.legislator_id == legislator_id,
-        Bill.origin == BillOrigin.DEPUTIES,
+    base_join = (
+        db.query(Bill)
+        .join(BillAuthorship, BillAuthorship.bill_id == Bill.id)
+        .filter(
+            BillAuthorship.legislator_id == legislator_id,
+            Bill.origin == BillOrigin.DEPUTIES,
+        )
     )
     total = base_join.with_entities(func.count(Bill.id.distinct())).scalar() or 0
     items = (
