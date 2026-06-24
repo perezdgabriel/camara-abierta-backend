@@ -165,6 +165,50 @@ def get_bill_by_bulletin(db: Session, bulletin_number: str) -> Bill | None:
     return get_bill(db, bill.id)
 
 
+def to_summary(bill: Bill):
+    """Build a ``BillSummary`` from a fully-loaded ``Bill`` ORM instance.
+
+    Combines ``Bill.__dict__`` with the denormalised fields from
+    :func:`bill_to_summary_extra`. Importing the response schema here would
+    create a route-layer dependency on this service module, so we keep the
+    import local.
+    """
+    from app.schemas.proyectos import BillSummary
+
+    extra = bill_to_summary_extra(bill)
+    return BillSummary.model_validate({**bill.__dict__, **extra})
+
+
+def build_author_briefs(bill: Bill) -> list[dict]:
+    """Author briefs with party/chamber resolved at ``bill.entry_date``.
+
+    Mirrors the as-of-voting-date resolution in
+    :func:`app.services.voting.build_vote_details` (ADR-0015 "Vote-time
+    party"): we show each author's term-time party and chamber, not today's
+    active term. For a moción signed in 2018, this means the legislator
+    appears with their 2018 party affiliation even if they've since switched
+    parties or retired.
+    """
+    as_of = bill.entry_date
+    briefs: list[dict] = []
+    for authorship in bill.authorships:
+        legislator = authorship.legislator
+        briefs.append(
+            {
+                "id": authorship.id,
+                "author_type": authorship.author_type,
+                "legislator": {
+                    "id": legislator.id,
+                    "full_name": legislator.full_name,
+                    "photo_thumbnail_url": legislator.photo_thumbnail_url,
+                    "chamber_type": legislator.chamber_type_on(as_of),
+                    "party": legislator.party_on(as_of),
+                },
+            }
+        )
+    return briefs
+
+
 def bill_to_summary_extra(bill: Bill) -> dict:
     """Compute denormalised convenience fields not present on the ORM object."""
     active_urgency = next((u for u in bill.urgencies if u.is_active), None)

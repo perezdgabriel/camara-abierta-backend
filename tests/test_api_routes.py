@@ -402,3 +402,110 @@ def test_voting_session_detail_serializes_senado_metadata(client, fake_db, monke
             "payload": {"margin": 2, "margin_ratio": 0.013, "participation": 0.97},
         }
     ]
+
+
+# ── /legislators/{id}/authored-bills ────────────────────────────────────
+
+
+def _make_mocion(*, id: int, bulletin: str, title: str) -> SimpleNamespace:
+    bill = make_bill()
+    bill.id = id
+    bill.bulletin_number = bulletin
+    bill.title = title
+    bill.origin = BillOrigin.DEPUTIES
+    return bill
+
+
+def test_authored_bills_endpoint_returns_items_and_total(
+    client, fake_db, monkeypatch
+):
+    captured: dict[str, object] = {}
+
+    def fake_get_legislator(*, db, legislator_id):
+        captured["legislator_id"] = legislator_id
+        return make_legislator()
+
+    def fake_authored_bills(db, legislator_id, limit):
+        captured["limit"] = limit
+        return (
+            [
+                _make_mocion(id=101, bulletin="100-06", title="Moción A"),
+                _make_mocion(id=102, bulletin="200-07", title="Moción B"),
+            ],
+            42,
+        )
+
+    monkeypatch.setattr(
+        legislators_api.legislators_service, "get_legislator", fake_get_legislator
+    )
+    monkeypatch.setattr(
+        legislators_api.legislators_service,
+        "get_legislator_authored_bills",
+        fake_authored_bills,
+    )
+
+    response = client.get("/api/v1/legislators/55/authored-bills")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] == 42
+    assert len(body["items"]) == 2
+    assert body["items"][0]["bulletin_number"] == "100-06"
+    assert body["items"][0]["origin"] == "deputies"
+    # Default limit applied from service constant
+    assert captured["limit"] == (
+        legislators_api.legislators_service.DEFAULT_AUTHORED_BILLS_LIMIT
+    )
+    assert captured["legislator_id"] == 55
+
+
+def test_authored_bills_endpoint_404s_for_unknown_legislator(
+    client, fake_db, monkeypatch
+):
+    monkeypatch.setattr(
+        legislators_api.legislators_service,
+        "get_legislator",
+        lambda *, db, legislator_id: None,
+    )
+
+    response = client.get("/api/v1/legislators/9999/authored-bills")
+    assert response.status_code == 404
+
+
+def test_authored_bills_endpoint_forwards_explicit_limit(
+    client, fake_db, monkeypatch
+):
+    captured: dict[str, object] = {}
+
+    def fake_authored_bills(db, legislator_id, limit):
+        captured["limit"] = limit
+        return [], 0
+
+    monkeypatch.setattr(
+        legislators_api.legislators_service,
+        "get_legislator",
+        lambda *, db, legislator_id: make_legislator(),
+    )
+    monkeypatch.setattr(
+        legislators_api.legislators_service,
+        "get_legislator_authored_bills",
+        fake_authored_bills,
+    )
+
+    response = client.get(
+        "/api/v1/legislators/55/authored-bills", params={"limit": 25}
+    )
+    assert response.status_code == 200
+    assert captured["limit"] == 25
+
+
+def test_authored_bills_endpoint_rejects_out_of_range_limit(client, monkeypatch):
+    monkeypatch.setattr(
+        legislators_api.legislators_service,
+        "get_legislator",
+        lambda *, db, legislator_id: make_legislator(),
+    )
+    # MAX is 100; 101 must 422.
+    response = client.get(
+        "/api/v1/legislators/55/authored-bills", params={"limit": 101}
+    )
+    assert response.status_code == 422

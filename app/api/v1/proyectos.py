@@ -19,15 +19,18 @@ router = APIRouter(tags=["Bills"])
 
 
 def _to_summary(bill) -> BillSummary:
-    extra = svc.bill_to_summary_extra(bill)
-    return BillSummary.model_validate({**bill.__dict__, **extra})
+    return svc.to_summary(bill)
 
 
 def _to_detail(bill) -> BillDetail:
     extra = svc.bill_to_summary_extra(bill)
     svc.attribute_voting_sessions_to_stages(bill)
     svc.attribute_documents_to_stages(bill)
-    return BillDetail.model_validate({**bill.__dict__, **extra})
+    # Authors are pre-resolved at bill.entry_date so each author's party/
+    # chamber reflects the term they held when the bill was filed, not
+    # today's active term. Mirrors voting's as-of-voting-date pattern.
+    authors = svc.build_author_briefs(bill)
+    return BillDetail.model_validate({**bill.__dict__, **extra, "authors": authors})
 
 
 @router.get("", response_model=BillsResponse)

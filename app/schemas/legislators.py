@@ -187,3 +187,16 @@ class LegislatorVotingResponse(ORMModel):
     summary: LegislatorVotingSummary
     record: list[VotingRecordItem] = Field(default_factory=list)
     topic_affinity: list[TopicAffinityItem] = Field(default_factory=list)
+
+
+class LegislatorAuthoredBillsResponse(ORMModel):
+    items: list["BillSummary"] = Field(default_factory=list)
+    total: int
+
+
+# Imported here (after the response class) to keep the proyectos→legislators
+# schema dependency one-way; forward-ref'd via the string above so the import
+# can sit at the bottom of the module without a cycle at module-load time.
+from app.schemas.proyectos import BillSummary  # noqa: E402
+
+LegislatorAuthoredBillsResponse.model_rebuild()

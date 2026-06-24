@@ -4,7 +4,7 @@ from sqlalchemy import ColumnElement, case, func, or_, select
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.models.core import Circumscription, District, Region, Topic
-from app.models.enums import ChamberType, VoteChoice
+from app.models.enums import BillOrigin, ChamberType, VoteChoice
 from app.models.legislature import (
     Chamber,
     Committee,
@@ -13,7 +13,12 @@ from app.models.legislature import (
     LegislatorTerm,
     PoliticalParty,
 )
-from app.models.proyecto import bill_topics
+from app.models.proyecto import (
+    Bill,
+    BillAuthorship,
+    BillUrgency,
+    bill_topics,
+)
 from app.models.votacion import Vote, VotingSession
 
 DEFAULT_OFFSET = 0
@@ -300,3 +305,42 @@ def get_legislator(db: Session, legislator_id: int) -> Legislator | None:
         .filter(Legislator.id == legislator_id)
         .first()
     )
+
+
+DEFAULT_AUTHORED_BILLS_LIMIT = 10
+MAX_AUTHORED_BILLS_LIMIT = 100
+
+
+def get_legislator_authored_bills(
+    db: Session, legislator_id: int, limit: int
+) -> tuple[list[Bill], int]:
+    """Return (items, total) for mociones authored by this legislator.
+
+    Filters to ``BillOrigin.DEPUTIES`` because the UI surface is moción-only
+    (mensajes don't have individual author rows in practice). Eager-load
+    set mirrors :func:`app.services.proyectos.list_bills` so the resulting
+    rows are ready for ``BillSummary`` rendering without N+1s.
+    """
+    base_join = db.query(Bill).join(
+        BillAuthorship, BillAuthorship.bill_id == Bill.id
+    ).filter(
+        BillAuthorship.legislator_id == legislator_id,
+        Bill.origin == BillOrigin.DEPUTIES,
+    )
+    total = base_join.with_entities(func.count(Bill.id.distinct())).scalar() or 0
+    items = (
+        base_join.options(
+            joinedload(Bill.origin_chamber),
+            joinedload(Bill.current_chamber),
+            joinedload(Bill.current_committee),
+            selectinload(Bill.events),
+            selectinload(Bill.topics),
+            selectinload(Bill.urgencies).joinedload(BillUrgency.chamber),
+            selectinload(Bill.stages),
+            selectinload(Bill.voting_sessions),
+        )
+        .order_by(Bill.entry_date.desc(), Bill.id.desc())
+        .limit(limit)
+        .all()
+    )
+    return items, int(total)

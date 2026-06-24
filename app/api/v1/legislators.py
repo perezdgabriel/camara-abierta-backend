@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.models.enums import ChamberType
 from app.schemas.legislators import (
+    LegislatorAuthoredBillsResponse,
     LegislatorDetail,
     LegislatorsResponse,
     LegislatorSummary,
@@ -13,6 +14,7 @@ from app.schemas.legislators import (
     VotingRecordItem,
 )
 from app.services import legislators as legislators_service
+from app.services import proyectos as bills_service
 
 router = APIRouter(tags=["Legislators"])
 
@@ -100,4 +102,29 @@ def get_legislator_voting(
         summary=LegislatorVotingSummary.model_validate(summary),
         record=[VotingRecordItem.model_validate(r) for r in record],
         topic_affinity=[TopicAffinityItem.model_validate(t) for t in topic_affinity],
+    )
+
+
+@router.get(
+    "/{legislator_id}/authored-bills",
+    response_model=LegislatorAuthoredBillsResponse,
+)
+def get_legislator_authored_bills(
+    legislator_id: int,
+    limit: int = Query(
+        legislators_service.DEFAULT_AUTHORED_BILLS_LIMIT,
+        ge=1,
+        le=legislators_service.MAX_AUTHORED_BILLS_LIMIT,
+    ),
+    db: Session = Depends(get_db),
+):
+    legislator = legislators_service.get_legislator(db=db, legislator_id=legislator_id)
+    if legislator is None:
+        raise HTTPException(status_code=404, detail="Legislator not found")
+    items, total = legislators_service.get_legislator_authored_bills(
+        db, legislator_id, limit
+    )
+    return LegislatorAuthoredBillsResponse(
+        items=[bills_service.to_summary(b) for b in items],
+        total=total,
     )

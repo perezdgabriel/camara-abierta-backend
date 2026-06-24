@@ -45,9 +45,18 @@ class PartyBrief(ORMModel):
 
 
 class LegislatorBrief(ORMModel):
+    """Lightweight legislator reference for bill-author rows.
+
+    ``chamber_type`` / ``party`` are entry-date values resolved by
+    :func:`app.services.proyectos.build_author_briefs` from the
+    ``LegislatorTerm`` covering ``Bill.entry_date``. Defaults to ``None``
+    so a route that forgets the helper degrades visibly instead of
+    silently picking up today's term. Mirrors the voting precedent (ADR-0015).
+    """
+
     id: int
     full_name: str
-    chamber_type: ChamberType
+    chamber_type: ChamberType | None = None
     photo_thumbnail_url: str | None = None
     party: PartyBrief | None = None
 
@@ -177,6 +186,9 @@ class BillDetail(BillSummary):
     ai_summary: str | None = None
     full_text_url: str | None = None
     sponsoring_ministries: list[SponsoringMinistry] = Field(default_factory=list)
+    # Routes must pre-resolve authors via
+    # ``app.services.proyectos.build_author_briefs`` so each author's
+    # chamber/party reflects the term covering ``Bill.entry_date``.
     authors: list[Author] = Field(default_factory=list)
     stages: list[Stage] = Field(default_factory=list)
     events: list[Event] = Field(default_factory=list)
