@@ -1,6 +1,9 @@
 from datetime import date, datetime
 from types import SimpleNamespace
 
+import pytest
+
+from app.models.enums import CalendarEventKind
 from app.services import write
 
 
@@ -287,10 +290,9 @@ def test_canonicalize_handles_apostrophes_and_particles():
         == write._canonicalize_legislator_name("Luis Cuello Peña y Lillo")
         == "luis cuello pena y lillo"
     )
-    assert (
-        write._canonicalize_legislator_name("O'Higgins, Bernardo")
-        == write._canonicalize_legislator_name("Bernardo O'Higgins")
-    )
+    assert write._canonicalize_legislator_name(
+        "O'Higgins, Bernardo"
+    ) == write._canonicalize_legislator_name("Bernardo O'Higgins")
 
 
 def test_canonicalize_returns_empty_for_blank_and_punct_only():
@@ -364,7 +366,8 @@ def test_reconcile_authorships_warns_on_unmatched_name(caplog):
 
     assert {a.legislator_id for a in db.added} == {1}
     unmatched_warnings = [
-        r for r in caplog.records
+        r
+        for r in caplog.records
         if r.levelname == "WARNING" and "Unmatched authorship name" in r.message
     ]
     assert len(unmatched_warnings) == 1
@@ -384,13 +387,12 @@ def test_reconcile_authorships_logs_collision_and_skips_both(caplog):
     )
     bill = _FakeBill(bulletin="300-08")
 
-    write._reconcile_authorships(
-        db, bill, [{"name": "Núñez Urrutia, Paulina"}]
-    )
+    write._reconcile_authorships(db, bill, [{"name": "Núñez Urrutia, Paulina"}])
 
     assert db.added == []
     collision_errors = [
-        r for r in caplog.records
+        r
+        for r in caplog.records
         if r.levelname == "ERROR" and "canonical-key collision" in r.message
     ]
     assert len(collision_errors) == 1
@@ -405,3 +407,40 @@ def test_reconcile_authorships_deletes_no_longer_matched():
 
     assert existing in db.deleted
     assert db.added == []
+
+
+# ── upsert_calendar_event input validation ──────────────────────────────
+
+
+def test_upsert_calendar_event_rejects_missing_kind():
+    db = FakeDB()
+    with pytest.raises(ValueError, match="kind"):
+        write.upsert_calendar_event(
+            db, {"starts_at": datetime(2026, 7, 1, 10, 0), "title": "x"}
+        )
+
+
+def test_upsert_calendar_event_rejects_non_datetime_starts_at():
+    db = FakeDB()
+    with pytest.raises(ValueError, match="starts_at"):
+        write.upsert_calendar_event(
+            db,
+            {
+                "kind": CalendarEventKind.SESION,
+                "starts_at": "2026-07-01",
+                "title": "x",
+            },
+        )
+
+
+def test_upsert_calendar_event_rejects_blank_title():
+    db = FakeDB()
+    with pytest.raises(ValueError, match="title"):
+        write.upsert_calendar_event(
+            db,
+            {
+                "kind": CalendarEventKind.SESION,
+                "starts_at": datetime(2026, 7, 1, 10, 0),
+                "title": "   ",
+            },
+        )
