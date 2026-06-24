@@ -3,6 +3,7 @@ from app.models.diario_oficial import OfficialGazetteNorm, Regulation, Regulatio
 from app.models.ingestor_state import IngestorState
 from app.models.legislature import (
     BlocAffiliation,
+    CalendarEvent,
     Chamber,
     Coalition,
     CoalitionMembership,
@@ -43,6 +44,7 @@ __all__ = [
     "BillStage",
     "BillUrgency",
     "BlocAffiliation",
+    "CalendarEvent",
     "Chamber",
     "ChangeLog",
     "ClientSyncState",

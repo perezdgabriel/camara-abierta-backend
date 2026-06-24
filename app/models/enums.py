@@ -108,6 +108,35 @@ class Bloc(str, Enum):
     OPOSICION = "oposicion"
 
 
+class CalendarEventKind(str, Enum):
+    """The kind of a curator-selected calendar event.
+
+    Discriminator for editorial calendar entries — drives UI rendering and
+    gives future agenda scrapers a structural slot. ``OTRO`` is the escape
+    valve for moments that don't fit the named kinds. See CONTEXT.md
+    "Calendar event".
+    """
+
+    SESION = "sesion"
+    COMISION = "comision"
+    INTERPELACION = "interpelacion"
+    MENSAJE = "mensaje"
+    PLAZO = "plazo"
+    OTRO = "otro"
+
+
+class CalendarEventSource(str, Enum):
+    """Where a calendar event row originated.
+
+    v1 only carries ``MANUAL`` (admin-panel entry). New values land as
+    upstream agenda scrapers ship (e.g. ``camara_agenda``, ``senado_agenda``);
+    each scraper writes its own ``external_ref`` for dedup. See CONTEXT.md
+    "Calendar event".
+    """
+
+    MANUAL = "manual"
+
+
 class SignalType(str, Enum):
     """Behavior-revealing signal flagged on a voting session.
 

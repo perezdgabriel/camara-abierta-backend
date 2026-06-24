@@ -22,6 +22,8 @@ from app.models.base import SyncableMixin
 from app.models.core import Circumscription, District
 from app.models.enums import (
     Bloc,
+    CalendarEventKind,
+    CalendarEventSource,
     ChamberType,
     CommitteeType,
     LegislatureKind,
@@ -614,3 +616,82 @@ class LegislativeSession(SyncableMixin, Base):
 
     def __str__(self) -> str:
         return f"Sesion {self.number} ({self.kind.value})"
+
+
+class CalendarEvent(SyncableMixin, Base):
+    """A forward-looking, curator-selected moment in legislative life.
+
+    Editorial layer, not an exhaustive feed: a curator picks the noteworthy
+    moments per week (key Sesiones, Comisión hearings, interpelaciones,
+    presidential mensajes, plazos). Distinct from :class:`LegislativeSession`
+    (the exhaustive scraper-fed record of every meeting, not yet ingested —
+    see ADR-0016) and from :class:`BillEvent` (the past-tense per-bill
+    activity log). All writes flow through ``upsert_calendar_event`` in
+    ``services/write.py`` — both the admin form and future agenda scrapers.
+
+    ``source`` + ``external_ref`` form the dedup primitive for upstream
+    scrapers: re-running a scrape with the same ``external_ref`` updates
+    the row in place. Manual rows store ``external_ref=None`` (the unique
+    index naturally tolerates multiple nulls in Postgres). See CONTEXT.md
+    "Calendar event".
+    """
+
+    __tablename__ = "calendar_events"
+    __table_args__ = (
+        UniqueConstraint(
+            "source",
+            "external_ref",
+            name="uq_calendar_events_source_external_ref",
+        ),
+        Index("ix_calendar_events_starts_at", "starts_at"),
+    )
+
+    kind: Mapped[CalendarEventKind] = mapped_column(
+        SqlEnum(
+            CalendarEventKind,
+            name="calendar_event_kind",
+            native_enum=False,
+            validate_strings=True,
+        ),
+        nullable=False,
+    )
+    starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    ends_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    title: Mapped[str] = mapped_column(String(300), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    location: Mapped[str | None] = mapped_column(String(200))
+    chamber_type: Mapped[ChamberType | None] = mapped_column(
+        SqlEnum(
+            ChamberType,
+            name="calendar_event_chamber_type",
+            native_enum=False,
+            validate_strings=True,
+        )
+    )
+    bill_id: Mapped[int | None] = mapped_column(
+        ForeignKey("bills.id", ondelete="SET NULL")
+    )
+    legislator_id: Mapped[int | None] = mapped_column(
+        ForeignKey("legislators.id", ondelete="SET NULL")
+    )
+    committee_id: Mapped[int | None] = mapped_column(
+        ForeignKey("committees.id", ondelete="SET NULL")
+    )
+    source: Mapped[CalendarEventSource] = mapped_column(
+        SqlEnum(
+            CalendarEventSource,
+            name="calendar_event_source",
+            native_enum=False,
+            validate_strings=True,
+        ),
+        nullable=False,
+        default=CalendarEventSource.MANUAL,
+    )
+    external_ref: Mapped[str | None] = mapped_column(String(200))
+
+    bill: Mapped["Bill | None"] = relationship()
+    legislator: Mapped[Legislator | None] = relationship()
+    committee: Mapped[Committee | None] = relationship()
+
+    def __str__(self) -> str:
+        return f"{self.kind.value}: {self.title} ({self.starts_at:%Y-%m-%d %H:%M})"

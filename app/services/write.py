@@ -21,6 +21,8 @@ from app.models.enums import (
     BillStatus,
     BillType,
     Bloc,
+    CalendarEventKind,
+    CalendarEventSource,
     ChamberType,
     CommitteeType,
     StageType,
@@ -32,6 +34,7 @@ from app.models.enums import (
 from app.models.enums import LegislatureKind, SessionKind
 from app.models.legislature import (
     BlocAffiliation,
+    CalendarEvent,
     Chamber,
     Committee,
     CommitteeMembership,
@@ -2465,3 +2468,89 @@ def apply_geography_dataset(db: Session, dataset: GeographyDataset) -> dict[str,
 def upsert_topic(db: Session, data: dict[str, Any]) -> Topic:
     topic, _ = _upsert_topic_record(db, data.get("name") or "")
     return topic
+
+
+def upsert_calendar_event(db: Session, data: dict[str, Any]) -> CalendarEvent:
+    """Upsert a :class:`CalendarEvent` row.
+
+    Single mutation entrypoint for the calendar — both the admin form and
+    future agenda scrapers call here. When ``external_ref`` is provided,
+    dedup by ``(source, external_ref)`` and update in place; otherwise
+    every call inserts a new row (manual entries don't dedup). See
+    CONTEXT.md "Calendar event".
+    """
+
+    kind_raw = data.get("kind")
+    if isinstance(kind_raw, CalendarEventKind):
+        kind = kind_raw
+    elif kind_raw is None:
+        raise ValueError("CalendarEvent requires kind")
+    else:
+        kind = CalendarEventKind(str(kind_raw))
+
+    source_raw = data.get("source", CalendarEventSource.MANUAL)
+    if isinstance(source_raw, CalendarEventSource):
+        source = source_raw
+    else:
+        source = CalendarEventSource(str(source_raw))
+
+    starts_at = data.get("starts_at")
+    if not isinstance(starts_at, datetime):
+        raise ValueError("CalendarEvent requires a datetime starts_at")
+    if starts_at.tzinfo is None:
+        starts_at = starts_at.replace(tzinfo=timezone.utc)
+
+    ends_at = data.get("ends_at")
+    if ends_at is not None and not isinstance(ends_at, datetime):
+        raise ValueError("CalendarEvent ends_at must be a datetime or None")
+    if isinstance(ends_at, datetime) and ends_at.tzinfo is None:
+        ends_at = ends_at.replace(tzinfo=timezone.utc)
+
+    title = (data.get("title") or "").strip()
+    if not title:
+        raise ValueError("CalendarEvent requires title")
+
+    chamber_raw = data.get("chamber_type")
+    chamber_type: ChamberType | None
+    if chamber_raw is None or chamber_raw == "":
+        chamber_type = None
+    elif isinstance(chamber_raw, ChamberType):
+        chamber_type = chamber_raw
+    else:
+        chamber_type = ChamberType(str(chamber_raw))
+
+    external_ref = data.get("external_ref")
+    if external_ref is not None:
+        external_ref = str(external_ref).strip() or None
+
+    attrs = {
+        "kind": kind,
+        "starts_at": starts_at,
+        "ends_at": ends_at,
+        "title": title[:300],
+        "description": data.get("description") or None,
+        "location": (data.get("location") or None) and data["location"][:200],
+        "chamber_type": chamber_type,
+        "bill_id": data.get("bill_id"),
+        "legislator_id": data.get("legislator_id"),
+        "committee_id": data.get("committee_id"),
+        "source": source,
+        "external_ref": external_ref,
+    }
+
+    event: CalendarEvent | None = None
+    if external_ref is not None:
+        event = db.execute(
+            select(CalendarEvent)
+            .where(CalendarEvent.source == source)
+            .where(CalendarEvent.external_ref == external_ref)
+        ).scalar_one_or_none()
+
+    if event is None:
+        event = CalendarEvent(**attrs)
+        db.add(event)
+    else:
+        if _set_syncable_attrs(db, event, **attrs):
+            _touch_syncable(db, event)
+    db.flush()
+    return event
