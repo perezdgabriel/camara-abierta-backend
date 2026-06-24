@@ -25,6 +25,8 @@ All categorical string fields use formal Python enums. Current vocabulary:
 - `CommitteeType`: permanent, special, investigative, mixed
 - `LegislatureKind`: ordinaria, extraordinaria (annual Legislatura — post-2005 always `ordinaria`)
 - `SessionKind`: ordinaria, especial (single Sesión Legislativa — distinct from `LegislatureKind`)
+- `CalendarEventKind`: sesion, comision, interpelacion, mensaje, plazo, otro
+- `CalendarEventSource`: manual (grows as upstream agenda scrapers ship)
 
 **Sponsoring ministries**:
 Optional zero-to-many ministries attached to a bill as upstream metadata from the Chamber of Deputies. They are historical bill-scoped labels, not a shared platform-wide ministry catalog.
@@ -92,6 +94,10 @@ _Avoid_: storing the annual cycle in `LegislativeSession`; calling it a "session
 **Sesión Legislativa**:
 A single scheduled meeting (typically Tue–Thu) where parliamentarians gather in the Sala (Chamber floor) or in a Comisión (Committee) to debate, vote on bills, or exercise oversight. Stored as `LegislativeSession` — the model represents *the meeting*, not the annual cycle. `legislature_id` ties each meeting to its covering Legislatura. `kind` is `SessionKind {ordinaria, especial}` — ordinarias are the regular mandated meetings on predetermined days; especiales are convened outside regular hours (e.g. minister interpellations or urgent national issues). Venue is encoded by `committee_id`: null = Sala (plenary); non-null = Comisión meeting of that committee. `chamber_id` is retained (committees themselves belong to one chamber). The daily agenda (`Tabla`) is not yet modeled. See ADR-0016.
 _Avoid_: using `ordinary`/`extraordinary` as session subtype labels (that's the *Legislatura* vocabulary, not the Sesión vocabulary); reading `LegislativeSession` rows as annual cycles; assuming every Sesión is plenary
+
+**Calendar event**:
+A forward-looking, curator-selected moment in legislative life — a noteworthy Sesión, Comisión hearing, interpelación, presidential mensaje, procedural plazo, or any other item worth highlighting. Stored as `CalendarEvent`. Distinct from `LegislativeSession` (the exhaustive scraper-fed record of *every* meeting, not yet ingested — see ADR-0016) and from `BillEvent` (the granular past-tense activity log per bill). For v1, every event is entered manually through the admin panel; future agenda scrapers will write to the same table, distinguished by `source` (`CalendarEventSource`, starts as `{manual}` and grows) and deduped by `(source, external_ref)`. Each event has a `kind` from `CalendarEventKind {sesion, comision, interpelacion, mensaje, plazo, otro}` and may optionally link to a single `Bill`, `Legislator`, and `Committee`. Events persist after their date — cancellation is curator messaging in the title (e.g. `[CANCELADO]`), not a stored status. All writes (admin form *and* future scrapers) go through `upsert_calendar_event` in `services/write.py`.
+_Avoid_: treating `CalendarEvent` as an exhaustive feed of every Sesión (that's `LegislativeSession`'s job when the meeting scraper ships); using `CalendarEvent` to record past-tense bill activity (that's `BillEvent`); reintroducing a status enum without an upstream signal that needs it; bypassing `upsert_calendar_event` from the admin form
 
 **Political Party**:
 A registered party in the Chilean Congress. `PoliticalParty.name` is the full official name; `PoliticalParty.abbreviation` is the short identifier (e.g. "PS", "RN"). OpenData Camara is the authoritative source — `abbreviation` is set from the `Alias` field in the upstream XML. Senado returns only an abbreviation (e.g. "P.S.") and is used for lookup only, never to create party records.
