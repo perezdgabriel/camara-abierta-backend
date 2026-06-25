@@ -51,7 +51,7 @@ class VoteChoice(str, Enum):
     ABSTAIN = "abstain"
     PAIRED = "paired"
     DISPENSED = "dispensed"
-    ABSENT = "absent"
+    NO_VOTE = "no_vote"
 
 
 class VotingResult(str, Enum):
@@ -155,10 +155,10 @@ class SignalType(str, Enum):
     - QUIEBRE_BLOQUE: a party's cohesion dropped below threshold in this session
     - DIVERGENCIA_CAMARAS: same bill voted differently in Cámara vs Senado
     - VOTACION_DIVIDIDA: narrow margin with high participation
-    - ALTO_AUSENTISMO: absence rate unusually high vs chamber baseline
+    - BAJO_REGISTRO: unusually high share of legislators left no recorded vote
     """
 
     QUIEBRE_BLOQUE = "quiebre_bloque"
     DIVERGENCIA_CAMARAS = "divergencia_camaras"
     VOTACION_DIVIDIDA = "votacion_dividida"
-    ALTO_AUSENTISMO = "alto_ausentismo"
+    BAJO_REGISTRO = "bajo_registro"

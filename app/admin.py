@@ -472,7 +472,7 @@ class VotingSessionAdmin(ModelView, model=VotingSession):
         VotingSession.votes_for,
         VotingSession.votes_against,
         VotingSession.abstentions,
-        VotingSession.absences,
+        VotingSession.no_votes,
         VotingSession.subject,
     ]
     column_searchable_list = [VotingSession.subject, VotingSession.bcn_id]

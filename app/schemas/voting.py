@@ -92,7 +92,7 @@ class VotingSessionSummary(ORMModel):
     votes_for: int
     votes_against: int
     abstentions: int
-    absences: int
+    no_votes: int
     quorum_type: str | None = None
     signals: list[SignalRef] = Field(default_factory=list)
     created_at: datetime
@@ -144,7 +144,7 @@ class VotingAggregates(ORMModel):
     computed_at: datetime
     approval_rate: float
     avg_cohesion: float | None = None
-    avg_attendance: float
+    avg_participation: float
     volume: int
     signals_active: int
 

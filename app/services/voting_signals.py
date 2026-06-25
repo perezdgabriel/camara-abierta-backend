@@ -7,7 +7,7 @@ and the *computation rules*.
 
 Signals computed:
   - votación dividida (narrow margin, high participation)
-  - alto ausentismo (absence rate above threshold)
+  - bajo registro (share of legislators leaving no recorded vote above threshold)
   - quiebre de bloque (party cohesion below threshold)
   - divergencia entre cámaras (same bill, different result across chambers)
 """
@@ -39,13 +39,13 @@ below this for the signal to fire."""
 
 DIVIDED_PARTICIPATION_MIN = 0.60
 """Minimum (for+against)/total_seats for *votación dividida* — guards against
-narrow margins caused by absences (those are *alto ausentismo* territory)."""
+narrow margins caused by no-votes (those are *bajo registro* territory)."""
 
-ABSENCE_RATE_MIN = 0.20
-"""Threshold for *alto ausentismo*: absences/total_seats must exceed this."""
+NO_VOTE_RATE_MIN = 0.20
+"""Threshold for *bajo registro*: no_votes/total_seats must exceed this."""
 
-ABSENCE_BASELINE_WINDOW_DAYS = 30
-"""Window for computing the chamber's baseline absence rate."""
+NO_VOTE_BASELINE_WINDOW_DAYS = 30
+"""Window for computing the chamber's baseline no-vote rate."""
 
 QUIEBRE_COHESION_MIN = 0.80
 """Threshold for *quiebre de bloque*: party cohesion below this fires."""
@@ -115,26 +115,26 @@ def compute_votacion_dividida(session: VotingSession) -> SignalResult | None:
     )
 
 
-def compute_alto_ausentismo(db: Session, session: VotingSession) -> SignalResult | None:
-    """Absence rate above threshold.
+def compute_bajo_registro(db: Session, session: VotingSession) -> SignalResult | None:
+    """No-vote rate above threshold.
 
-    Baseline = mean absences across same-chamber sessions in the preceding 30
-    days. Surfaced in the payload so the UI can show a comparison; not used as
-    the firing threshold (we use a flat absence-rate cutoff to avoid the
-    "everything looks normal" problem on a chamber with chronically high
-    absenteeism).
+    Baseline = mean ``no_votes`` across same-chamber sessions in the preceding
+    30 days. Surfaced in the payload so the UI can show a comparison; not used
+    as the firing threshold (we use a flat no-vote-rate cutoff to avoid the
+    "everything looks normal" problem on a chamber with chronically low
+    registration).
     """
     total_seats = session.chamber.total_seats
     if total_seats <= 0:
         return None
 
-    absence_rate = session.absences / total_seats
-    if absence_rate < ABSENCE_RATE_MIN:
+    no_vote_rate = session.no_votes / total_seats
+    if no_vote_rate < NO_VOTE_RATE_MIN:
         return None
 
-    window_start = session.voting_date - timedelta(days=ABSENCE_BASELINE_WINDOW_DAYS)
+    window_start = session.voting_date - timedelta(days=NO_VOTE_BASELINE_WINDOW_DAYS)
     baseline = (
-        db.query(func.avg(VotingSession.absences))
+        db.query(func.avg(VotingSession.no_votes))
         .filter(
             VotingSession.chamber_id == session.chamber_id,
             VotingSession.voting_date >= window_start,
@@ -142,15 +142,15 @@ def compute_alto_ausentismo(db: Session, session: VotingSession) -> SignalResult
         )
         .scalar()
     )
-    baseline_absences = float(baseline) if baseline is not None else 0.0
+    baseline_no_votes = float(baseline) if baseline is not None else 0.0
 
     return SignalResult(
-        signal_type=SignalType.ALTO_AUSENTISMO,
-        severity=absence_rate,
+        signal_type=SignalType.BAJO_REGISTRO,
+        severity=no_vote_rate,
         payload={
-            "absences": int(session.absences),
-            "baseline_absences": round(baseline_absences, 2),
-            "absence_rate": round(absence_rate, 4),
+            "no_votes": int(session.no_votes),
+            "baseline_no_votes": round(baseline_no_votes, 2),
+            "no_vote_rate": round(no_vote_rate, 4),
         },
     )
 
@@ -214,7 +214,7 @@ def _voting_session_summary_dict(session: VotingSession) -> dict[str, Any]:
         "votes_for": session.votes_for,
         "votes_against": session.votes_against,
         "abstentions": session.abstentions,
-        "absences": session.absences,
+        "no_votes": session.no_votes,
         "quorum_type": session.quorum_type,
         "created_at": session.created_at.isoformat(),
         "updated_at": session.updated_at.isoformat(),
@@ -430,9 +430,9 @@ def compute_signals_for_session(
     dividida = compute_votacion_dividida(session)
     if dividida is not None:
         results.append(dividida)
-    ausentismo = compute_alto_ausentismo(db, session)
-    if ausentismo is not None:
-        results.append(ausentismo)
+    bajo_registro = compute_bajo_registro(db, session)
+    if bajo_registro is not None:
+        results.append(bajo_registro)
     quiebre = compute_quiebre_bloque(db, session)
     if quiebre is not None:
         results.append(quiebre)
@@ -585,9 +585,9 @@ def approval_rate(db: Session, window_days: int) -> float:
     return approved / decided
 
 
-def avg_attendance(db: Session, window_days: int) -> float:
+def avg_participation(db: Session, window_days: int) -> float:
     """Average ``(votes_for + votes_against + abstentions) / total_seats``
-    across sessions in the window. "Present" excludes absent and dispensed.
+    across sessions in the window. Excludes paired, dispensed, and no-vote rows.
     """
     cutoff = _window_cutoff(window_days)
     rows = (
@@ -631,7 +631,7 @@ def build_window_aggregate_payload(db: Session, window_days: int) -> dict[str, A
     return {
         "approval_rate": round(approval_rate(db, window_days), 4),
         "avg_cohesion": (round(cohesion_val, 4) if cohesion_val is not None else None),
-        "avg_attendance": round(avg_attendance(db, window_days), 4),
+        "avg_participation": round(avg_participation(db, window_days), 4),
         "volume": session_volume(db, window_days),
         "signals_active": count_active_signals(db, window_days),
     }
@@ -697,7 +697,7 @@ def seed_signal_fixtures(db: Session, base_date: date | None = None) -> dict[str
     silently if the chamber roster isn't seeded yet. Returns the ids of the
     rows created and the signals fired so callers can confirm.
 
-    PR-1: covers votación dividida + alto ausentismo. PR-2 will extend this
+    PR-1: covers votación dividida + bajo registro. PR-2 will extend this
     function with quiebre + divergencia fixtures.
     """
     base = base_date or (date.today() - timedelta(days=1))
@@ -719,7 +719,7 @@ def seed_signal_fixtures(db: Session, base_date: date | None = None) -> dict[str
         votes_for=78,
         votes_against=73,
         abstentions=2,
-        absences=2,
+        no_votes=2,
     )
     db.add(dividida)
     db.flush()
@@ -732,24 +732,24 @@ def seed_signal_fixtures(db: Session, base_date: date | None = None) -> dict[str
         }
     )
 
-    ausentismo = VotingSession(
-        bcn_id=f"fixture-ausentismo-{base.isoformat()}",
+    bajo_registro = VotingSession(
+        bcn_id=f"fixture-bajo-registro-{base.isoformat()}",
         chamber_id=deputies.id,
         voting_date=datetime.combine(base, time(11, 0)),
-        subject="Fixture · alto ausentismo — modificación al código tributario",
+        subject="Fixture · bajo registro — modificación al código tributario",
         result=VotingResult.REJECTED,
         votes_for=45,
         votes_against=60,
         abstentions=5,
-        absences=45,
+        no_votes=45,
     )
-    db.add(ausentismo)
+    db.add(bajo_registro)
     db.flush()
-    fired = recompute_session_signals(db, ausentismo.id)
+    fired = recompute_session_signals(db, bajo_registro.id)
     created.append(
         {
-            "signal": "alto_ausentismo",
-            "voting_session_id": ausentismo.id,
+            "signal": "bajo_registro",
+            "voting_session_id": bajo_registro.id,
             "signals_fired": fired,
         }
     )
@@ -798,7 +798,7 @@ def _seed_divergencia_fixture(
         votes_for=88,
         votes_against=30,
         abstentions=4,
-        absences=33,
+        no_votes=33,
     )
     later = VotingSession(
         bcn_id=f"fixture-divergencia-senate-{base.isoformat()}",
@@ -810,7 +810,7 @@ def _seed_divergencia_fixture(
         votes_for=18,
         votes_against=26,
         abstentions=2,
-        absences=4,
+        no_votes=4,
     )
     db.add_all([earlier, later])
     db.flush()

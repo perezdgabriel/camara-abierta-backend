@@ -15,7 +15,7 @@ from app.services import legislator_stats as ls
 FOR = VoteChoice.FOR
 AGAINST = VoteChoice.AGAINST
 ABSTAIN = VoteChoice.ABSTAIN
-ABSENT = VoteChoice.ABSENT
+NO_VOTE = VoteChoice.NO_VOTE
 
 
 class TestModalChoice:
@@ -30,8 +30,8 @@ class TestModalChoice:
         assert ls.modal_choice([FOR, AGAINST], ls.DECISIVE) is None
 
     def test_ignores_disallowed_choices(self):
-        # Abstain/absent don't pick a side; excluded from the decisive modal.
-        assert ls.modal_choice([FOR, FOR, ABSTAIN, ABSENT], ls.DECISIVE) is FOR
+        # Abstain/no_vote don't pick a side; excluded from the decisive modal.
+        assert ls.modal_choice([FOR, FOR, ABSTAIN, NO_VOTE], ls.DECISIVE) is FOR
 
     def test_abstain_counts_for_party_modal(self):
         # PARTY_CHOICES includes abstain (disciplina mirrors cohesión).
@@ -100,7 +100,7 @@ class TestComputeLean:
         assert result.bloc is Bloc.OPOSICION
 
     def test_legislator_abstention_not_counted(self):
-        # An abstention in a contested session picks no side → not in the denominator.
+        # An abstention in a contested session picks no side -> not in the denominator.
         sessions = [_contested(FOR, AGAINST, AGAINST)] * 5 + [
             _contested(FOR, AGAINST, ABSTAIN)
         ] * 5
@@ -140,9 +140,9 @@ class TestComputeDiscipline:
         assert result is not None
         assert result.decided == 5
 
-    def test_absent_legislator_choice_skipped(self):
-        # The legislator's absences/dispensations aren't disciplinable.
-        sessions = [(FOR, FOR)] * 5 + [(FOR, ABSENT)] * 5
+    def test_no_vote_legislator_choice_skipped(self):
+        # The legislator's no_votes/dispensations aren't disciplinable.
+        sessions = [(FOR, FOR)] * 5 + [(FOR, NO_VOTE)] * 5
         result = ls.compute_discipline(sessions)
         assert result is not None
         assert result.decided == 5

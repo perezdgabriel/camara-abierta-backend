@@ -55,7 +55,7 @@ def _make_session(
     votes_for: int = 0,
     votes_against: int = 0,
     abstentions: int = 0,
-    absences: int = 0,
+    no_votes: int = 0,
     result: VotingResult | None = VotingResult.APPROVED,
     bill_id: int | None = None,
 ) -> VotingSession:
@@ -69,7 +69,7 @@ def _make_session(
         votes_for=votes_for,
         votes_against=votes_against,
         abstentions=abstentions,
-        absences=absences,
+        no_votes=no_votes,
     )
     db.add(row)
     db.flush()
@@ -150,27 +150,27 @@ def _cast_votes(
     db.flush()
 
 
-# ── compute_alto_ausentismo ────────────────────────────────────────────────
+# ── compute_bajo_registro ──────────────────────────────────────────────────
 
 
-class TestAltoAusentismo:
-    def test_fires_above_absence_threshold(self, db_session: Session):
+class TestBajoRegistro:
+    def test_fires_above_no_vote_threshold(self, db_session: Session):
         deputies = _make_chamber(db_session, ChamberType.DEPUTIES, "Cámara", 155)
         session = _make_session(
             db_session,
             deputies,
             voting_date=datetime(2026, 5, 15, 11, 0),
-            absences=45,  # 45/155 ≈ 29% > 20%
+            no_votes=45,  # 45/155 ≈ 29% > 20%
             votes_for=45,
             votes_against=60,
             abstentions=5,
             result=VotingResult.REJECTED,
         )
-        result = vs.compute_alto_ausentismo(db_session, session)
+        result = vs.compute_bajo_registro(db_session, session)
         assert result is not None
-        assert result.signal_type is SignalType.ALTO_AUSENTISMO
-        assert result.payload["absences"] == 45
-        assert result.payload["absence_rate"] > vs.ABSENCE_RATE_MIN
+        assert result.signal_type is SignalType.BAJO_REGISTRO
+        assert result.payload["no_votes"] == 45
+        assert result.payload["no_vote_rate"] > vs.NO_VOTE_RATE_MIN
 
     def test_does_not_fire_below_threshold(self, db_session: Session):
         deputies = _make_chamber(db_session, ChamberType.DEPUTIES, "Cámara", 155)
@@ -178,12 +178,12 @@ class TestAltoAusentismo:
             db_session,
             deputies,
             voting_date=datetime(2026, 5, 15, 11, 0),
-            absences=20,  # 20/155 ≈ 13% < 20%
+            no_votes=20,  # 20/155 ≈ 13% < 20%
             votes_for=70,
             votes_against=60,
             abstentions=5,
         )
-        assert vs.compute_alto_ausentismo(db_session, session) is None
+        assert vs.compute_bajo_registro(db_session, session) is None
 
     def test_baseline_computed_from_preceding_window(self, db_session: Session):
         deputies = _make_chamber(db_session, ChamberType.DEPUTIES, "Cámara", 155)
@@ -191,27 +191,27 @@ class TestAltoAusentismo:
             datetime(2026, 5, 1, 10, 0),
             datetime(2026, 5, 5, 10, 0),
         ):
-            _make_session(db_session, deputies, voting_date=d, absences=10)
+            _make_session(db_session, deputies, voting_date=d, no_votes=10)
         _make_session(
             db_session,
             deputies,
             voting_date=datetime(2026, 5, 8, 10, 0),
-            absences=20,
+            no_votes=20,
         )
         current = _make_session(
             db_session,
             deputies,
             voting_date=datetime(2026, 5, 15, 11, 0),
-            absences=50,
+            no_votes=50,
             votes_for=50,
             votes_against=50,
             abstentions=5,
             result=VotingResult.REJECTED,
         )
-        result = vs.compute_alto_ausentismo(db_session, current)
+        result = vs.compute_bajo_registro(db_session, current)
         assert result is not None
         # baseline = (10 + 10 + 20) / 3 ≈ 13.33
-        assert result.payload["baseline_absences"] == pytest.approx(13.33, abs=0.01)
+        assert result.payload["baseline_no_votes"] == pytest.approx(13.33, abs=0.01)
 
 
 # ── compute_quiebre_bloque ─────────────────────────────────────────────────

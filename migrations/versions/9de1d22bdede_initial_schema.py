@@ -1,8 +1,8 @@
 """initial_schema
 
-Revision ID: 0081d8d054bf
+Revision ID: 9de1d22bdede
 Revises: 
-Create Date: 2026-06-24 12:21:37.607576
+Create Date: 2026-06-25 13:13:19.698854
 """
 
 from alembic import op
@@ -11,7 +11,7 @@ from sqlalchemy.dialects import postgresql
 
 
 # revision identifiers, used by Alembic.
-revision = '0081d8d054bf'
+revision = '9de1d22bdede'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -353,8 +353,8 @@ def upgrade() -> None:
     sa.Column('votes_for', sa.Integer(), nullable=False),
     sa.Column('votes_against', sa.Integer(), nullable=False),
     sa.Column('abstentions', sa.Integer(), nullable=False),
-    sa.Column('absences', sa.Integer(), nullable=False),
-    sa.Column('attendance_percentage', sa.Numeric(precision=5, scale=2), nullable=False),
+    sa.Column('no_votes', sa.Integer(), nullable=False),
+    sa.Column('record_rate', sa.Numeric(precision=5, scale=2), nullable=False),
     sa.Column('participation_rate', sa.Numeric(precision=5, scale=2), nullable=False),
     sa.Column('inferred_bloc', sa.Enum('OFICIALISMO', 'OPOSICION', name='legislator_inferred_bloc', native_enum=False), nullable=True),
     sa.Column('lean_agreed', sa.Integer(), nullable=False),
@@ -621,7 +621,7 @@ def upgrade() -> None:
     op.create_index(op.f('ix_bill_urgencies_deleted_at'), 'bill_urgencies', ['deleted_at'], unique=False)
     op.create_index(op.f('ix_bill_urgencies_sync_version'), 'bill_urgencies', ['sync_version'], unique=False)
     op.create_table('calendar_events',
-    sa.Column('kind', sa.Enum('SESION', 'COMISION', 'INTERPELACION', 'MENSAJE', 'PLAZO', 'OTRO', name='calendar_event_kind', native_enum=False), nullable=False),
+    sa.Column('kind', sa.Enum('SESION', 'VOTACION', 'COMISION', 'INTERPELACION', 'MENSAJE', 'PLAZO', 'ACUSACION_CONSTITUCIONAL', 'INFORME_CEI', 'OTRO', name='calendar_event_kind', native_enum=False), nullable=False),
     sa.Column('starts_at', sa.DateTime(timezone=True), nullable=False),
     sa.Column('ends_at', sa.DateTime(timezone=True), nullable=True),
     sa.Column('title', sa.String(length=300), nullable=False),
@@ -631,7 +631,7 @@ def upgrade() -> None:
     sa.Column('bill_id', sa.BigInteger(), nullable=True),
     sa.Column('legislator_id', sa.BigInteger(), nullable=True),
     sa.Column('committee_id', sa.BigInteger(), nullable=True),
-    sa.Column('source', sa.Enum('MANUAL', name='calendar_event_source', native_enum=False), nullable=False),
+    sa.Column('source', sa.Enum('MANUAL', 'TABLA_SEMANAL', name='calendar_event_source', native_enum=False), nullable=False),
     sa.Column('external_ref', sa.String(length=200), nullable=True),
     sa.Column('id', sa.BigInteger(), nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
@@ -700,7 +700,7 @@ def upgrade() -> None:
     sa.Column('votes_against', sa.Integer(), nullable=False),
     sa.Column('abstentions', sa.Integer(), nullable=False),
     sa.Column('dispensed_count', sa.Integer(), nullable=False),
-    sa.Column('absences', sa.Integer(), nullable=False),
+    sa.Column('no_votes', sa.Integer(), nullable=False),
     sa.Column('paired_count', sa.Integer(), nullable=False),
     sa.Column('quorum_required', sa.Integer(), nullable=True),
     sa.Column('quorum_type', sa.String(length=100), nullable=True),
@@ -730,7 +730,7 @@ def upgrade() -> None:
     sa.Column('voting_session_id', sa.BigInteger(), nullable=False),
     sa.Column('legislator_id', sa.BigInteger(), nullable=True),
     sa.Column('legislator_external_id', sa.String(length=50), nullable=False),
-    sa.Column('vote', sa.Enum('FOR', 'AGAINST', 'ABSTAIN', 'PAIRED', 'DISPENSED', 'ABSENT', name='vote_choice', native_enum=False), nullable=False),
+    sa.Column('vote', sa.Enum('FOR', 'AGAINST', 'ABSTAIN', 'PAIRED', 'DISPENSED', 'NO_VOTE', name='vote_choice', native_enum=False), nullable=False),
     sa.Column('id', sa.BigInteger(), nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
@@ -747,7 +747,7 @@ def upgrade() -> None:
     op.create_index('uq_votes_session_legislator', 'votes', ['voting_session_id', 'legislator_id'], unique=True, postgresql_where='legislator_id IS NOT NULL')
     op.create_table('voting_session_signals',
     sa.Column('voting_session_id', sa.BigInteger(), nullable=False),
-    sa.Column('signal_type', sa.Enum('QUIEBRE_BLOQUE', 'DIVERGENCIA_CAMARAS', 'VOTACION_DIVIDIDA', 'ALTO_AUSENTISMO', name='signal_type', native_enum=False), nullable=False),
+    sa.Column('signal_type', sa.Enum('QUIEBRE_BLOQUE', 'DIVERGENCIA_CAMARAS', 'VOTACION_DIVIDIDA', 'BAJO_REGISTRO', name='signal_type', native_enum=False), nullable=False),
     sa.Column('severity', sa.Numeric(precision=10, scale=4), nullable=False),
     sa.Column('payload', sa.JSON(), nullable=False),
     sa.Column('id', sa.BigInteger(), nullable=False),

@@ -200,9 +200,7 @@ def test_get_bill_picks_latest_start_date_when_stage_windows_overlap(
     )
     db_session.flush()
     db_session.refresh(bill, attribute_names=["stages"])
-    mixed = next(
-        s for s in bill.stages if s.stage_type == StageType.MIXED_COMMISSION
-    )
+    mixed = next(s for s in bill.stages if s.stage_type == StageType.MIXED_COMMISSION)
 
     overlap = _make_voting_session(
         db_session,

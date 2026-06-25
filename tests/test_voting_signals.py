@@ -1,6 +1,6 @@
 """Pure-function threshold tests for ``compute_votacion_dividida``.
 
-DB-dependent signal tests (alto ausentismo, quiebre, divergencia) live in
+DB-dependent signal tests (bajo registro, quiebre, divergencia) live in
 ``tests/integration/test_voting_signals_integration.py`` because the ORM uses
 PostgreSQL sequences that SQLite can't compile.
 """
@@ -18,7 +18,7 @@ def _session(
     for_: int,
     against: int,
     abstentions: int = 0,
-    absences: int = 0,
+    no_votes: int = 0,
     total_seats: int = 155,
     result: VotingResult | None = VotingResult.APPROVED,
 ) -> SimpleNamespace:
@@ -27,7 +27,7 @@ def _session(
         votes_for=for_,
         votes_against=against,
         abstentions=abstentions,
-        absences=absences,
+        no_votes=no_votes,
         result=result,
         chamber=SimpleNamespace(total_seats=total_seats),
     )

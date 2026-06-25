@@ -73,17 +73,17 @@ def get_legislator_voting_summary(db: Session, legislator_id: int) -> dict:
             _count_choice(VoteChoice.FOR).label("votes_for"),
             _count_choice(VoteChoice.AGAINST).label("votes_against"),
             _count_choice(VoteChoice.ABSTAIN).label("abstentions"),
-            _count_choice(VoteChoice.ABSENT).label("absences"),
+            _count_choice(VoteChoice.NO_VOTE).label("no_votes"),
         )
         .filter(Vote.legislator_id == legislator_id)
         .one()
     )
     total = int(row.total or 0)
-    absences = int(row.absences or 0)
+    no_votes = int(row.no_votes or 0)
     votes_for = int(row.votes_for or 0)
     votes_against = int(row.votes_against or 0)
     abstentions = int(row.abstentions or 0)
-    attendance = round((total - absences) / total * 100, 1) if total else 0.0
+    record_rate = round((total - no_votes) / total * 100, 1) if total else 0.0
     participation = (
         round((votes_for + votes_against + abstentions) / total * 100, 1)
         if total
@@ -94,8 +94,8 @@ def get_legislator_voting_summary(db: Session, legislator_id: int) -> dict:
         "votes_for": votes_for,
         "votes_against": votes_against,
         "abstentions": abstentions,
-        "absences": absences,
-        "attendance_percentage": attendance,
+        "no_votes": no_votes,
+        "record_rate": record_rate,
         "participation_rate": participation,
     }
 

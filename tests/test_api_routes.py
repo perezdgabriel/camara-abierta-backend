@@ -161,7 +161,7 @@ def make_voting_session(signals=None) -> SimpleNamespace:
         votes_against=10,
         abstentions=1,
         dispensed_count=0,
-        absences=0,
+        no_votes=0,
         paired_count=2,
         quorum_type="simple",
         session_ref="42",
@@ -416,9 +416,7 @@ def _make_mocion(*, id: int, bulletin: str, title: str) -> SimpleNamespace:
     return bill
 
 
-def test_authored_bills_endpoint_returns_items_and_total(
-    client, fake_db, monkeypatch
-):
+def test_authored_bills_endpoint_returns_items_and_total(client, fake_db, monkeypatch):
     captured: dict[str, object] = {}
 
     def fake_get_legislator(*, db, legislator_id):
@@ -471,9 +469,7 @@ def test_authored_bills_endpoint_404s_for_unknown_legislator(
     assert response.status_code == 404
 
 
-def test_authored_bills_endpoint_forwards_explicit_limit(
-    client, fake_db, monkeypatch
-):
+def test_authored_bills_endpoint_forwards_explicit_limit(client, fake_db, monkeypatch):
     captured: dict[str, object] = {}
 
     def fake_authored_bills(db, legislator_id, limit):
@@ -491,9 +487,7 @@ def test_authored_bills_endpoint_forwards_explicit_limit(
         fake_authored_bills,
     )
 
-    response = client.get(
-        "/api/v1/legislators/55/authored-bills", params={"limit": 25}
-    )
+    response = client.get("/api/v1/legislators/55/authored-bills", params={"limit": 25})
     assert response.status_code == 200
     assert captured["limit"] == 25
 

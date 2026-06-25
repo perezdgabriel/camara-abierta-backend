@@ -134,7 +134,7 @@ class VotingResult(ORMModel):
     votes_against: int
     abstentions: int
     dispensed_count: int
-    absences: int
+    no_votes: int
     paired_count: int
     quorum_type: str | None = None
     session_ref: str | None = None

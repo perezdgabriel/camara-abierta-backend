@@ -1088,6 +1088,15 @@ def _reconcile_votes(
     when a term covers the session's date; otherwise the row is saved
     orphaned (``legislator_id IS NULL``) and waits for term ingest to claim
     it. See ADR-0015.
+
+    For Senate sessions the upstream restsil feed only emits rows for
+    senators in SI/NO/ABSTENCION/PAREO buckets — anyone who did not vote
+    leaves no row at all. To keep ``record_rate`` honest and feed the
+    ``BAJO_REGISTRO`` signal, this function synthesises a
+    :class:`VoteChoice.NO_VOTE` row for every senator whose
+    :class:`LegislatorTerm` covers ``voting_date`` and who is absent from
+    the upstream list. Senators without an ingested term are skipped
+    (orphan-safe — the next refresh after term ingestion claims them).
     """
     voting_date = voting_session.voting_date.date()
     desired: dict[str, dict[str, Any]] = {}
@@ -1098,8 +1107,30 @@ def _reconcile_votes(
         legislator_id = _resolve_vote_legislator(db, external_id, voting_date)
         desired[external_id] = {
             "legislator_id": legislator_id,
-            "vote": _coerce_enum(VoteChoice, payload.get("vote"), VoteChoice.ABSENT),
+            "vote": _coerce_enum(VoteChoice, payload.get("vote"), VoteChoice.NO_VOTE),
         }
+
+    if chamber_type == ChamberType.SENATE:
+        roster = db.execute(
+            select(LegislatorTerm.legislator_id, LegislatorTerm.chamber_external_id)
+            .join(Chamber, Chamber.id == LegislatorTerm.chamber_id)
+            .where(
+                Chamber.chamber_type == ChamberType.SENATE,
+                LegislatorTerm.chamber_external_id.is_not(None),
+                LegislatorTerm.start_date <= voting_date,
+                or_(
+                    LegislatorTerm.end_date.is_(None),
+                    LegislatorTerm.end_date >= voting_date,
+                ),
+            )
+        ).all()
+        for legislator_id, external_id in roster:
+            if external_id in desired:
+                continue
+            desired[external_id] = {
+                "legislator_id": legislator_id,
+                "vote": VoteChoice.NO_VOTE,
+            }
 
     current_by_external: dict[str, Vote] = {
         vote.legislator_external_id: vote
@@ -1107,6 +1138,11 @@ def _reconcile_votes(
         if vote.legislator_external_id
     }
     changed = False
+
+    new_no_votes = sum(1 for p in desired.values() if p["vote"] == VoteChoice.NO_VOTE)
+    if voting_session.no_votes != new_no_votes:
+        voting_session.no_votes = new_no_votes
+        changed = True
 
     for external_id, existing_vote in list(current_by_external.items()):
         if external_id not in desired:
@@ -2048,7 +2084,11 @@ def upsert_voting_session(
         votes_against=int(data.get("votes_against", 0) or 0),
         abstentions=int(data.get("abstentions", 0) or 0),
         dispensed_count=int(data.get("dispensed_count", 0) or 0),
-        absences=int(data.get("absences", 0) or 0),
+        # ``no_votes`` is derived from the reconciled individual_votes (after
+        # senate synthesis), not from upstream — chamber XML has no
+        # ``TotalNoVota`` aggregate, and senate restsil has no aggregate either.
+        # The reconciler sets the final value below.
+        no_votes=0,
         paired_count=int(data.get("paired_count", data.get("paired", 0)) or 0),
         quorum_type=(data.get("quorum") or data.get("quorum_type") or "")[:100] or None,
         session_ref=(data.get("session_ref") or "")[:100] or None,
@@ -2078,7 +2118,7 @@ def upsert_voting_session(
                 "votes_against": insert_stmt.excluded.votes_against,
                 "abstentions": insert_stmt.excluded.abstentions,
                 "dispensed_count": insert_stmt.excluded.dispensed_count,
-                "absences": insert_stmt.excluded.absences,
+                "no_votes": insert_stmt.excluded.no_votes,
                 "paired_count": insert_stmt.excluded.paired_count,
                 "quorum_type": insert_stmt.excluded.quorum_type,
                 "session_ref": insert_stmt.excluded.session_ref,

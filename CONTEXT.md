@@ -19,7 +19,7 @@ All categorical string fields use formal Python enums. Current vocabulary:
 - `StageType`: first_constitutional_tramite, second_constitutional_tramite, third_constitutional_tramite, mixed_commission, constitutional_tribunal, promulgation, publication
 - `UrgencyType`: simple, sum, immediate
 - `VotingType`: general, particular, single, other
-- `VoteChoice`: for, against, abstain, paired, dispensed, absent
+- `VoteChoice`: for, against, abstain, paired, dispensed, no_vote
 - `VotingResult`: approved, rejected, tie
 - `ChamberType`: deputies, senate
 - `CommitteeType`: permanent, special, investigative, mixed
@@ -33,8 +33,12 @@ Optional zero-to-many ministries attached to a bill as upstream metadata from th
 _Avoid_: ministries, ministry catalog
 
 **Dispensed vote**:
-An excused legislator vote choice recorded explicitly by an upstream chamber voting source. It is distinct from an absence.
+An excused legislator vote choice recorded explicitly by an upstream chamber voting source. It is distinct from a *no vota* (the legislator left no recorded vote at all, with no upstream excuse marker).
 _Avoid_: absent
+
+**No vota**:
+`VoteChoice.NO_VOTE` (Spanish UI label *"No vota"*) means the legislator left no classified vote on the session. Chamber side comes from upstream `<TipoOpcionVoto Valor="4">No Vota</TipoOpcionVoto>` (and is the parser's fallback for unrecognised values); Senate side is **synthesised** server-side inside `_reconcile_votes` (`app/services/write.py`) for every senator whose `LegislatorTerm` covers the session's `voting_date` but who is absent from every upstream restsil bucket — restsil emits only per-bucket presence, so synthesis is the only place senate non-voters get materialised. Senators with no covering term are silently skipped (orphan-safe, mirrors ADR-0015). The aggregate `VotingSession.no_votes` is derived from the reconciled list, not from any upstream summary (chamber XML has no `TotalNoVota`, restsil no aggregate). Powers the `record_rate` metric (`LegislatorVotingStats.record_rate = (total − no_votes) / total * 100`, the share of sessions where the legislator left *any* recorded entry) and the `BAJO_REGISTRO` signal (`SignalType.BAJO_REGISTRO`, fires when `no_votes/total_seats` exceeds `NO_VOTE_RATE_MIN`). Why not "absent": no upstream signal tells us *why* the legislator did not vote — sick, on official mission, excused, or skipping — so naming the row "absent" is a factual claim we cannot substantiate. A future excused-absence ingest (e.g. *permisos constitucionales*) will add a new dedicated enum value rather than reusing this one. See ADR-0018.
+_Avoid_: "absent", "ausentismo", `VoteChoice.ABSENT` (removed); `attendance_percentage` (renamed to `record_rate`); `ALTO_AUSENTISMO` signal (renamed to `BAJO_REGISTRO`)
 
 **Bill lifecycle**:
 `Bill.status` is the source of truth from the upstream Congress API, not derived from stages. `BillStage` records are the detailed legislative history. The `is_current` flag on `BillStage` tracks where the bill currently is in the process.

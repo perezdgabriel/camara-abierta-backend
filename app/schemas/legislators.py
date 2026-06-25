@@ -70,8 +70,8 @@ class LegislatorVotingStatsSummary(ORMModel):
     votes_for: int
     votes_against: int
     abstentions: int
-    absences: int
-    attendance_percentage: float
+    no_votes: int
+    record_rate: float
     participation_rate: float
     stats_updated_at: datetime
 
@@ -180,8 +180,8 @@ class LegislatorVotingSummary(ORMModel):
     votes_for: int
     votes_against: int
     abstentions: int
-    absences: int
-    attendance_percentage: float
+    no_votes: int
+    record_rate: float
     participation_rate: float
 
 

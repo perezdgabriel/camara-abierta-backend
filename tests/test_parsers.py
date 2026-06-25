@@ -96,7 +96,7 @@ def test_vote_parser_maps_votes_and_result_to_canonical_enums():
     assert payload["stage_label"] == "Primer trámite constitucional"
     assert payload["paired_count"] == 2
     assert payload["individual_votes"][0]["vote"] is VoteChoice.FOR
-    assert payload["individual_votes"][1]["vote"] is VoteChoice.ABSENT
+    assert payload["individual_votes"][1]["vote"] is VoteChoice.NO_VOTE
 
 
 def test_bill_parser_maps_opendata_enrichment_to_sponsoring_ministries_and_votes():
@@ -161,6 +161,42 @@ def test_vote_parser_maps_chamber_votes_and_metadata_to_canonical_payload():
     assert payload["individual_votes"][0]["legislator_external_id"] == "camara:803"
     assert payload["individual_votes"][0]["_legislator_name"] == "René Alinco Bustos"
     assert payload["individual_votes"][0]["vote"] is VoteChoice.DISPENSED
+
+
+def test_vote_parser_maps_chamber_no_vota_value_to_no_vote_choice():
+    payload = VoteParser.parse_chamber_vote(
+        {
+            "id": 88981,
+            "description": "Boletín N° 18216-05",
+            "date": "2026-05-20T14:04:00",
+            "votes_for": 70,
+            "votes_against": 60,
+            "abstentions": 0,
+            "dispensed_count": 0,
+            "result": "Aprobado",
+            "individual_votes": [
+                {
+                    "deputy_id": 901,
+                    "first_name": "Camila",
+                    "last_name_father": "Test",
+                    "last_name_mother": "Case",
+                    "vote": "No Vota",
+                    "vote_code": 4,
+                },
+                {
+                    "deputy_id": 902,
+                    "first_name": "Diego",
+                    "last_name_father": "Test",
+                    "last_name_mother": "Case",
+                    "vote": None,
+                    "vote_code": None,
+                },
+            ],
+        },
+        bulletin="18216-05",
+    )
+    assert payload["individual_votes"][0]["vote"] is VoteChoice.NO_VOTE
+    assert payload["individual_votes"][1]["vote"] is VoteChoice.NO_VOTE
 
 
 def test_senado_bill_xml_maps_through_bill_and_vote_parsers():

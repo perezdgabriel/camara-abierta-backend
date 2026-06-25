@@ -60,7 +60,7 @@ class VotingSession(SyncableMixin, Base):
     votes_against: Mapped[int] = mapped_column(nullable=False, default=0)
     abstentions: Mapped[int] = mapped_column(nullable=False, default=0)
     dispensed_count: Mapped[int] = mapped_column(nullable=False, default=0)
-    absences: Mapped[int] = mapped_column(nullable=False, default=0)
+    no_votes: Mapped[int] = mapped_column(nullable=False, default=0)
     paired_count: Mapped[int] = mapped_column(nullable=False, default=0)
     quorum_required: Mapped[int | None] = mapped_column()
     quorum_type: Mapped[str | None] = mapped_column(String(100))
@@ -232,10 +232,8 @@ class LegislatorVotingStats(SyncableMixin, Base):
     votes_for: Mapped[int] = mapped_column(nullable=False, default=0)
     votes_against: Mapped[int] = mapped_column(nullable=False, default=0)
     abstentions: Mapped[int] = mapped_column(nullable=False, default=0)
-    absences: Mapped[int] = mapped_column(nullable=False, default=0)
-    attendance_percentage: Mapped[float] = mapped_column(
-        Numeric(5, 2), nullable=False, default=0
-    )
+    no_votes: Mapped[int] = mapped_column(nullable=False, default=0)
+    record_rate: Mapped[float] = mapped_column(Numeric(5, 2), nullable=False, default=0)
     participation_rate: Mapped[float] = mapped_column(
         Numeric(5, 2), nullable=False, default=0
     )
@@ -257,7 +255,7 @@ class LegislatorVotingStats(SyncableMixin, Base):
     lean_seats: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     # ── Disciplina partidaria (current period, party members) ──────────────
-    # ``discipline_rate`` is a percentage (0–100), mirroring attendance_percentage.
+    # ``discipline_rate`` is a percentage (0–100), mirroring record_rate.
     discipline_rate: Mapped[float | None] = mapped_column(Numeric(5, 2))
     discipline_with: Mapped[int] = mapped_column(nullable=False, default=0)
     discipline_decided: Mapped[int] = mapped_column(nullable=False, default=0)

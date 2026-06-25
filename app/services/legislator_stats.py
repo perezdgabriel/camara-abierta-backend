@@ -4,7 +4,7 @@ Populates the (otherwise dormant) ``LegislatorVotingStats`` table. Three things
 per legislator, refreshed out-of-band by a Celery beat task in the mold of
 ``voting_signals`` / ``VotingWindowAggregate``:
 
-  - **base stats** (career-wide): totals/attendance/participation, the batched
+  - **base stats** (career-wide): totals/record-rate/participation, the batched
     form of ``legislators.get_legislator_voting_summary``.
   - **inclinación de voto** (current period): the bloc whose modal vote the
     legislator matched most often across *contested, decisive* sessions — those
@@ -199,7 +199,7 @@ def _base_stats(db: Session) -> dict[int, dict]:
             _sum(VoteChoice.FOR).label("votes_for"),
             _sum(VoteChoice.AGAINST).label("votes_against"),
             _sum(VoteChoice.ABSTAIN).label("abstentions"),
-            _sum(VoteChoice.ABSENT).label("absences"),
+            _sum(VoteChoice.NO_VOTE).label("no_votes"),
         )
         .filter(Vote.legislator_id.isnot(None))
         .group_by(Vote.legislator_id)
@@ -212,8 +212,8 @@ def _base_stats(db: Session) -> dict[int, dict]:
         votes_for = int(row.votes_for or 0)
         votes_against = int(row.votes_against or 0)
         abstentions = int(row.abstentions or 0)
-        absences = int(row.absences or 0)
-        attendance = round((total - absences) / total * 100, 2) if total else 0.0
+        no_votes = int(row.no_votes or 0)
+        record_rate = round((total - no_votes) / total * 100, 2) if total else 0.0
         participation = (
             round((votes_for + votes_against + abstentions) / total * 100, 2)
             if total
@@ -224,8 +224,8 @@ def _base_stats(db: Session) -> dict[int, dict]:
             "votes_for": votes_for,
             "votes_against": votes_against,
             "abstentions": abstentions,
-            "absences": absences,
-            "attendance_percentage": attendance,
+            "no_votes": no_votes,
+            "record_rate": record_rate,
             "participation_rate": participation,
         }
     return stats
@@ -373,8 +373,8 @@ def refresh_legislator_voting_stats(db: Session) -> int:
         row.votes_for = stats["votes_for"]
         row.votes_against = stats["votes_against"]
         row.abstentions = stats["abstentions"]
-        row.absences = stats["absences"]
-        row.attendance_percentage = stats["attendance_percentage"]
+        row.no_votes = stats["no_votes"]
+        row.record_rate = stats["record_rate"]
         row.participation_rate = stats["participation_rate"]
 
         lean = leans.get(legislator_id)

@@ -30,6 +30,7 @@ CAMARA_VOTE_MAP = {
     "abstencion": VoteChoice.ABSTAIN,
     "abstención": VoteChoice.ABSTAIN,
     "dispensado": VoteChoice.DISPENSED,
+    "no vota": VoteChoice.NO_VOTE,
 }
 
 CAMARA_RESULT_MAP = {
@@ -46,6 +47,8 @@ class VoteParser:
 
     @staticmethod
     def _parse_chamber_vote_choice(label: str | None, code: int | None) -> VoteChoice:
+        # OpenData Cámara upstream code table (TipoOpcionVoto/@Valor):
+        #   0=En Contra, 1=Afirmativo, 2=Abstención, 3=Dispensado, 4=No Vota.
         normalized = VoteParser._normalize(label)
         if normalized in CAMARA_VOTE_MAP:
             return CAMARA_VOTE_MAP[normalized]
@@ -55,7 +58,11 @@ class VoteParser:
             return VoteChoice.AGAINST
         if code == 2:
             return VoteChoice.ABSTAIN
-        return VoteChoice.ABSENT
+        if code == 3:
+            return VoteChoice.DISPENSED
+        if code == 4:
+            return VoteChoice.NO_VOTE
+        return VoteChoice.NO_VOTE
 
     @staticmethod
     def _parse_chamber_voting_type(label: str | None) -> VotingType:
@@ -128,7 +135,7 @@ class VoteParser:
                 {
                     "_legislator_name": vote.get("legislator_name", ""),
                     "vote": SENADO_VOTE_MAP.get(
-                        vote.get("vote", ""), VoteChoice.ABSENT
+                        vote.get("vote", ""), VoteChoice.NO_VOTE
                     ),
                 }
                 for vote in raw.get("detail", [])
@@ -295,7 +302,6 @@ class VoteParser:
             "votes_against": votes_against,
             "abstentions": abstentions,
             "dispensed_count": dispensed_count,
-            "absences": int(raw.get("absences", 0) or 0),
             "quorum": raw.get("quorum", ""),
             "article_text": (raw.get("article_text") or "").strip() or None,
             "constitutional_procedure_id": raw.get("constitutional_procedure_id"),
