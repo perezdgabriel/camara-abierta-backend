@@ -128,6 +128,15 @@ def recreate_database(target_url: URL) -> None:
     finally:
         admin_engine.dispose()
 
+    target_engine = create_engine(
+        target_url, isolation_level="AUTOCOMMIT", pool_pre_ping=True
+    )
+    try:
+        with target_engine.connect() as connection:
+            connection.execute(text("CREATE EXTENSION IF NOT EXISTS unaccent"))
+    finally:
+        target_engine.dispose()
+
 
 def clear_version_history() -> list[str]:
     if not VERSIONS_DIR.exists():

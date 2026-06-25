@@ -3,6 +3,7 @@ from datetime import date
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.core.search import unaccent_ilike
 from app.models.diario_oficial import OfficialGazetteNorm
 
 DEFAULT_OFFSET = 0
@@ -30,18 +31,17 @@ def list_normas(
         query = query.filter(OfficialGazetteNorm.date <= date_to)
         count_query = count_query.filter(OfficialGazetteNorm.date <= date_to)
     if ministry:
-        query = query.filter(OfficialGazetteNorm.ministry.ilike(f"%{ministry}%"))
-        count_query = count_query.filter(
-            OfficialGazetteNorm.ministry.ilike(f"%{ministry}%")
-        )
+        clause = unaccent_ilike(OfficialGazetteNorm.ministry, ministry)
+        query = query.filter(clause)
+        count_query = count_query.filter(clause)
     if branch:
-        query = query.filter(OfficialGazetteNorm.branch.ilike(f"%{branch}%"))
-        count_query = count_query.filter(
-            OfficialGazetteNorm.branch.ilike(f"%{branch}%")
-        )
+        clause = unaccent_ilike(OfficialGazetteNorm.branch, branch)
+        query = query.filter(clause)
+        count_query = count_query.filter(clause)
     if search:
-        query = query.filter(OfficialGazetteNorm.title.ilike(f"%{search}%"))
-        count_query = count_query.filter(OfficialGazetteNorm.title.ilike(f"%{search}%"))
+        clause = unaccent_ilike(OfficialGazetteNorm.title, search)
+        query = query.filter(clause)
+        count_query = count_query.filter(clause)
 
     total = count_query.scalar() or 0
     rows = (

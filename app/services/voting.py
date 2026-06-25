@@ -3,6 +3,7 @@ from datetime import date, datetime, time
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload, selectinload
 
+from app.core.search import unaccent_ilike
 from app.models.enums import ChamberType, SignalType, VotingResult
 from app.models.legislature import Chamber, Legislator, LegislatorTerm
 from app.models.votacion import Vote, VotingSession, VotingSessionSignal
@@ -64,7 +65,7 @@ def list_voting_sessions(
         query = query.filter(VotingSession.result == result)
         count_query = count_query.filter(VotingSession.result == result)
     if q:
-        clause = VotingSession.subject.ilike(f"%{q}%")
+        clause = unaccent_ilike(VotingSession.subject, q)
         query = query.filter(clause)
         count_query = count_query.filter(clause)
     if signal_type is not None:

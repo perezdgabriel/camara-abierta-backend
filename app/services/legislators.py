@@ -3,6 +3,7 @@ from datetime import date
 from sqlalchemy import ColumnElement, case, func, or_, select
 from sqlalchemy.orm import Session, joinedload, selectinload
 
+from app.core.search import unaccent_ilike
 from app.models.core import Circumscription, District, Region, Topic
 from app.models.enums import BillOrigin, ChamberType, VoteChoice
 from app.models.legislature import (
@@ -190,7 +191,7 @@ def list_legislators(
 
     filters: list[ColumnElement[bool]] = []
     if q:
-        filters.append(Legislator.full_name.ilike(f"%{q}%"))
+        filters.append(unaccent_ilike(Legislator.full_name, q))
 
     # Party filter: needs to look at the *active* term's party.
     if party == PARTY_INDEPENDENT_SENTINEL:

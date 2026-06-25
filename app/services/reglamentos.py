@@ -4,6 +4,7 @@ from sqlalchemy import desc, func
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.config import settings
+from app.core.search import unaccent_ilike
 from app.models.diario_oficial import Regulation, RegulationStage
 from app.schemas.reglamentos import ReglamentoStats, ReglamentoTimeline
 
@@ -42,15 +43,15 @@ def list_reglamentos(
     if categoria:
         filters.append(Regulation.categoria == categoria)
     if ministerio:
-        filters.append(Regulation.ministerio.ilike(f"%{ministerio}%"))
+        filters.append(unaccent_ilike(Regulation.ministerio, ministerio))
     if subsecretaria:
-        filters.append(Regulation.subsecretaria.ilike(f"%{subsecretaria}%"))
+        filters.append(unaccent_ilike(Regulation.subsecretaria, subsecretaria))
     if search:
-        filters.append(Regulation.materia.ilike(f"%{search}%"))
+        filters.append(unaccent_ilike(Regulation.materia, search))
     if anio:
         filters.append(Regulation.anio == anio)
     if estado:
-        filters.append(Regulation.estado.ilike(f"%{estado}%"))
+        filters.append(unaccent_ilike(Regulation.estado, estado))
     if reingresado is not None:
         filters.append(Regulation.reingresado == reingresado)
     if date_from:

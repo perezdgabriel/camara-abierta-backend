@@ -4,6 +4,7 @@ from collections.abc import Iterator
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from sqlalchemy import text
 from sqlalchemy.engine import URL, Connection, Engine, make_url
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -47,6 +48,8 @@ def integration_database_url(pytestconfig: pytest.Config) -> str:
 @pytest.fixture(scope="session")
 def integration_engine(integration_database_url: str) -> Iterator[Engine]:
     engine = build_engine(integration_database_url)
+    with engine.begin() as connection:
+        connection.execute(text("CREATE EXTENSION IF NOT EXISTS unaccent"))
     Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
     try:

@@ -3,6 +3,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.core.config import settings
+from app.core.search import register_sqlite_unaccent
 
 NAMING_CONVENTION = {
     "ix": "ix_%(column_0_label)s",
@@ -18,7 +19,10 @@ class Base(DeclarativeBase):
 
 
 def build_engine(database_url: str) -> Engine:
-    return create_engine(database_url, pool_pre_ping=True)
+    engine = create_engine(database_url, pool_pre_ping=True)
+    if engine.dialect.name == "sqlite":
+        register_sqlite_unaccent(engine)
+    return engine
 
 
 def build_sessionmaker(bind: Engine) -> sessionmaker[Session]:

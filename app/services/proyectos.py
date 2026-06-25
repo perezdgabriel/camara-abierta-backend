@@ -5,6 +5,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload, selectinload
 from sqlalchemy.orm.attributes import set_committed_value
 
+from app.core.search import unaccent_ilike
 from app.models.enums import BillOrigin, BillStatus, BillType, ChamberType
 from app.models.legislature import Chamber, Legislator, LegislatorTerm
 from app.models.proyecto import (
@@ -106,8 +107,9 @@ def list_bills(
         query = query.filter(clause)
         count_query = count_query.filter(clause)
     if search:
-        pattern = f"%{search}%"
-        clause = Bill.title.ilike(pattern) | Bill.bulletin_number.ilike(pattern)
+        clause = unaccent_ilike(Bill.title, search) | unaccent_ilike(
+            Bill.bulletin_number, search
+        )
         query = query.filter(clause)
         count_query = count_query.filter(clause)
 
