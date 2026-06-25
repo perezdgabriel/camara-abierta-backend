@@ -43,6 +43,9 @@ senate-votes:
 chamber-votes:
     uv run python -m app.cli ingestors chamber-votes
 
+stats:
+    uv run python -m app.cli legislator-stats refresh
+
 seed-blocs:
     uv run python scripts/seed_blocs.py
 
