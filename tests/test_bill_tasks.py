@@ -31,26 +31,19 @@ def test_generate_bill_ai_summary_returns_llm_unavailable_when_no_backend(monkey
 def test_generate_bill_ai_summary_extracts_text_and_persists_summary(monkeypatch):
     first_db = object()
     second_db = object()
-    third_db = object()
 
     monkeypatch.setattr(bill_tasks, "can_generate_bill_summary", lambda: True)
     monkeypatch.setattr(
-        bill_tasks, "task_session", session_sequence(first_db, second_db, third_db)
+        bill_tasks, "task_session", session_sequence(first_db, second_db)
     )
 
     def fake_get_bill(db, bill_id):
         assert db is first_db
         assert bill_id == 7
-        return ns(full_text=None, full_text_url="https://example.com/bill.pdf")
-
-    def fake_update_bill_full_text(db, bill_id, full_text):
-        assert db is second_db
-        assert bill_id == 7
-        assert full_text == "texto completo"
-        return ns(full_text="texto completo")
+        return ns(full_text_url="https://example.com/bill.pdf")
 
     def fake_update_bill_ai_summary(db, bill_id, ai_summary):
-        assert db is third_db
+        assert db is second_db
         assert bill_id == 7
         assert ai_summary == "resumen ciudadano"
         return ns(id=bill_id, ai_summary=ai_summary)
@@ -59,7 +52,6 @@ def test_generate_bill_ai_summary_extracts_text_and_persists_summary(monkeypatch
     monkeypatch.setattr(
         bill_tasks, "extract_text_from_url", lambda url: "texto completo"
     )
-    monkeypatch.setattr(bill_tasks, "update_bill_full_text", fake_update_bill_full_text)
     monkeypatch.setattr(
         bill_tasks, "generate_bill_summary", lambda text: "resumen ciudadano"
     )

@@ -73,7 +73,6 @@ class Bill(SyncableMixin, Base):
         ForeignKey("committees.id", ondelete="SET NULL")
     )
     full_text_url: Mapped[str | None] = mapped_column(String(500))
-    full_text: Mapped[str | None] = mapped_column(Text)
     ai_summary: Mapped[str | None] = mapped_column(Text)
     ai_summary_updated_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True)

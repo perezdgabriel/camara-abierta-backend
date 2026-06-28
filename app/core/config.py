@@ -27,9 +27,6 @@ class Settings(BaseSettings):
     admin_secret_key: str = Field(default="change-me", alias="ADMIN_SECRET_KEY")
     admin_username: str = Field(default="admin", alias="ADMIN_USERNAME")
     admin_password: str = Field(default="admin", alias="ADMIN_PASSWORD")
-    elasticsearch_url: str = Field(
-        default="http://localhost:9200", alias="ELASTICSEARCH_URL"
-    )
     gemini_api_key: str = Field(default="", alias="GEMINI_API_KEY")
     gemini_model: str = Field(default="gemini-2.5-flash", alias="GEMINI_MODEL")
     openwebui_url: str = Field(default="http://localhost:3000", alias="OPENWEBUI_URL")

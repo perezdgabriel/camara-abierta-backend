@@ -2,18 +2,11 @@ from app.core.celery_app import app
 from app.core.config import settings
 from app.core.session import task_session
 from app.ingestors.parsers.votes import VoteParser
-from app.search.bills import delete_bill as es_delete_bill
-from app.search.bills import ensure_index
-from app.search.bills import index_bill as es_index_bill
 from app.services.llm import can_generate_bill_summary, generate_bill_summary
 from app.services.notifications import send_alerta_proyecto
 from app.services.pdf import extract_text_from_url
 from app.services.proyectos import get_bill
-from app.services.write import (
-    update_bill_ai_summary,
-    update_bill_full_text,
-    upsert_bill,
-)
+from app.services.write import update_bill_ai_summary, upsert_bill
 from app.tasks.base import DatabaseTask
 from app.tasks.voting import sync_voting_session
 
@@ -96,20 +89,12 @@ def generate_bill_ai_summary(self, bill_id: int) -> dict:
         bill = get_bill(db, bill_id)
         if bill is None:
             return {"bill_id": bill_id, "status": "missing"}
-        full_text = bill.full_text
         full_text_url = bill.full_text_url
 
-    if not full_text and full_text_url:
-        extracted_text = extract_text_from_url(full_text_url)
-        if extracted_text:
-            with task_session() as db:
-                updated_bill = update_bill_full_text(db, bill_id, extracted_text)
-                full_text = (
-                    updated_bill.full_text
-                    if updated_bill is not None
-                    else extracted_text
-                )
+    if not full_text_url:
+        return {"bill_id": bill_id, "status": "skipped"}
 
+    full_text = extract_text_from_url(full_text_url)
     if not full_text:
         return {"bill_id": bill_id, "status": "skipped"}
 
@@ -119,33 +104,3 @@ def generate_bill_ai_summary(self, bill_id: int) -> dict:
         if updated_bill is None:
             return {"bill_id": bill_id, "status": "missing"}
     return {"bill_id": bill_id, "status": "summarized"}
-
-
-@app.task(name="app.tasks.bills.index_bill", bind=True, base=DatabaseTask)
-def index_bill(self, bill_id: int) -> dict:
-    with task_session() as db:
-        bill = get_bill(db, bill_id)
-        if bill is None:
-            return {"bill_id": bill_id, "status": "missing"}
-        full_text_url = bill.full_text_url
-        full_text = bill.full_text
-
-    if full_text is None and full_text_url:
-        extracted_text = extract_text_from_url(full_text_url)
-        if extracted_text:
-            with task_session() as db:
-                update_bill_full_text(db, bill_id, extracted_text)
-
-    with task_session() as db:
-        bill = get_bill(db, bill_id)
-        if bill is None:
-            return {"bill_id": bill_id, "status": "missing"}
-        ensure_index()
-        es_index_bill(bill)
-    return {"bill_id": bill_id, "status": "indexed"}
-
-
-@app.task(name="app.tasks.bills.delete_bill_from_index", bind=True, base=DatabaseTask)
-def delete_bill_from_index(self, bill_id: int) -> dict:
-    es_delete_bill(bill_id)
-    return {"bill_id": bill_id, "status": "deleted"}

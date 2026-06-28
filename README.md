@@ -80,7 +80,6 @@ migrations/
 # Crear .env.local con al menos:
 # DATABASE_URL=postgresql://postgres:postgres@localhost:5432/camara_abierta
 # REDIS_URL=redis://localhost:6379/0
-# ELASTICSEARCH_URL=http://localhost:9200
 
 # Instalar dependencias
 uv sync
@@ -177,7 +176,7 @@ docker compose up --build
 
 La imagen de Docker instala dependencias desde `pyproject.toml` y `uv.lock`, que ahora son la fuente de verdad del entorno de ejecucion.
 
-Servicios incluidos: `api`, `celery-worker`, `celery-beat`, `postgres`, `redis`, `elasticsearch`.
+Servicios incluidos: `api`, `celery-worker`, `celery-beat`, `postgres`, `redis`.
 
 ## Endpoints disponibles
 
@@ -237,7 +236,6 @@ Parámetros de filtro para `/normas`: `date_from`, `date_to`, `ministry`, `branc
 | ----------------------------------- | --------- | ---------------------------------------- |
 | `DATABASE_URL`                      | ✅        | URL de conexión PostgreSQL               |
 | `REDIS_URL`                         | ✅        | Broker y result backend de Celery        |
-| `ELASTICSEARCH_URL`                 | ✅        | URL de Elasticsearch                     |
 | `GEMINI_API_KEY`                    | Opcional  | Clave Gemini para analisis de normas     |
 | `OPENWEBUI_URL`                     | Opcional  | Endpoint Open WebUI para analisis de PDF |
 | `OPENWEBUI_API_KEY`                 | Opcional  | Token Open WebUI                         |

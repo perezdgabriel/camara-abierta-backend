@@ -1492,23 +1492,6 @@ def upsert_bill(db: Session, data: dict[str, Any]) -> tuple[Bill, dict[str, Any]
     }
 
 
-def update_bill_full_text(
-    db: Session, bill_id: int, full_text: str | None
-) -> Bill | None:
-    bill = db.execute(
-        select(Bill).where(Bill.id == bill_id).with_for_update()
-    ).scalar_one_or_none()
-    if bill is None:
-        return None
-
-    normalized = (full_text or "").strip() or None
-    if bill.full_text != normalized:
-        bill.full_text = normalized
-        _touch_syncable(db, bill)
-        db.flush()
-    return bill
-
-
 def update_bill_ai_summary(
     db: Session, bill_id: int, ai_summary: str | None
 ) -> Bill | None:
