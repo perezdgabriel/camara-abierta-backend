@@ -12,7 +12,6 @@ def make_initial_bill_payload() -> dict[str, object]:
     return {
         "bulletin_number": "100-06",
         "title": "Proyecto de integracion inicial",
-        "summary": "Texto ciudadano inicial.",
         "bill_type": BillType.PROJECT,
         "origin": BillOrigin.EXECUTIVE,
         "status": BillStatus.PENDING,
@@ -45,7 +44,6 @@ def make_updated_bill_payload() -> dict[str, object]:
     return {
         "bulletin_number": "100-06",
         "title": "Proyecto de integracion actualizado",
-        "summary": "Texto ciudadano actualizado.",
         "bill_type": BillType.PROJECT,
         "origin": BillOrigin.EXECUTIVE,
         "status": BillStatus.APPROVED,

@@ -50,10 +50,6 @@ MAPPING: dict[str, Any] = {
                 "type": "text",
                 "fields": {"keyword": {"type": "keyword"}},
             },
-            "summary": {
-                "type": "text",
-                "analyzer": "spanish_custom",
-            },
             "full_text": {
                 "type": "text",
                 "analyzer": "spanish_custom",
@@ -109,7 +105,6 @@ def build_document(bill: Bill) -> dict[str, Any]:
         "id": bill.id,
         "bulletin_number": bill.bulletin_number,
         "title": bill.title,
-        "summary": bill.summary,
         "full_text": bill.full_text,
         "author_names": author_names,
         "bill_type": bill.bill_type,
@@ -174,7 +169,6 @@ def search_bills(
                     "fields": [
                         "title^3",
                         "bulletin_number^2",
-                        "summary",
                         "full_text",
                         "author_names",
                     ],

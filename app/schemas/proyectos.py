@@ -182,7 +182,6 @@ class BillSummary(ORMModel):
 class BillDetail(BillSummary):
     """Full bill lifecycle: stages, events, documents, votes, authors."""
 
-    summary: str | None = None
     ai_summary: str | None = None
     full_text_url: str | None = None
     sponsoring_ministries: list[SponsoringMinistry] = Field(default_factory=list)

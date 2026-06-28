@@ -42,7 +42,6 @@ class Bill(SyncableMixin, Base):
         String(50), nullable=False, unique=True
     )
     title: Mapped[str] = mapped_column(String(500), nullable=False)
-    summary: Mapped[str | None] = mapped_column(Text)
     bill_type: Mapped[BillType] = mapped_column(
         SqlEnum(BillType, name="bill_type", native_enum=False, validate_strings=True),
         nullable=False,

@@ -1383,7 +1383,6 @@ def upsert_bill(db: Session, data: dict[str, Any]) -> tuple[Bill, dict[str, Any]
     insert_stmt = pg_insert(Bill).values(
         bulletin_number=data["bulletin_number"],
         title=(data.get("title") or "")[:500],
-        summary=(data.get("summary") or None),
         bill_type=bill_type,
         origin=origin,
         status=new_status,
@@ -1399,7 +1398,6 @@ def upsert_bill(db: Session, data: dict[str, Any]) -> tuple[Bill, dict[str, Any]
             index_elements=["bulletin_number"],
             set_={
                 "title": insert_stmt.excluded.title,
-                "summary": insert_stmt.excluded.summary,
                 "bill_type": insert_stmt.excluded.bill_type,
                 "origin": insert_stmt.excluded.origin,
                 "status": insert_stmt.excluded.status,
