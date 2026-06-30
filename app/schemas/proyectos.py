@@ -205,6 +205,7 @@ class AmendmentsSummary(ORMModel):
     generated_at: datetime
     prompt_version: str | None = None
     model_name: str | None = None
+    truncated: bool = False
 
 
 class BillStatusLine(ORMModel):
