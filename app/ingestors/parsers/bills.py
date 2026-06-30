@@ -174,6 +174,198 @@ class BillParser:
         }
 
     @staticmethod
+    def parse_restsil_detail(
+        raw: dict, *, bulletin: str, authors_text: str | None = None
+    ) -> dict:
+        """Normalize ``proyectos/tramitacionProyecto/{proy_id}`` into the
+        DB-shape dict that :meth:`parse_bill` produces.
+
+        Wired in when ``settings.ingestor_bill_detail_source == "restsil"``
+        (ADR-0020). The contract matches :meth:`parse_bill` so
+        ``upsert_bill`` and all ``_reconcile_*`` writers are untouched.
+
+        Three sections of the upstream payload are consumed:
+
+        - ``infoProyecto`` — metadata (suma, iniciativa, origen, urgencia,
+          estado-as-etapa, subetapa, ley nro, fecha publicación).
+        - ``etapasProyecto`` — one stage per upstream etapa; the first
+          ``link_mensaje`` populates ``message_url``.
+        - ``tramitacionProyecto`` — one event per row; per-row
+          ``LINK_INFORME / LINK_COMPARADO / LINK_OFICIO`` populate
+          ``BillDocument``. ``LINK_MENSAJE`` and ``LINK_INDICACION`` are
+          intentionally dropped (mensaje URL is captured at the bill level;
+          indicaciones don't map to any current ``document_type``).
+
+        Three sources are intentionally **not** populated here (see ADR-0020):
+
+        - ``materias`` (topics) — null for recent bills upstream; ships empty.
+        - ``BillUrgency`` history — ``current_urgency`` still flows to
+          ``Bill.current_urgency``, but per-event urgency rows are dropped.
+        - ``_votaciones`` — owned end-to-end by the dedicated Senate / Chamber
+          vote tasks per ADR-0013.
+
+        Authors come from the discovery feed (``AUTORES`` slash-separated
+        canonical names) and are passed in via ``authors_text``.
+        """
+        info = raw.get("infoProyecto") or {}
+        etapas = raw.get("etapasProyecto") or []
+        tramitaciones = raw.get("tramitacionProyecto") or []
+
+        initiative = (info.get("Iniciativa") or "").strip()
+        origin_type = ORIGIN_MAP.get(initiative, BillOrigin.DEPUTIES)
+        origin_chamber_label = (info.get("Origen") or "").strip()
+        origin_chamber_type = CHAMBER_MAP.get(
+            origin_chamber_label, ChamberType.DEPUTIES
+        )
+
+        urgency_label = (info.get("Urgencia") or "").strip()
+        urgency_type = URGENCY_MAP.get(urgency_label)
+
+        etapa_label = (info.get("EstadoProyecto") or "").strip()
+        # Restsil's "EstadoProyecto" is the etapa, not a discrete status
+        # field. Terminal labels ("Tramitación terminada", "Archivado",
+        # "Inconstitucional", "Publicado", "Rechazado") map cleanly to
+        # BillStatus; anything else (in-progress trámites) is PENDING.
+        status = STATUS_MAP.get(etapa_label, BillStatus.PENDING)
+        if status == BillStatus.PENDING and info.get("leynro"):
+            # leynro is only assigned once a law number is published.
+            status = BillStatus.PUBLISHED
+
+        message_url = ""
+        for etapa in etapas:
+            link = (etapa.get("link_mensaje") or "").strip()
+            if link:
+                message_url = link
+                break
+
+        # First etapa's fechaInicio is the bill's entry date in slash form.
+        entry_date: str | None = None
+        if etapas:
+            entry_date = BillParser._restsil_date(
+                (etapas[0].get("fechaInicio") or "").strip() or None
+            )
+
+        publication_date = BillParser._restsil_date(
+            (info.get("DiarioOficial") or "").strip() or None
+        )
+
+        authors = BillParser._parse_authors_text(authors_text)
+
+        stages = [
+            {
+                "stage_type": STAGE_TYPE_MAP.get(
+                    (etapa.get("etapa") or "").strip(), StageType.OTHER
+                ),
+                "start_date": BillParser._restsil_date(
+                    (etapa.get("fechaInicio") or "").strip() or None
+                ),
+                "_chamber_type": CHAMBER_MAP.get(
+                    (etapa.get("camDelTramite") or "").strip()
+                ),
+                "description": "",
+                "_session_ref": str(etapa.get("sxetid") or ""),
+            }
+            for etapa in etapas
+        ]
+
+        events: list[dict] = []
+        documents: list[dict] = []
+        for row in tramitaciones:
+            event_date = BillParser._restsil_date(
+                (row.get("TRAMFECHA") or "").strip() or None
+            )
+            title = (row.get("TEXTODESCRIPTIVOTRAMITACION") or "").strip() or (
+                row.get("SUBEDESCRIPCION") or ""
+            ).strip()
+            stage_label = (row.get("ETAPDESCRIPCION") or "").strip()
+            chamber_label = (row.get("CAMDELTRAMITE") or "").strip()
+            chamber_type = CHAMBER_MAP.get(chamber_label)
+
+            if event_date and title:
+                events.append(
+                    {
+                        "event_date": event_date,
+                        "title": title,
+                        "description": stage_label
+                        if stage_label and stage_label != title
+                        else None,
+                        "_chamber_type": chamber_type,
+                    }
+                )
+
+            link_informe = (row.get("LINK_INFORME") or "").strip()
+            link_comparado = (row.get("LINK_COMPARADO") or "").strip()
+            link_oficio = (row.get("LINK_OFICIO") or "").strip()
+            row_subdesc = (row.get("SUBEDESCRIPCION") or "").strip()
+            row_tramdesc = (row.get("TRAMDESCRIPCION") or "").strip()
+
+            if link_informe:
+                documents.append(
+                    {
+                        "document_type": "report",
+                        "title": row_subdesc,
+                        "document_url": link_informe,
+                        "document_date": event_date,
+                        "_stage_ref": stage_label,
+                    }
+                )
+            if link_comparado:
+                documents.append(
+                    {
+                        "document_type": "comparison",
+                        "title": row_tramdesc or row_subdesc,
+                        "document_url": link_comparado,
+                        "document_date": event_date,
+                        "_stage_ref": stage_label,
+                    }
+                )
+            if link_oficio:
+                documents.append(
+                    {
+                        "document_type": "official_communication",
+                        "title": row_tramdesc or row_subdesc,
+                        "document_url": link_oficio,
+                        "document_date": event_date,
+                        "_stage_ref": stage_label,
+                    }
+                )
+
+        return {
+            "bulletin_number": bulletin,
+            "title": (info.get("Suma") or "").strip(),
+            "entry_date": entry_date,
+            "origin_type": origin_type,
+            "_origin_chamber_type": origin_chamber_type,
+            "status": status,
+            "law_number": (info.get("leynro") or ""),
+            "publication_date": publication_date,
+            "message_url": message_url,
+            "_current_urgency_type": urgency_type,
+            "authors": authors,
+            "topics": [],
+            "stages": stages,
+            "events": events,
+            "documents": documents,
+            "_votaciones": [],
+        }
+
+    @staticmethod
+    def _parse_authors_text(authors_text: str | None) -> list[dict]:
+        """Split the ``AUTORES`` string from the restsil discovery feed.
+
+        Upstream format is ``Apellido_paterno Apellido_materno, Nombres``
+        names joined by ``/``. The canonical-key matcher in
+        ``_reconcile_authorships`` already normalises this form (per the
+        BillAuthorship section of ``CONTEXT.md``), so we just split, strip,
+        and drop empties.
+        """
+        if not authors_text:
+            return []
+        return [
+            {"name": name} for raw in authors_text.split("/") if (name := raw.strip())
+        ]
+
+    @staticmethod
     def parse_opendata_enrichment(raw: dict) -> dict:
         sponsoring_ministries = [
             {

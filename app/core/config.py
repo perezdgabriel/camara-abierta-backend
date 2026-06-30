@@ -88,6 +88,10 @@ class Settings(BaseSettings):
         default="restsil",
         alias="INGESTOR_BILLS_SOURCE",
     )
+    ingestor_bill_detail_source: Literal["restsil", "wspublico"] = Field(
+        default="restsil",
+        alias="INGESTOR_BILL_DETAIL_SOURCE",
+    )
     ingestor_senate_votes_source: Literal["restsil", "wspublico"] = Field(
         default="restsil",
         alias="INGESTOR_SENATE_VOTES_SOURCE",

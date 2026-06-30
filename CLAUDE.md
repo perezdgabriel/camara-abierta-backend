@@ -89,7 +89,8 @@ The default test suite (`uv run pytest`) uses SQLite in-memory (`sqlite+pysqlite
 | Entity | Source |
 |--------|--------|
 | Bills (list / discovery) | restsil (`buscarProyectosDeLey`) — apikey-authed paged feed (ADR-0013) |
-| Bills (detail) | wspublico `tramitacion.php?boletin=X` |
+| Bills (detail) | restsil `tramitacionProyecto/{proy_id}` (default) — wspublico `tramitacion.php?boletin=X` retained as failover behind `INGESTOR_BILL_DETAIL_SOURCE=wspublico` (ADR-0020) |
+| Bill documents | `microservicio-documentos.senado.cl/v1/archivos/{uuid}` — URLs come back inside the restsil detail payload; no apikey (ADR-0020) |
 | Legislators (active roster) | BCN REST `ObtenerParlamentariosActivos` — both chambers in one call (ADR-0012) |
 | Deputies (gender + party history) | OpenData Camara (`get_diputados_periodo_actual`) overlay (ADR-0012) |
 | Deputies (photo + profile URL) | camara.cl scraper (`scrapers/camara_diputados.py`) — enrichment-only (ADR-0012) |

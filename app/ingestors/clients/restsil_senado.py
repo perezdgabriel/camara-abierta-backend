@@ -1,13 +1,20 @@
 """Client for ``restsil.senado.cl/v3/`` — the backend of
 ``portallegislativo.senado.cl``.
 
-Two endpoints are exposed today:
+Three endpoints are exposed today:
 
 - ``proyectos/buscarProyectosDeLey`` — paginated bill search, desc-by-entry-
   date by default. Summary fields only (no tramitaciones / etapas / votes).
   Filters: ``fecha_desde``, ``fecha_hasta`` (entry year), ``estado`` (status
   code), ``camara`` (origin chamber), ``iniciativa`` (30 Mensaje / 31 Moción),
   ``boletin``.
+- ``proyectos/tramitacionProyecto/{proy_id}`` — full bill detail keyed by
+  ``PROYID`` (returned by ``buscarProyectosDeLey``). Sections:
+  ``infoProyecto`` (metadata), ``etapasProyecto`` (stages with
+  ``link_mensaje``), ``tramitacionProyecto`` (granular activity log with
+  per-row document links and a ``VOTACION`` flag). Documents are URLs on
+  ``microservicio-documentos.senado.cl/v1/archivos/{uuid}`` (no apikey
+  needed). See ADR-0020.
 - ``votaciones/buscarVotaciones`` — paginated Senate-vote search. Complete
   per-vote payload including SI / NO / ABSTENCION / PAREO per-legislator lists
   with ``PARLID``, ``UUID`` and ``SLUG``. Filter by ``boletin``.
@@ -46,6 +53,7 @@ from app.ingestors.clients.base import (
     _log_retry,
 )
 from app.ingestors.clients.restsil_senado_async import (
+    afetch_bill_details,
     afetch_bills_pages,
     afetch_votes_pages,
 )
@@ -265,6 +273,31 @@ class RestsilSenadoClient:
                 cap,
                 clean_filters,
             )
+
+    def get_bill_detail(self, proy_id: int | str) -> dict[str, Any]:
+        """Full bill detail for one ``PROYID``.
+
+        Returns the parsed JSON with sections ``infoProyecto`` (metadata),
+        ``etapasProyecto`` (stages with ``link_mensaje``), and
+        ``tramitacionProyecto`` (granular activity log; per-row document
+        links via ``LINK_MENSAJE / LINK_INFORME / LINK_OFICIO /
+        LINK_INDICACION / LINK_COMPARADO``).
+
+        Per ADR-0020 this is the bill-detail source when
+        ``settings.ingestor_bill_detail_source == "restsil"``.
+        """
+        return self._get_json(f"proyectos/tramitacionProyecto/{proy_id}", params={})
+
+    def fetch_bill_details_async(
+        self, proy_ids: list[int | str]
+    ) -> list[tuple[int | str, dict[str, Any] | None]]:
+        """Convenience: bridge to the async per-id fetcher from sync code.
+
+        Returns ``[(proy_id, envelope_or_none), ...]`` in input order.
+        """
+        if not proy_ids:
+            return []
+        return asyncio.run(afetch_bill_details(proy_ids))
 
     # -- Votes -----------------------------------------------------------
 

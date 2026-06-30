@@ -1,3 +1,5 @@
+import json
+from pathlib import Path
 from xml.etree import ElementTree as ET
 
 from app.ingestors.clients.opendata_camara import OpenDataCamaraClient
@@ -649,6 +651,174 @@ def test_bill_parser_parses_restsil_summary_for_senate_message():
     assert payload["origin_type"] is BillOrigin.EXECUTIVE
     assert payload["urgency_label"] == "Suma"
     assert payload["proy_id"] == 18974
+
+
+FIXTURES = Path(__file__).parent / "fixtures"
+
+
+def _load_fixture(name: str) -> dict:
+    return json.loads((FIXTURES / name).read_text())
+
+
+def test_bill_parser_restsil_detail_mensaje_emits_parse_bill_contract():
+    raw = _load_fixture("restsil_bill_detail_18872.json")
+    payload = BillParser.parse_restsil_detail(
+        raw, bulletin="18216-05", authors_text="Ministerio de Hacienda"
+    )
+
+    # Same top-level keys as parse_bill
+    assert set(payload.keys()) == {
+        "bulletin_number",
+        "title",
+        "entry_date",
+        "origin_type",
+        "_origin_chamber_type",
+        "status",
+        "law_number",
+        "publication_date",
+        "message_url",
+        "_current_urgency_type",
+        "authors",
+        "topics",
+        "stages",
+        "events",
+        "documents",
+        "_votaciones",
+    }
+
+    assert payload["bulletin_number"] == "18216-05"
+    assert payload["title"].startswith("Para la reconstrucción nacional")
+    assert payload["entry_date"] == "2026-04-22"
+    assert payload["origin_type"] is BillOrigin.EXECUTIVE
+    assert payload["_origin_chamber_type"] is ChamberType.DEPUTIES
+    assert payload["_current_urgency_type"] is UrgencyType.SUM
+    assert payload["status"] is BillStatus.PENDING
+    assert payload["law_number"] == ""
+    assert payload["message_url"].startswith(
+        "https://microservicio-documentos.senado.cl/"
+    )
+    assert payload["topics"] == []  # restsil detail doesn't ship Materias
+    assert payload["_votaciones"] == []  # dedicated vote tasks own these
+
+    # AUTORES "Ministerio de Hacienda" is one row (mensaje carrier); the
+    # canonical-key matcher in _reconcile_authorships will fail to match
+    # against any Legislator and emit the standard WARNING — that's fine,
+    # the mensaje case is the one we don't have authors for.
+    assert payload["authors"] == [{"name": "Ministerio de Hacienda"}]
+
+    # Etapas → stages
+    assert len(payload["stages"]) == 2
+    assert payload["stages"][0]["stage_type"] is StageType.FIRST_CONSTITUTIONAL_TRAMITE
+    assert payload["stages"][0]["start_date"] == "2026-04-22"
+    assert payload["stages"][0]["_chamber_type"] is ChamberType.DEPUTIES
+    assert payload["stages"][1]["stage_type"] is StageType.SECOND_CONSTITUTIONAL_TRAMITE
+    assert payload["stages"][1]["_chamber_type"] is ChamberType.SENATE
+
+    # Events ← tramitacionProyecto (one per row with date + text)
+    assert len(payload["events"]) >= 30
+    assert all(event["event_date"] for event in payload["events"])
+    assert all(event["title"] for event in payload["events"])
+
+    # Documents — each tramitación row with a LINK_X emits one BillDocument
+    informes = [d for d in payload["documents"] if d["document_type"] == "report"]
+    comparados = [d for d in payload["documents"] if d["document_type"] == "comparison"]
+    oficios = [
+        d
+        for d in payload["documents"]
+        if d["document_type"] == "official_communication"
+    ]
+    assert len(informes) >= 2
+    assert len(comparados) >= 1
+    assert len(oficios) >= 5
+    for doc in payload["documents"]:
+        assert doc["document_url"].startswith(
+            "https://microservicio-documentos.senado.cl/"
+        )
+
+
+def test_bill_parser_restsil_detail_mocion_uses_link_mensaje_for_full_text():
+    raw = _load_fixture("restsil_bill_detail_19090.json")
+    payload = BillParser.parse_restsil_detail(
+        raw,
+        bulletin="18407-25",
+        authors_text="Sepúlveda Orbenes, Alejandra/ Velásquez Núñez, Esteban",
+    )
+
+    assert payload["origin_type"] is BillOrigin.DEPUTIES
+    # Even for mociones, etapas[0].link_mensaje carries the moción PDF
+    assert payload["message_url"].startswith(
+        "https://microservicio-documentos.senado.cl/"
+    )
+    # Authors split on "/" and stripped — canonical-key matcher handles
+    # "Apellido_paterno Apellido_materno, Nombres" form natively.
+    assert payload["authors"] == [
+        {"name": "Sepúlveda Orbenes, Alejandra"},
+        {"name": "Velásquez Núñez, Esteban"},
+    ]
+
+
+def test_bill_parser_restsil_detail_status_derives_from_etapa_label():
+    # Hand-rolled raw envelope — only the fields the status mapping reads.
+    raw = {
+        "infoProyecto": {
+            "Suma": "x",
+            "Iniciativa": "Mensaje",
+            "Origen": "Senado",
+            "Urgencia": "Sin urgencia",
+            "EstadoProyecto": "Archivado",
+            "leynro": None,
+            "DiarioOficial": None,
+        },
+        "etapasProyecto": [
+            {
+                "etapa": "Primer trámite constitucional",
+                "camDelTramite": "Senado",
+                "fechaInicio": "01/01/2024",
+                "sxetid": 1,
+                "link_mensaje": None,
+            },
+        ],
+        "tramitacionProyecto": [],
+    }
+    payload = BillParser.parse_restsil_detail(raw, bulletin="0-99")
+    assert payload["status"] is BillStatus.ARCHIVED
+
+    raw["infoProyecto"]["EstadoProyecto"] = "Tramitación terminada"
+    raw["infoProyecto"]["leynro"] = "21500"
+    payload = BillParser.parse_restsil_detail(raw, bulletin="0-99")
+    assert (
+        payload["status"] is BillStatus.APPROVED
+    )  # leynro doesn't override terminal mapping
+    assert payload["law_number"] == "21500"
+
+    raw["infoProyecto"]["EstadoProyecto"] = "Primer trámite constitucional"
+    raw["infoProyecto"]["leynro"] = "21500"
+    payload = BillParser.parse_restsil_detail(raw, bulletin="0-99")
+    # leynro set + non-terminal etapa → PUBLISHED fallback
+    assert payload["status"] is BillStatus.PUBLISHED
+
+
+def test_bill_parser_restsil_detail_authors_text_handles_empty_and_whitespace():
+    raw = {
+        "infoProyecto": {
+            "Suma": "x",
+            "Iniciativa": "Moción",
+            "Origen": "Senado",
+            "Urgencia": "",
+            "EstadoProyecto": "Primer trámite constitucional",
+            "leynro": None,
+            "DiarioOficial": None,
+        },
+        "etapasProyecto": [],
+        "tramitacionProyecto": [],
+    }
+    payload = BillParser.parse_restsil_detail(raw, bulletin="0-99", authors_text=None)
+    assert payload["authors"] == []
+
+    payload = BillParser.parse_restsil_detail(
+        raw, bulletin="0-99", authors_text="  /  /Doe, John/ "
+    )
+    assert payload["authors"] == [{"name": "Doe, John"}]
 
 
 def test_bill_parser_restsil_summary_handles_unknown_codes_gracefully():

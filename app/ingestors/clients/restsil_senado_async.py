@@ -185,6 +185,53 @@ async def afetch_votes_pages(
     return list(results)
 
 
+async def _one_bill_detail(
+    semaphore: asyncio.Semaphore,
+    client: Any,
+    proy_id: int | str,
+) -> tuple[int | str, dict[str, Any] | None]:
+    """Per-id wrapper around ``_afetch_page`` for the detail endpoint.
+
+    Returns ``(proy_id, envelope_or_none)``. On any caught exception returns
+    ``(proy_id, None)`` so one missing detail doesn't stall the batch.
+    """
+    path = f"proyectos/tramitacionProyecto/{proy_id}"
+    async with semaphore:
+        try:
+            envelope = await _afetch_page(client, path, {})
+            return proy_id, envelope
+        except Exception:
+            logger.exception("restsil bill-detail fetch failed: proy_id=%s", proy_id)
+            return proy_id, None
+
+
+async def afetch_bill_details(
+    proy_ids: list[int | str],
+    *,
+    concurrency: int | None = None,
+) -> list[tuple[int | str, dict[str, Any] | None]]:
+    """Fetch ``proyectos/tramitacionProyecto/{proy_id}`` per id in parallel.
+
+    Returned pairs are in input order. Unlike the paged helpers above, this
+    is per-id fan-out — the upstream has no batch-by-id endpoint, so each
+    bill needs its own request. Concurrency-bounded by
+    ``settings.ingestor_restsil_async_concurrency``.
+    """
+    if not proy_ids:
+        return []
+    sem = asyncio.Semaphore(concurrency or settings.ingestor_restsil_async_concurrency)
+    async with _async_client() as client:
+        coros = [_one_bill_detail(sem, client, pid) for pid in proy_ids]
+        results = await asyncio.gather(*coros)
+    succeeded = sum(1 for _, env in results if env is not None)
+    logger.info(
+        "Parallel-fetched %d restsil bill details (%d succeeded)",
+        len(proy_ids),
+        succeeded,
+    )
+    return list(results)
+
+
 async def afetch_bills_pages(
     offsets: list[int],
     *,

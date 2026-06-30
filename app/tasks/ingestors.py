@@ -25,6 +25,7 @@ from app.ingestors.clients.opendata_camara_async import (
     fetch_voting_details_parallel,
 )
 from app.ingestors.clients.restsil_senado import RestsilSenadoClient
+from app.ingestors.clients.restsil_senado_async import afetch_bill_details
 from app.ingestors.clients.senado import SenadoClient
 from app.ingestors.clients.senado_async import (
     fetch_bills_parallel,
@@ -189,7 +190,7 @@ def _discover_bulletins_opendata(
 
 def _discover_bulletins_restsil(
     start_year: int, current_year: int, *, full_backfill: bool
-) -> tuple[list[str], int, bool]:
+) -> tuple[list[str], dict[str, dict[str, Any]], int, bool]:
     """Restsil desc-paged discovery (ADR-0013).
 
     Policy (also documented in the ADR):
@@ -203,12 +204,15 @@ def _discover_bulletins_restsil(
       terminal bills won't get new activity that the existing
       ``upsert_bill`` reconciliation cares about.
 
-    Returns ``(bulletins, errors, scanned_past_years)`` so the caller can
-    update the ``last_full_year_scan_date`` cursor only after a successful
-    past-years sweep.
+    Returns ``(bulletins, summaries_by_bulletin, errors, scanned_past_years)``.
+    ``summaries_by_bulletin`` carries the parsed ``parse_restsil_summary``
+    payload per bulletin so the detail path can recover ``proy_id`` (for
+    ``tramitacionProyecto/{proy_id}``, ADR-0020) and ``authors_text`` (for
+    the moción authors fallback) without a second discovery call.
     """
     seen: set[str] = set()
     bulletins: list[str] = []
+    summaries_by_bulletin: dict[str, dict[str, Any]] = {}
     errors = 0
     scanned_past_years = False
     with RestsilSenadoClient() as restsil:
@@ -222,6 +226,7 @@ def _discover_bulletins_restsil(
                 if bn and bn not in seen:
                     seen.add(bn)
                     bulletins.append(bn)
+                    summaries_by_bulletin[bn] = summary
         except Exception:
             logger.exception("Failed restsil current-year scan year=%d", current_year)
             errors += 1
@@ -243,6 +248,7 @@ def _discover_bulletins_restsil(
                     if bn and bn not in seen:
                         seen.add(bn)
                         bulletins.append(bn)
+                        summaries_by_bulletin[bn] = summary
                 scanned_past_years = True
             except Exception:
                 logger.exception(
@@ -251,7 +257,7 @@ def _discover_bulletins_restsil(
                     current_year - 1,
                 )
                 errors += 1
-    return bulletins, errors, scanned_past_years
+    return bulletins, summaries_by_bulletin, errors, scanned_past_years
 
 
 def _restsil_bills_has_cursor() -> bool:
@@ -301,6 +307,101 @@ def _mark_past_years_scanned(now: datetime.date) -> None:
             state.last_cursor = now.isoformat()
 
 
+def _fetch_bill_details_restsil(
+    bulletins: list[str],
+    summaries_by_bulletin: dict[str, dict[str, Any]],
+) -> tuple[list[tuple[str, dict[str, Any] | None, dict[str, Any] | None]], int]:
+    """Resolve ``proy_id`` per bulletin, fetch restsil details in parallel,
+    and return parsed payloads paired with the source bulletin.
+
+    Bulletins already in ``summaries_by_bulletin`` (the happy path: restsil
+    discovery → restsil detail) reuse the discovery row to recover both
+    ``proy_id`` and ``authors_text`` for free. Bulletins missing from the
+    map (single-bulletin runs, opendata-discovery → restsil-detail
+    cross-source per ADR-0020) do a per-bulletin ``search_bills(boletin=X)``
+    lookup. The cross-source lookup is the rare path; per-bulletin HTTP cost
+    is acceptable.
+
+    Returns ``(results, errors)``. Each row in ``results`` is
+    ``(bulletin, parsed_payload_or_none, raw_envelope_or_none)``; payload is
+    ``None`` when the detail fetch failed.
+    """
+    errors = 0
+    proy_id_by_bulletin: dict[str, int | str] = {}
+    authors_by_bulletin: dict[str, str | None] = {}
+
+    with RestsilSenadoClient() as restsil:
+        for bn in bulletins:
+            summary = summaries_by_bulletin.get(bn)
+            if summary is not None and summary.get("proy_id"):
+                proy_id_by_bulletin[bn] = summary["proy_id"]
+                authors_by_bulletin[bn] = summary.get("authors_text")
+                continue
+            try:
+                envelope = restsil.search_bills(boletin=bn, limit=1)
+                rows = envelope.get("data") or []
+                if not rows:
+                    logger.warning(
+                        "restsil search_bills returned no rows for bulletin=%s "
+                        "(cross-source proy_id lookup)",
+                        bn,
+                    )
+                    errors += 1
+                    continue
+                resolved = BillParser.parse_restsil_summary(rows[0])
+                if not resolved.get("proy_id"):
+                    logger.warning(
+                        "restsil cross-source lookup found row without "
+                        "proy_id for bulletin=%s",
+                        bn,
+                    )
+                    errors += 1
+                    continue
+                proy_id_by_bulletin[bn] = resolved["proy_id"]
+                authors_by_bulletin[bn] = resolved.get("authors_text")
+            except Exception:
+                logger.exception(
+                    "restsil cross-source proy_id lookup failed for bulletin=%s",
+                    bn,
+                )
+                errors += 1
+
+    if not proy_id_by_bulletin:
+        return [], errors
+
+    ordered_bulletins = [bn for bn in bulletins if bn in proy_id_by_bulletin]
+    proy_ids = [proy_id_by_bulletin[bn] for bn in ordered_bulletins]
+    detail_pairs = asyncio.run(afetch_bill_details(proy_ids))
+    detail_by_proy_id: dict[int | str, dict[str, Any] | None] = {
+        pid: env for pid, env in detail_pairs
+    }
+
+    results: list[tuple[str, dict[str, Any] | None, dict[str, Any] | None]] = []
+    for bn in bulletins:
+        pid = proy_id_by_bulletin.get(bn)
+        if pid is None:
+            # cross-source lookup already counted the error above.
+            results.append((bn, None, None))
+            continue
+        raw = detail_by_proy_id.get(pid)
+        if raw is None:
+            errors += 1
+            results.append((bn, None, None))
+            continue
+        try:
+            payload = BillParser.parse_restsil_detail(
+                raw, bulletin=bn, authors_text=authors_by_bulletin.get(bn)
+            )
+            results.append((bn, payload, raw))
+        except Exception:
+            logger.exception(
+                "parse_restsil_detail failed for bulletin=%s proy_id=%s", bn, pid
+            )
+            errors += 1
+            results.append((bn, None, raw))
+    return results, errors
+
+
 def run_ingest_bills(
     bulletin: str | None = None,
     since: str | None = None,
@@ -311,9 +412,11 @@ def run_ingest_bills(
     dispatched = 0
     errors = 0
     bulletins: list[str] = []
+    summaries_by_bulletin: dict[str, dict[str, Any]] = {}
     since_date: datetime.date | None = None
     mode = "single_bulletin" if bulletin else "full_scan"
     effective_source = source or settings.ingestor_bills_source
+    detail_source = settings.ingestor_bill_detail_source
     scanned_past_years = False
 
     try:
@@ -337,10 +440,13 @@ def run_ingest_bills(
                 # Daily-gated past-years sweep; cold start (no cursor) → full
                 # backfill.
                 scan_past = _should_scan_past_years(datetime.date.today())
-                bulletins, disco_errors, scanned_past_years = (
-                    _discover_bulletins_restsil(
-                        start_year, current_year, full_backfill=scan_past
-                    )
+                (
+                    bulletins,
+                    summaries_by_bulletin,
+                    disco_errors,
+                    scanned_past_years,
+                ) = _discover_bulletins_restsil(
+                    start_year, current_year, full_backfill=scan_past
                 )
                 errors += disco_errors
             else:
@@ -350,12 +456,27 @@ def run_ingest_bills(
                 errors += disco_errors
 
         if bulletins:
-            results = asyncio.run(fetch_bills_parallel(bulletins))
-            valid_bulletins = [bn for bn, raw in results if raw is not None]
-            opendata_details, detail_errors = _load_opendata_bill_details_with_votes(
+            if detail_source == "restsil":
+                results, detail_errors = _fetch_bill_details_restsil(
+                    bulletins, summaries_by_bulletin
+                )
+            else:
+                raw_results = asyncio.run(fetch_bills_parallel(bulletins))
+                results = [
+                    (
+                        bn,
+                        BillParser.parse_bill(raw) if raw is not None else None,
+                        None,
+                    )
+                    for bn, raw in raw_results
+                ]
+                detail_errors = 0
+            errors += detail_errors
+            valid_bulletins = [bn for bn, payload, _ in results if payload is not None]
+            opendata_details, opendata_errors = _load_opendata_bill_details_with_votes(
                 valid_bulletins
             )
-            errors += detail_errors
+            errors += opendata_errors
             # Senate vote capture: when the dedicated restsil-driven
             # ``run_ingest_senate_votes`` task owns Senate votes (ADR-0013),
             # we no longer fetch them per-bulletin from votaciones.php on the
@@ -365,18 +486,18 @@ def run_ingest_bills(
                 senate_votes = dict(asyncio.run(fetch_votes_parallel(valid_bulletins)))
             else:
                 senate_votes = {}
-            for bulletin_number, raw in results:
+            for bulletin_number, payload, _raw in results:
                 try:
-                    if raw is None:
+                    if payload is None:
                         continue
-                    payload = BillParser.parse_bill(raw)
                     fetched_votes = senate_votes.get(bulletin_number)
                     if fetched_votes is not None:
                         payload["_votaciones"] = fetched_votes
                     elif settings.ingestor_senate_votes_source == "restsil":
-                        # Drop the embedded ``<votacion>`` payload — the
-                        # dedicated task owns them. Avoids creating stale
-                        # rows under the legacy key shape on the bills path.
+                        # Drop any embedded vote payload — the dedicated task
+                        # owns them. The restsil-detail parser already emits
+                        # ``_votaciones=[]``; this also covers the wspublico
+                        # detail path under the same source flag.
                         payload["_votaciones"] = []
                     opendata_detail = opendata_details.get(bulletin_number)
                     if opendata_detail is not None:
@@ -409,6 +530,7 @@ def run_ingest_bills(
         mode=mode,
         candidates=len(bulletins),
         source=effective_source,
+        detail_source=detail_source,
         scanned_past_years=scanned_past_years,
     )
 

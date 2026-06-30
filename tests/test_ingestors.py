@@ -1,7 +1,22 @@
 import datetime
 from contextlib import contextmanager
 
+import pytest
+
+from app.core.config import settings
 from app.tasks import ingestors as ingestor_tasks
+
+
+@pytest.fixture(autouse=True)
+def _legacy_wspublico_bill_detail_source(monkeypatch):
+    """Pin the bill-detail source to wspublico for legacy ingestor tests.
+
+    The default flipped to ``"restsil"`` with ADR-0020; the tests in this
+    module monkeypatch ``fetch_bills_parallel`` (the wspublico path), so
+    they need the legacy source to take effect. The restsil-detail path
+    has its own dedicated tests in ``test_ingestors_restsil_detail.py``.
+    """
+    monkeypatch.setattr(settings, "ingestor_bill_detail_source", "wspublico")
 
 
 def session_sequence(*dbs):
