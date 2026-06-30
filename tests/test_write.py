@@ -301,10 +301,13 @@ def test_canonicalize_returns_empty_for_blank_and_punct_only():
 
 
 class _FakeBill:
-    def __init__(self, bulletin: str, authorships=None):
+    def __init__(self, bulletin: str, authorships=None, origin=None):
+        from app.models.enums import BillOrigin
+
         self.id = 100
         self.bulletin_number = bulletin
         self.authorships = list(authorships or [])
+        self.origin = origin if origin is not None else BillOrigin.DEPUTIES
 
 
 class _LegislatorRowsDB:
@@ -407,6 +410,21 @@ def test_reconcile_authorships_deletes_no_longer_matched():
 
     assert existing in db.deleted
     assert db.added == []
+
+
+def test_reconcile_authorships_skips_executive_bills(caplog):
+    from app.models.enums import BillOrigin
+
+    bill = _FakeBill(bulletin="500-10", origin=BillOrigin.EXECUTIVE)
+    db = _LegislatorRowsDB([])
+    ministry_authors = [{"name": "Ministerio de Hacienda"}]
+
+    changed = write._reconcile_authorships(db, bill, ministry_authors)
+
+    assert changed is False
+    assert db.added == []
+    warnings = [r for r in caplog.records if "Unmatched authorship" in r.message]
+    assert warnings == []
 
 
 # ── upsert_calendar_event input validation ──────────────────────────────

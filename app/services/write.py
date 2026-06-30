@@ -501,6 +501,11 @@ def _build_legislator_lookup(db: Session) -> dict[str, int]:
 def _reconcile_authorships(
     db: Session, bill: Bill, authors: list[dict[str, Any]]
 ) -> bool:
+    # Executive bills are authored by ministries, not legislators; authorship
+    # rows don't apply and ministry names will never match the legislator table.
+    if bill.origin == BillOrigin.EXECUTIVE:
+        return False
+
     lookup = _build_legislator_lookup(db)
 
     desired_legislator_ids: set[int] = set()
