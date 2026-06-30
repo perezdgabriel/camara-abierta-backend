@@ -1528,6 +1528,7 @@ def upsert_bill_summary(
     source_url: str | None,
     source_url_hash: str | None,
     error_reason: str | None,
+    truncated: bool = False,
 ) -> BillSummary | None:
     """Idempotent upsert of one BillSummary row per (bill_id, kind).
 
@@ -1556,6 +1557,7 @@ def upsert_bill_summary(
         "source_url": source_url,
         "source_url_hash": source_url_hash,
         "error_reason": error_reason,
+        "truncated": truncated,
         "generated_at": now,
     }
     if summary is None:

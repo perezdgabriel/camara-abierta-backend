@@ -55,3 +55,66 @@ def extract_text_from_url(url: str) -> str | None:
     if pdf_bytes is None:
         return None
     return extract_text_from_bytes(pdf_bytes)
+
+
+def extract_comparado_text_from_bytes(pdf_bytes: bytes) -> str | None:
+    """Extract only the right column (amendment instructions) from a comparado.
+
+    Chilean comparados are bordered two-column tables: left column reproduces
+    the existing law text verbatim, right column lists the amendment
+    instructions. Sending the left column to the LLM is pure noise — and on
+    long bills it's what blows the context window.
+
+    pdfplumber's grid detection treats the comparado as a 4-column table
+    (the two visible columns plus thin gutter columns around the divider),
+    and merged body cells span across the gutter — so cell index alone is
+    unreliable. We use each cell's bounding box instead: a cell counts as
+    "right column" iff its left edge sits at or past the page midpoint.
+    Per-page repeating headers ("TEXTO LEGAL VIGENTE" / "TEXTO APROBADO …")
+    and the full-width title banner are filtered separately.
+    """
+    pdfplumber = _pdfplumber()
+    cells: list[str] = []
+    try:
+        with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
+            for page in pdf.pages:
+                page_mid_x = page.width / 2
+                for table in page.find_tables():
+                    extracted = table.extract()
+                    for row_idx, row in enumerate(table.rows):
+                        if row_idx >= len(extracted):
+                            continue
+                        extracted_row = extracted[row_idx]
+                        for cell_idx, cell_bbox in enumerate(row.cells):
+                            if cell_bbox is None:
+                                continue
+                            x0 = cell_bbox[0]
+                            if x0 < page_mid_x:
+                                continue
+                            if cell_idx >= len(extracted_row):
+                                continue
+                            text = (extracted_row[cell_idx] or "").strip()
+                            if not text:
+                                continue
+                            upper = text.upper()
+                            if upper == "TEXTO LEGAL VIGENTE" or upper.startswith(
+                                "TEXTO APROBADO"
+                            ):
+                                continue
+                            cells.append(text)
+    except Exception as exc:
+        logger.warning("Failed to parse comparado PDF: %s", exc)
+        return None
+    if not cells:
+        return None
+    text = "\n\n".join(cells)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    text = re.sub(r"[ \t]+", " ", text).strip()
+    return text or None
+
+
+def extract_comparado_text_from_url(url: str) -> str | None:
+    pdf_bytes = download_pdf_bytes(url)
+    if pdf_bytes is None:
+        return None
+    return extract_comparado_text_from_bytes(pdf_bytes)

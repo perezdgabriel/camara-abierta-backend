@@ -391,6 +391,108 @@ def test_sync_bill_enqueues_no_layers_when_feature_disabled(monkeypatch):
     assert queued == []
 
 
+def test_generate_amendments_layer_truncates_when_text_exceeds_budget(monkeypatch):
+    """Oversized comparado triggers cell truncation and persists truncated=True."""
+    first_db = object()
+    second_db = object()
+    upserts: list[dict] = []
+    amendments_calls: list[dict] = []
+
+    monkeypatch.setattr(bill_tasks, "can_generate_bill_summary", lambda: True)
+    monkeypatch.setattr(
+        bill_tasks, "task_session", session_sequence(first_db, second_db)
+    )
+    monkeypatch.setattr(bill_tasks.settings, "ai_summary_max_input_chars", 1_000)
+
+    bill_with_comparado = ns(
+        documents=[
+            ns(
+                document_type="comparison",
+                document_url="https://example.com/c.pdf",
+            )
+        ]
+    )
+
+    monkeypatch.setattr(bill_tasks, "get_bill", lambda _db, _bid: bill_with_comparado)
+    monkeypatch.setattr(
+        bill_tasks,
+        "extract_comparado_text_from_url",
+        lambda _url: "x" * 5_000,
+    )
+
+    def fake_generate_amendments(comparado_texts, *, truncated):
+        amendments_calls.append({"texts": comparado_texts, "truncated": truncated})
+        return {"changes": ["se cambia algo"]}
+
+    monkeypatch.setattr(
+        bill_tasks, "generate_amendments_summary", fake_generate_amendments
+    )
+    monkeypatch.setattr(
+        bill_tasks,
+        "upsert_bill_summary",
+        lambda _db, **kwargs: upserts.append(kwargs) or ns(id=1),
+    )
+
+    result = bill_tasks.generate_bill_summary_layer.run(7, "amendments")
+
+    assert result == {"bill_id": 7, "kind": "amendments", "status": "success"}
+    assert len(amendments_calls) == 1
+    call = amendments_calls[0]
+    assert call["truncated"] is True
+    # Text was truncated to fit the 1_000-char budget.
+    assert len(call["texts"][0]) <= 1_000
+    assert len(upserts) == 1
+    assert upserts[0]["status"] is BillSummaryStatus.SUCCESS
+    assert upserts[0]["truncated"] is True
+
+
+def test_generate_amendments_layer_passes_truncated_false_when_within_budget(
+    monkeypatch,
+):
+    first_db = object()
+    second_db = object()
+    upserts: list[dict] = []
+    amendments_calls: list[dict] = []
+
+    monkeypatch.setattr(bill_tasks, "can_generate_bill_summary", lambda: True)
+    monkeypatch.setattr(
+        bill_tasks, "task_session", session_sequence(first_db, second_db)
+    )
+    monkeypatch.setattr(bill_tasks.settings, "ai_summary_max_input_chars", 1_000_000)
+
+    bill_with_comparado = ns(
+        documents=[
+            ns(
+                document_type="comparison",
+                document_url="https://example.com/c.pdf",
+            )
+        ]
+    )
+
+    monkeypatch.setattr(bill_tasks, "get_bill", lambda _db, _bid: bill_with_comparado)
+    monkeypatch.setattr(
+        bill_tasks, "extract_comparado_text_from_url", lambda _url: "texto corto"
+    )
+
+    def fake_generate_amendments(comparado_texts, *, truncated):
+        amendments_calls.append({"truncated": truncated})
+        return {"changes": []}
+
+    monkeypatch.setattr(
+        bill_tasks, "generate_amendments_summary", fake_generate_amendments
+    )
+    monkeypatch.setattr(
+        bill_tasks,
+        "upsert_bill_summary",
+        lambda _db, **kwargs: upserts.append(kwargs) or ns(id=1),
+    )
+
+    bill_tasks.generate_bill_summary_layer.run(7, "amendments")
+
+    assert amendments_calls[0]["truncated"] is False
+    assert upserts[0]["truncated"] is False
+
+
 def test_sync_bill_regenerates_layer_on_stale_prompt_version(monkeypatch):
     db = object()
     queued: list[tuple[int, str]] = []

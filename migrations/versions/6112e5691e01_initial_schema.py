@@ -1,8 +1,8 @@
 """initial_schema
 
-Revision ID: 09faab471ffb
+Revision ID: 6112e5691e01
 Revises: 
-Create Date: 2026-06-29 10:59:00.248470
+Create Date: 2026-06-30 11:40:29.408102
 """
 
 from alembic import op
@@ -11,7 +11,7 @@ from sqlalchemy.dialects import postgresql
 
 
 # revision identifiers, used by Alembic.
-revision = '09faab471ffb'
+revision = '6112e5691e01'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -600,6 +600,7 @@ def upgrade() -> None:
     sa.Column('source_url', sa.String(length=500), nullable=True),
     sa.Column('source_url_hash', sa.String(length=64), nullable=True),
     sa.Column('error_reason', sa.Text(), nullable=True),
+    sa.Column('truncated', sa.Boolean(), server_default='false', nullable=False),
     sa.Column('generated_at', sa.DateTime(timezone=True), nullable=False),
     sa.Column('id', sa.BigInteger(), nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),

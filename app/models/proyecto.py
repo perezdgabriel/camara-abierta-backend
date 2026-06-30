@@ -145,6 +145,9 @@ class BillSummary(SyncableMixin, Base):
     source_url: Mapped[str | None] = mapped_column(String(500))
     source_url_hash: Mapped[str | None] = mapped_column(String(64))
     error_reason: Mapped[str | None] = mapped_column(Text)
+    truncated: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false", default=False
+    )
     generated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
     )

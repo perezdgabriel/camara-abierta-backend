@@ -75,9 +75,7 @@ def test_audit_collects_mociones_and_skips_executive_bills(db_session):
         origin_chamber=senate,
         entry_date=date(2026, 3, 1),
     )
-    db_session.add(
-        BillAuthorship(bill_id=bill_with_author.id, legislator_id=ada.id)
-    )
+    db_session.add(BillAuthorship(bill_id=bill_with_author.id, legislator_id=ada.id))
 
     # Moción with zero authors
     _make_bill(
@@ -155,9 +153,7 @@ def test_run_reports_zero_author_and_reparse_surfaces_unmatched_name(
     def fake_fetcher(bulletin: str) -> dict[str, Any] | None:
         return upstream.get(bulletin)
 
-    payload = audit.run(
-        db_session, reparse=True, export_csv=None, fetcher=fake_fetcher
-    )
+    payload = audit.run(db_session, reparse=True, export_csv=None, fetcher=fake_fetcher)
 
     captured = capsys.readouterr().out
     assert "Zero-author mociones: 2" in captured

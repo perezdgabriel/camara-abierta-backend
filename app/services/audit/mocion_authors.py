@@ -182,9 +182,7 @@ def reparse_subset(
                 row.unmatched_names.append(name)
 
 
-def top_unmatched(
-    rows: Iterable[MocionRow], limit: int = 20
-) -> list[tuple[str, int]]:
+def top_unmatched(rows: Iterable[MocionRow], limit: int = 20) -> list[tuple[str, int]]:
     counter: Counter[str] = Counter()
     for row in rows:
         for name in row.unmatched_names:
@@ -251,8 +249,7 @@ def render_summary(result: AuditResult, reparse_ran: bool) -> str:
 
     push("Author-count distribution by entry year:")
     push(
-        f"  {'year':>4}  "
-        + "  ".join(f"{label:>5}" for label, _ in HISTOGRAM_BUCKETS)
+        f"  {'year':>4}  " + "  ".join(f"{label:>5}" for label, _ in HISTOGRAM_BUCKETS)
     )
     for year, counts in result.histogram_by_year().items():
         push(
@@ -264,9 +261,7 @@ def render_summary(result: AuditResult, reparse_ran: bool) -> str:
     if reparse_ran:
         reparsed = [r for r in result.rows if r.upstream_xml_author_count is not None]
         with_unmatched = [r for r in reparsed if r.unmatched_names]
-        push(
-            f"Re-parse pass: re-fetched {len(reparsed)} mociones (0 or 1 DB authors)"
-        )
+        push(f"Re-parse pass: re-fetched {len(reparsed)} mociones (0 or 1 DB authors)")
         push(f"  with at least one unmatched upstream name: {len(with_unmatched)}")
         push("")
         top = top_unmatched(result.rows, limit=20)

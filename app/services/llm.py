@@ -43,7 +43,10 @@ BILL_PROPOSAL_SYSTEM_PROMPT = (
 BILL_AMENDMENTS_SYSTEM_PROMPT = (
     "Eres un analista legislativo chileno. Te entregaré uno o más comparados "
     "que registran las modificaciones acumuladas durante la tramitación de un "
-    "proyecto de ley. Llama a la herramienta record_amendments_summary con una "
+    "proyecto de ley. El texto puede venir como un extracto parcial cuando el "
+    "documento original es demasiado extenso; en ese caso resume únicamente "
+    "los cambios presentes en el extracto y no afirmes que la lista es "
+    "exhaustiva. Llama a la herramienta record_amendments_summary con una "
     "lista breve y específica de los cambios sustantivos respecto al texto "
     "original — en español neutro, sin repetir el articulado."
 )
@@ -54,8 +57,10 @@ PROPOSAL_TOOL = {
         "Registra el resumen ciudadano del texto fundacional (mensaje o moción) "
         "del proyecto de ley."
     ),
+    "strict": True,
     "input_schema": {
         "type": "object",
+        "additionalProperties": False,
         "properties": {
             "propose": {
                 "type": "string",
@@ -97,8 +102,10 @@ AMENDMENTS_TOOL = {
         "Registra los cambios sustantivos introducidos por los comparados "
         "acumulados del proyecto de ley."
     ),
+    "strict": True,
     "input_schema": {
         "type": "object",
+        "additionalProperties": False,
         "properties": {
             "changes": {
                 "type": "array",
@@ -239,19 +246,32 @@ def generate_proposal_summary(full_text: str) -> dict[str, Any]:
     )
 
 
-def generate_amendments_summary(comparado_texts: list[str]) -> dict[str, Any]:
+def generate_amendments_summary(
+    comparado_texts: list[str], *, truncated: bool = False
+) -> dict[str, Any]:
     """Generate the amendments-layer structured summary from comparado documents.
 
     Returns ``{changes: list[str]}``. Raises on LLM or schema validation error.
+    When ``truncated=True`` the user message is prefixed with a Spanish note
+    instructing the model that the input is a partial excerpt.
     """
     texts = [t.strip() for t in comparado_texts if t and t.strip()]
     if not texts:
         raise ValueError("comparado_texts is empty")
     joined = "\n\n---\n\n".join(texts)
+    if truncated:
+        prefix = (
+            "Nota: el siguiente texto es un EXTRACTO PARCIAL del comparado "
+            "(truncado por tamaño). Resume únicamente los cambios presentes "
+            "en este extracto; no afirmes que la lista es exhaustiva.\n\n"
+        )
+        joined = joined + "\n\n…[texto truncado por tamaño]"
+    else:
+        prefix = ""
     return _claude_tool_call(
         system_prompt=BILL_AMENDMENTS_SYSTEM_PROMPT,
         tool=AMENDMENTS_TOOL,
-        user_text="Comparados acumulados del proyecto de ley:\n\n" + joined,
+        user_text=prefix + "Comparados acumulados del proyecto de ley:\n\n" + joined,
     )
 
 

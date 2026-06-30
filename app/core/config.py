@@ -38,7 +38,15 @@ class Settings(BaseSettings):
     anthropic_api_key: str = Field(default="", alias="ANTHROPIC_API_KEY")
     anthropic_model: str = Field(default="claude-haiku-4-5", alias="ANTHROPIC_MODEL")
     ai_summary_prompt_version: str = Field(
-        default="v2", alias="AI_SUMMARY_PROMPT_VERSION"
+        default="v4", alias="AI_SUMMARY_PROMPT_VERSION"
+    )
+    # Cap on the joined comparado text sent to Claude for the amendments
+    # layer. ~150K chars ≈ 40K tokens at ~3.5 chars/token for Spanish legal
+    # text, leaving comfortable headroom inside Haiku's 200K context for the
+    # system prompt, tool schema, and response budget. Bills that exceed
+    # this cap are truncated and persisted with ``truncated=True``.
+    ai_summary_max_input_chars: int = Field(
+        default=150_000, alias="AI_SUMMARY_MAX_INPUT_CHARS"
     )
     # Global gate for the bills AI summary feature (ADR-0019). Default off so
     # a fresh ``ingestors bills`` scan does not burn LLM budget; flip on per

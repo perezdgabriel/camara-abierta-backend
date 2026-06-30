@@ -13,7 +13,7 @@ from app.services.llm import (
     generate_proposal_summary,
 )
 from app.services.notifications import send_alerta_proyecto
-from app.services.pdf import extract_text_from_url
+from app.services.pdf import extract_comparado_text_from_url, extract_text_from_url
 from app.services.proyectos import get_bill
 from app.services.write import get_bill_summary, upsert_bill, upsert_bill_summary
 from app.tasks.base import DatabaseTask
@@ -30,6 +30,31 @@ def _hash_url(url: str | None) -> str | None:
     if not url:
         return None
     return hashlib.sha256(url.encode("utf-8")).hexdigest()
+
+
+_AMENDMENTS_SEPARATOR_LEN = len("\n\n---\n\n")
+
+
+def _joined_len(texts: list[str]) -> int:
+    if not texts:
+        return 0
+    return sum(len(t) for t in texts) + _AMENDMENTS_SEPARATOR_LEN * (len(texts) - 1)
+
+
+def _truncate_to_budget(texts: list[str], budget: int) -> bool:
+    """Shrink ``texts`` in place so the joined length fits in ``budget``.
+
+    Drops whole trailing comparados first; if the first comparado alone
+    still exceeds the budget, char-truncates it. Returns ``True`` if any
+    truncation happened.
+    """
+    if _joined_len(texts) <= budget:
+        return False
+    while len(texts) > 1 and _joined_len(texts) > budget:
+        texts.pop()
+    if texts and len(texts[0]) > budget:
+        texts[0] = texts[0][:budget]
+    return True
 
 
 def _layer_is_stale(
@@ -188,6 +213,7 @@ def _persist_layer(
     content: dict[str, Any] | None,
     source_url: str | None,
     error_reason: str | None,
+    truncated: bool = False,
 ) -> str:
     with task_session() as db:
         summary = upsert_bill_summary(
@@ -201,6 +227,7 @@ def _persist_layer(
             source_url=source_url,
             source_url_hash=_hash_url(source_url),
             error_reason=error_reason,
+            truncated=truncated,
         )
     return "missing" if summary is None else status.value
 
@@ -312,7 +339,7 @@ def _generate_amendments_layer(bill_id: int) -> dict:
 
     comparado_texts: list[str] = []
     for url in comparado_urls:
-        text = extract_text_from_url(url)
+        text = extract_comparado_text_from_url(url)
         if text:
             comparado_texts.append(text)
 
@@ -331,8 +358,12 @@ def _generate_amendments_layer(bill_id: int) -> dict:
             "status": status,
         }
 
+    truncated = _truncate_to_budget(
+        comparado_texts, settings.ai_summary_max_input_chars
+    )
+
     try:
-        content = generate_amendments_summary(comparado_texts)
+        content = generate_amendments_summary(comparado_texts, truncated=truncated)
     except Exception as exc:
         logger.warning("Claude amendments summary failed for bill %s: %s", bill_id, exc)
         status = _persist_layer(
@@ -356,6 +387,7 @@ def _generate_amendments_layer(bill_id: int) -> dict:
         content=content,
         source_url=comparado_urls[0],
         error_reason=None,
+        truncated=truncated,
     )
     return {
         "bill_id": bill_id,
