@@ -6,7 +6,14 @@ from sqlalchemy.orm import Session, joinedload, selectinload
 from sqlalchemy.orm.attributes import set_committed_value
 
 from app.core.search import unaccent_ilike
-from app.models.enums import BillOrigin, BillStatus, BillType, ChamberType
+from app.models.enums import (
+    BillOrigin,
+    BillStatus,
+    BillSummaryKind,
+    BillType,
+    ChamberType,
+    StageType,
+)
 from app.models.legislature import Chamber, Legislator, LegislatorTerm
 from app.models.proyecto import (
     Bill,
@@ -153,6 +160,7 @@ def _full_options():
         selectinload(Bill.sponsoring_ministries),
         selectinload(Bill.urgencies).joinedload(BillUrgency.chamber),
         selectinload(Bill.voting_sessions).joinedload(VotingSession.chamber),
+        selectinload(Bill.summaries),
     ]
 
 
@@ -304,6 +312,69 @@ def attribute_documents_to_stages(bill: Bill) -> None:
     for document in bill.documents or []:
         match = _stage_for_document(document, stages)
         set_committed_value(document, "bill_stage_id", match.id if match else None)
+
+
+_STAGE_PLAIN: dict[StageType, str] = {
+    StageType.FIRST_CONSTITUTIONAL_TRAMITE: "primer trámite constitucional",
+    StageType.SECOND_CONSTITUTIONAL_TRAMITE: "segundo trámite constitucional",
+    StageType.THIRD_CONSTITUTIONAL_TRAMITE: "tercer trámite constitucional",
+    StageType.MIXED_COMMISSION: "comisión mixta",
+    StageType.CONSTITUTIONAL_TRIBUNAL: "tribunal constitucional",
+    StageType.PROMULGATION: "promulgación",
+    StageType.PUBLICATION: "publicación",
+    StageType.OTHER: "trámite",
+}
+
+_STATUS_PLAIN: dict[BillStatus, str] = {
+    BillStatus.PENDING: "En tramitación",
+    BillStatus.APPROVED: "Aprobado",
+    BillStatus.REJECTED: "Rechazado",
+    BillStatus.ARCHIVED: "Archivado",
+    BillStatus.WITHDRAWN: "Retirado",
+    BillStatus.UNCONSTITUTIONAL: "Declarado inconstitucional",
+    BillStatus.ENACTED: "Promulgado",
+    BillStatus.PUBLISHED: "Publicado como ley",
+}
+
+
+def build_bill_ai_summary(bill: Bill, last_activity_date: date) -> dict:
+    """Compose the layered ``BillAISummary`` payload for a bill detail response.
+
+    Reads stored ``BillSummary`` rows for the proposal/amendments layers and
+    derives the ``status_line`` deterministically from stage/committee. See ADR-0019.
+    """
+    proposal_row = next(
+        (s for s in bill.summaries if s.kind == BillSummaryKind.PROPOSAL), None
+    )
+    amendments_row = next(
+        (s for s in bill.summaries if s.kind == BillSummaryKind.AMENDMENTS), None
+    )
+
+    current_stage = next((s for s in bill.stages if s.is_current), None)
+    current_stage_type = current_stage.stage_type if current_stage else None
+    committee_name = (
+        bill.current_committee.name if bill.current_committee is not None else None
+    )
+
+    parts: list[str] = [_STATUS_PLAIN.get(bill.status, bill.status.value)]
+    if current_stage_type is not None:
+        parts.append(f"en {_STAGE_PLAIN[current_stage_type]}")
+    if committee_name:
+        parts.append(f"Comisión de {committee_name}")
+    parts.append(f"Última actividad: {last_activity_date.isoformat()}")
+    plain_text = ". ".join(parts) + "."
+
+    return {
+        "proposal": proposal_row,
+        "amendments": amendments_row,
+        "status_line": {
+            "plain_text": plain_text,
+            "current_status": bill.status,
+            "current_stage_type": current_stage_type,
+            "current_committee_name": committee_name,
+            "last_activity_date": last_activity_date,
+        },
+    }
 
 
 def list_bills_by_ids(db: Session, bill_ids: list[int]) -> list[Bill]:

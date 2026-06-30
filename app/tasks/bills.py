@@ -1,18 +1,88 @@
+import hashlib
+import logging
+from typing import Any
+
 from app.core.celery_app import app
 from app.core.config import settings
 from app.core.session import task_session
 from app.ingestors.parsers.votes import VoteParser
-from app.services.llm import can_generate_bill_summary, generate_bill_summary
+from app.models.enums import BillSummaryKind, BillSummaryStatus
+from app.services.llm import (
+    can_generate_bill_summary,
+    generate_amendments_summary,
+    generate_proposal_summary,
+)
 from app.services.notifications import send_alerta_proyecto
 from app.services.pdf import extract_text_from_url
 from app.services.proyectos import get_bill
-from app.services.write import update_bill_ai_summary, upsert_bill
+from app.services.write import get_bill_summary, upsert_bill, upsert_bill_summary
 from app.tasks.base import DatabaseTask
 from app.tasks.voting import sync_voting_session
+
+logger = logging.getLogger(__name__)
 
 
 def _enum_value(value):
     return value.value if hasattr(value, "value") else value
+
+
+def _hash_url(url: str | None) -> str | None:
+    if not url:
+        return None
+    return hashlib.sha256(url.encode("utf-8")).hexdigest()
+
+
+def _layer_is_stale(
+    summary,
+    *,
+    prompt_version: str,
+    model_name: str,
+) -> bool:
+    """A row whose prompt/model no longer matches current config is stale.
+
+    Drives self-healing regeneration on prompt/model upgrades — see ADR-0019.
+    """
+    if summary is None:
+        return True
+    return summary.prompt_version != prompt_version or summary.model_name != model_name
+
+
+def _decide_summary_triggers(
+    db, *, bill_id: int, change_info: dict[str, Any]
+) -> list[BillSummaryKind]:
+    """Translate the bill change_info into the layers that need regeneration.
+
+    See ADR-0019 §triggers. Returns the kinds to enqueue; empty list = no-op.
+    Honors the global ``AI_SUMMARY_ENABLED`` gate (default off) so a fresh
+    ingest does not burn LLM budget.
+    """
+    if not settings.ai_summary_enabled:
+        return []
+    prompt_version = settings.ai_summary_prompt_version
+    model_name = settings.anthropic_model
+    kinds: list[BillSummaryKind] = []
+
+    proposal = get_bill_summary(db, bill_id=bill_id, kind=BillSummaryKind.PROPOSAL)
+    proposal_stale = _layer_is_stale(
+        proposal, prompt_version=prompt_version, model_name=model_name
+    )
+    if (
+        proposal_stale
+        or change_info.get("is_new")
+        or change_info.get("full_text_url_changed")
+        or change_info.get("status_changed")
+        or change_info.get("stage_changed")
+    ):
+        kinds.append(BillSummaryKind.PROPOSAL)
+
+    amendments = get_bill_summary(db, bill_id=bill_id, kind=BillSummaryKind.AMENDMENTS)
+    amendments_stale = _layer_is_stale(
+        amendments, prompt_version=prompt_version, model_name=model_name
+    )
+    if amendments_stale or change_info.get("new_comparado_added"):
+        kinds.append(BillSummaryKind.AMENDMENTS)
+
+    return kinds
 
 
 @app.task(name="app.tasks.bills.sync_bill", bind=True, base=DatabaseTask)
@@ -20,8 +90,12 @@ def sync_bill(self, data: dict) -> dict:
     with task_session() as db:
         bill, change_info = upsert_bill(db, data)
         bill_id = bill.id
+        summary_kinds = _decide_summary_triggers(
+            db, bill_id=bill_id, change_info=change_info
+        )
 
-    generate_bill_ai_summary.delay(bill_id)
+    for kind in summary_kinds:
+        generate_bill_summary_layer.delay(bill_id, kind.value)
 
     for raw_vote in data.get("_votaciones", []):
         sync_voting_session.delay(
@@ -80,27 +154,211 @@ def sync_bill(self, data: dict) -> dict:
     return {"bill_id": bill_id, "status": "ok"}
 
 
-@app.task(name="app.tasks.bills.generate_bill_ai_summary", bind=True, base=DatabaseTask)
-def generate_bill_ai_summary(self, bill_id: int) -> dict:
-    if not can_generate_bill_summary():
-        return {"bill_id": bill_id, "status": "llm_unavailable"}
+@app.task(
+    name="app.tasks.bills.generate_bill_summary_layer",
+    bind=True,
+    base=DatabaseTask,
+)
+def generate_bill_summary_layer(self, bill_id: int, kind: str) -> dict:
+    """Generate one summary layer for a bill and upsert the result.
 
+    Persists ``SKIPPED`` / ``FAILED`` rows so callers can distinguish
+    never-tried from tried-and-failed. See ADR-0019.
+    """
+    try:
+        kind_enum = BillSummaryKind(kind)
+    except ValueError:
+        return {"bill_id": bill_id, "kind": kind, "status": "invalid_kind"}
+
+    if not can_generate_bill_summary():
+        return {"bill_id": bill_id, "kind": kind, "status": "llm_unavailable"}
+
+    if kind_enum is BillSummaryKind.PROPOSAL:
+        return _generate_proposal_layer(bill_id)
+    if kind_enum is BillSummaryKind.AMENDMENTS:
+        return _generate_amendments_layer(bill_id)
+    return {"bill_id": bill_id, "kind": kind, "status": "unsupported_kind"}
+
+
+def _persist_layer(
+    bill_id: int,
+    *,
+    kind: BillSummaryKind,
+    status: BillSummaryStatus,
+    content: dict[str, Any] | None,
+    source_url: str | None,
+    error_reason: str | None,
+) -> str:
+    with task_session() as db:
+        summary = upsert_bill_summary(
+            db,
+            bill_id=bill_id,
+            kind=kind,
+            status=status,
+            content=content,
+            prompt_version=settings.ai_summary_prompt_version,
+            model_name=settings.anthropic_model,
+            source_url=source_url,
+            source_url_hash=_hash_url(source_url),
+            error_reason=error_reason,
+        )
+    return "missing" if summary is None else status.value
+
+
+def _generate_proposal_layer(bill_id: int) -> dict:
     with task_session() as db:
         bill = get_bill(db, bill_id)
         if bill is None:
-            return {"bill_id": bill_id, "status": "missing"}
+            return {
+                "bill_id": bill_id,
+                "kind": BillSummaryKind.PROPOSAL.value,
+                "status": "missing",
+            }
         full_text_url = bill.full_text_url
 
     if not full_text_url:
-        return {"bill_id": bill_id, "status": "skipped"}
+        status = _persist_layer(
+            bill_id,
+            kind=BillSummaryKind.PROPOSAL,
+            status=BillSummaryStatus.SKIPPED,
+            content=None,
+            source_url=None,
+            error_reason="no_full_text_url",
+        )
+        return {
+            "bill_id": bill_id,
+            "kind": BillSummaryKind.PROPOSAL.value,
+            "status": status,
+        }
 
     full_text = extract_text_from_url(full_text_url)
     if not full_text:
-        return {"bill_id": bill_id, "status": "skipped"}
+        status = _persist_layer(
+            bill_id,
+            kind=BillSummaryKind.PROPOSAL,
+            status=BillSummaryStatus.SKIPPED,
+            content=None,
+            source_url=full_text_url,
+            error_reason="pdf_extraction_failed",
+        )
+        return {
+            "bill_id": bill_id,
+            "kind": BillSummaryKind.PROPOSAL.value,
+            "status": status,
+        }
 
-    summary = generate_bill_summary(full_text)
+    try:
+        content = generate_proposal_summary(full_text)
+    except Exception as exc:
+        logger.warning("Claude proposal summary failed for bill %s: %s", bill_id, exc)
+        status = _persist_layer(
+            bill_id,
+            kind=BillSummaryKind.PROPOSAL,
+            status=BillSummaryStatus.FAILED,
+            content=None,
+            source_url=full_text_url,
+            error_reason=f"{type(exc).__name__}: {exc}",
+        )
+        return {
+            "bill_id": bill_id,
+            "kind": BillSummaryKind.PROPOSAL.value,
+            "status": status,
+        }
+
+    status = _persist_layer(
+        bill_id,
+        kind=BillSummaryKind.PROPOSAL,
+        status=BillSummaryStatus.SUCCESS,
+        content=content,
+        source_url=full_text_url,
+        error_reason=None,
+    )
+    return {
+        "bill_id": bill_id,
+        "kind": BillSummaryKind.PROPOSAL.value,
+        "status": status,
+    }
+
+
+def _generate_amendments_layer(bill_id: int) -> dict:
     with task_session() as db:
-        updated_bill = update_bill_ai_summary(db, bill_id, summary)
-        if updated_bill is None:
-            return {"bill_id": bill_id, "status": "missing"}
-    return {"bill_id": bill_id, "status": "summarized"}
+        bill = get_bill(db, bill_id)
+        if bill is None:
+            return {
+                "bill_id": bill_id,
+                "kind": BillSummaryKind.AMENDMENTS.value,
+                "status": "missing",
+            }
+        comparado_urls = [
+            doc.document_url
+            for doc in bill.documents
+            if doc.document_type == "comparison" and doc.document_url
+        ]
+
+    if not comparado_urls:
+        status = _persist_layer(
+            bill_id,
+            kind=BillSummaryKind.AMENDMENTS,
+            status=BillSummaryStatus.SKIPPED,
+            content=None,
+            source_url=None,
+            error_reason="no_comparados",
+        )
+        return {
+            "bill_id": bill_id,
+            "kind": BillSummaryKind.AMENDMENTS.value,
+            "status": status,
+        }
+
+    comparado_texts: list[str] = []
+    for url in comparado_urls:
+        text = extract_text_from_url(url)
+        if text:
+            comparado_texts.append(text)
+
+    if not comparado_texts:
+        status = _persist_layer(
+            bill_id,
+            kind=BillSummaryKind.AMENDMENTS,
+            status=BillSummaryStatus.SKIPPED,
+            content=None,
+            source_url=comparado_urls[0],
+            error_reason="pdf_extraction_failed",
+        )
+        return {
+            "bill_id": bill_id,
+            "kind": BillSummaryKind.AMENDMENTS.value,
+            "status": status,
+        }
+
+    try:
+        content = generate_amendments_summary(comparado_texts)
+    except Exception as exc:
+        logger.warning("Claude amendments summary failed for bill %s: %s", bill_id, exc)
+        status = _persist_layer(
+            bill_id,
+            kind=BillSummaryKind.AMENDMENTS,
+            status=BillSummaryStatus.FAILED,
+            content=None,
+            source_url=comparado_urls[0],
+            error_reason=f"{type(exc).__name__}: {exc}",
+        )
+        return {
+            "bill_id": bill_id,
+            "kind": BillSummaryKind.AMENDMENTS.value,
+            "status": status,
+        }
+
+    status = _persist_layer(
+        bill_id,
+        kind=BillSummaryKind.AMENDMENTS,
+        status=BillSummaryStatus.SUCCESS,
+        content=content,
+        source_url=comparado_urls[0],
+        error_reason=None,
+    )
+    return {
+        "bill_id": bill_id,
+        "kind": BillSummaryKind.AMENDMENTS.value,
+        "status": status,
+    }

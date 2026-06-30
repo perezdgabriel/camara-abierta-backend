@@ -5,6 +5,7 @@ from pydantic import Field
 from app.models.enums import (
     BillOrigin,
     BillStatus,
+    BillSummaryStatus,
     BillType,
     ChamberType,
     StageType,
@@ -176,13 +177,59 @@ class BillSummary(ORMModel):
     sync_version: int
 
 
+# ── AI summary layers ─────────────────────────────────────────────────
+
+
+class ProposalSummaryContent(ORMModel):
+    propose: str
+    affected_groups: list[str] = Field(default_factory=list)
+    why_it_matters: str
+    key_objections: list[str] = Field(default_factory=list)
+
+
+class AmendmentsSummaryContent(ORMModel):
+    changes: list[str] = Field(default_factory=list)
+
+
+class ProposalSummary(ORMModel):
+    status: BillSummaryStatus
+    content: ProposalSummaryContent | None = None
+    generated_at: datetime
+    prompt_version: str | None = None
+    model_name: str | None = None
+
+
+class AmendmentsSummary(ORMModel):
+    status: BillSummaryStatus
+    content: AmendmentsSummaryContent | None = None
+    generated_at: datetime
+    prompt_version: str | None = None
+    model_name: str | None = None
+
+
+class BillStatusLine(ORMModel):
+    """Deterministic, no-LLM 'where it is now' line. Composed in the API."""
+
+    plain_text: str
+    current_status: BillStatus
+    current_stage_type: StageType | None = None
+    current_committee_name: str | None = None
+    last_activity_date: date
+
+
+class BillAISummary(ORMModel):
+    proposal: ProposalSummary | None = None
+    amendments: AmendmentsSummary | None = None
+    status_line: BillStatusLine
+
+
 # ── Detail schema ─────────────────────────────────────────────────────
 
 
 class BillDetail(BillSummary):
     """Full bill lifecycle: stages, events, documents, votes, authors."""
 
-    ai_summary: str | None = None
+    ai_summary: BillAISummary
     full_text_url: str | None = None
     sponsoring_ministries: list[SponsoringMinistry] = Field(default_factory=list)
     # Routes must pre-resolve authors via

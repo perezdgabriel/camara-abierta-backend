@@ -1,7 +1,7 @@
 from contextlib import contextmanager
 from types import SimpleNamespace
 
-from app.models.enums import BillOrigin, BillStatus
+from app.models.enums import BillOrigin, BillStatus, BillSummaryKind, BillSummaryStatus
 from app.tasks import bills as bill_tasks
 
 
@@ -20,17 +20,22 @@ def session_sequence(*dbs):
     return _task_session
 
 
-def test_generate_bill_ai_summary_returns_llm_unavailable_when_no_backend(monkeypatch):
+def test_generate_proposal_layer_returns_llm_unavailable_when_no_backend(monkeypatch):
     monkeypatch.setattr(bill_tasks, "can_generate_bill_summary", lambda: False)
 
-    result = bill_tasks.generate_bill_ai_summary.run(99)
+    result = bill_tasks.generate_bill_summary_layer.run(99, "proposal")
 
-    assert result == {"bill_id": 99, "status": "llm_unavailable"}
+    assert result == {
+        "bill_id": 99,
+        "kind": "proposal",
+        "status": "llm_unavailable",
+    }
 
 
-def test_generate_bill_ai_summary_extracts_text_and_persists_summary(monkeypatch):
+def test_generate_proposal_layer_persists_success(monkeypatch):
     first_db = object()
     second_db = object()
+    upserts: list[dict] = []
 
     monkeypatch.setattr(bill_tasks, "can_generate_bill_summary", lambda: True)
     monkeypatch.setattr(
@@ -42,122 +47,129 @@ def test_generate_bill_ai_summary_extracts_text_and_persists_summary(monkeypatch
         assert bill_id == 7
         return ns(full_text_url="https://example.com/bill.pdf")
 
-    def fake_update_bill_ai_summary(db, bill_id, ai_summary):
-        assert db is second_db
-        assert bill_id == 7
-        assert ai_summary == "resumen ciudadano"
-        return ns(id=bill_id, ai_summary=ai_summary)
+    def fake_extract(url):
+        assert url == "https://example.com/bill.pdf"
+        return "texto completo"
 
-    monkeypatch.setattr(bill_tasks, "get_bill", fake_get_bill)
-    monkeypatch.setattr(
-        bill_tasks, "extract_text_from_url", lambda url: "texto completo"
-    )
-    monkeypatch.setattr(
-        bill_tasks, "generate_bill_summary", lambda text: "resumen ciudadano"
-    )
-    monkeypatch.setattr(
-        bill_tasks, "update_bill_ai_summary", fake_update_bill_ai_summary
-    )
-
-    result = bill_tasks.generate_bill_ai_summary.run(7)
-
-    assert result == {"bill_id": 7, "status": "summarized"}
-
-
-def test_sync_bill_enqueues_summary_votes_and_notifications_for_existing_bill(
-    monkeypatch,
-):
-    first_db = object()
-    queued_summary_ids: list[int] = []
-    queued_votes: list[tuple[dict, str]] = []
-    notifications: list[dict] = []
-
-    monkeypatch.setattr(bill_tasks, "task_session", session_sequence(first_db))
-
-    def fake_upsert_bill(db, data):
-        assert db is first_db
-        assert data["bulletin_number"] == "555-06"
-        return ns(id=42), {
-            "is_new": False,
-            "status_changed": True,
-            "stage_changed": True,
-            "old_status": BillStatus.PENDING,
-            "new_status": BillStatus.APPROVED,
+    def fake_generate_proposal(text):
+        assert text == "texto completo"
+        return {
+            "propose": "Cosa",
+            "affected_groups": ["A"],
+            "why_it_matters": "Importa",
+            "key_objections": [],
         }
 
-    monkeypatch.setattr(bill_tasks, "upsert_bill", fake_upsert_bill)
+    def fake_upsert(db, **kwargs):
+        assert db is second_db
+        upserts.append(kwargs)
+        return ns(id=1)
+
+    monkeypatch.setattr(bill_tasks, "get_bill", fake_get_bill)
+    monkeypatch.setattr(bill_tasks, "extract_text_from_url", fake_extract)
+    monkeypatch.setattr(bill_tasks, "generate_proposal_summary", fake_generate_proposal)
+    monkeypatch.setattr(bill_tasks, "upsert_bill_summary", fake_upsert)
+
+    result = bill_tasks.generate_bill_summary_layer.run(7, "proposal")
+
+    assert result == {"bill_id": 7, "kind": "proposal", "status": "success"}
+    assert len(upserts) == 1
+    payload = upserts[0]
+    assert payload["bill_id"] == 7
+    assert payload["kind"] is BillSummaryKind.PROPOSAL
+    assert payload["status"] is BillSummaryStatus.SUCCESS
+    assert payload["content"]["propose"] == "Cosa"
+    assert payload["source_url"] == "https://example.com/bill.pdf"
+    assert payload["source_url_hash"] is not None
+
+
+def test_generate_proposal_layer_persists_skipped_when_no_full_text_url(monkeypatch):
+    db = object()
+    upserts: list[dict] = []
+
+    monkeypatch.setattr(bill_tasks, "can_generate_bill_summary", lambda: True)
+    monkeypatch.setattr(bill_tasks, "task_session", session_sequence(db, db))
     monkeypatch.setattr(
-        bill_tasks.generate_bill_ai_summary, "delay", queued_summary_ids.append
-    )
-    monkeypatch.setattr(
-        bill_tasks.VoteParser,
-        "parse_senate_vote",
-        lambda raw_vote, bulletin: {"parsed": raw_vote, "bulletin": bulletin},
-    )
-    monkeypatch.setattr(
-        bill_tasks.sync_voting_session,
-        "delay",
-        lambda payload, bulletin: queued_votes.append((payload, bulletin)),
+        bill_tasks, "get_bill", lambda _db, _bid: ns(full_text_url=None)
     )
     monkeypatch.setattr(
         bill_tasks,
-        "send_alerta_proyecto",
-        lambda **kwargs: notifications.append(kwargs),
+        "upsert_bill_summary",
+        lambda _db, **kwargs: upserts.append(kwargs) or ns(id=1),
     )
 
-    result = bill_tasks.sync_bill.run(
-        {
-            "bulletin_number": "555-06",
-            "title": "Proyecto demo",
-            "entry_date": "2026-05-10",
-            "origin_type": BillOrigin.EXECUTIVE,
-            "_votaciones": [{"session": "42"}],
-        }
+    result = bill_tasks.generate_bill_summary_layer.run(7, "proposal")
+
+    assert result["status"] == "skipped"
+    assert upserts[0]["status"] is BillSummaryStatus.SKIPPED
+    assert upserts[0]["error_reason"] == "no_full_text_url"
+
+
+def test_generate_proposal_layer_persists_failed_when_llm_raises(monkeypatch):
+    upserts: list[dict] = []
+
+    monkeypatch.setattr(bill_tasks, "can_generate_bill_summary", lambda: True)
+    monkeypatch.setattr(
+        bill_tasks,
+        "task_session",
+        session_sequence(object(), object()),
+    )
+    monkeypatch.setattr(
+        bill_tasks,
+        "get_bill",
+        lambda _db, _bid: ns(full_text_url="https://example.com/x.pdf"),
+    )
+    monkeypatch.setattr(bill_tasks, "extract_text_from_url", lambda _url: "texto")
+
+    def raise_(_text):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(bill_tasks, "generate_proposal_summary", raise_)
+    monkeypatch.setattr(
+        bill_tasks,
+        "upsert_bill_summary",
+        lambda _db, **kwargs: upserts.append(kwargs) or ns(id=1),
     )
 
-    assert result == {"bill_id": 42, "status": "ok"}
-    assert queued_summary_ids == [42]
-    assert queued_votes == [
-        ({"parsed": {"session": "42"}, "bulletin": "555-06"}, "555-06")
-    ]
-    assert len(notifications) == 2
-    assert notifications[0]["change_type"] == "status_changed"
-    assert notifications[0]["extra"]["old_status"] == "pending"
-    assert notifications[0]["extra"]["new_status"] == "approved"
-    assert notifications[1]["change_type"] == "stage_changed"
+    result = bill_tasks.generate_bill_summary_layer.run(7, "proposal")
+
+    assert result["status"] == "failed"
+    assert upserts[0]["status"] is BillSummaryStatus.FAILED
+    assert "RuntimeError: boom" in upserts[0]["error_reason"]
 
 
-def test_sync_bill_enqueues_only_new_notification_for_new_bill(monkeypatch):
-    first_db = object()
-    queued_summary_ids: list[int] = []
+def test_sync_bill_enqueues_proposal_layer_on_new_bill(monkeypatch):
+    db = object()
+    queued: list[tuple[int, str]] = []
     notifications: list[dict] = []
 
-    monkeypatch.setattr(bill_tasks, "task_session", session_sequence(first_db))
+    monkeypatch.setattr(bill_tasks, "task_session", session_sequence(db))
+    monkeypatch.setattr(bill_tasks.settings, "ai_summary_enabled", True)
 
-    def fake_upsert_bill(db, data):
-        assert db is first_db
-        assert data["bulletin_number"] == "555-06"
+    def fake_upsert_bill(_db, data):
         return ns(id=42), {
             "is_new": True,
             "status_changed": False,
             "stage_changed": False,
+            "full_text_url_changed": False,
+            "new_comparado_added": False,
             "old_status": None,
             "new_status": BillStatus.PENDING,
         }
 
     monkeypatch.setattr(bill_tasks, "upsert_bill", fake_upsert_bill)
+    # Existing rows: none — proposal must enqueue. Amendments has no trigger
+    # signal, but a missing row still counts as stale, so it also enqueues.
     monkeypatch.setattr(
-        bill_tasks.generate_bill_ai_summary, "delay", queued_summary_ids.append
+        bill_tasks, "get_bill_summary", lambda _db, *, bill_id, kind: None
     )
     monkeypatch.setattr(
-        bill_tasks.sync_voting_session,
+        bill_tasks.generate_bill_summary_layer,
         "delay",
-        lambda payload, bulletin: None,
+        lambda bill_id, kind: queued.append((bill_id, kind)),
     )
     monkeypatch.setattr(
-        bill_tasks.VoteParser,
-        "parse_senate_vote",
-        lambda raw_vote, bulletin: {"parsed": raw_vote, "bulletin": bulletin},
+        bill_tasks.sync_voting_session, "delay", lambda *_a, **_kw: None
     )
     monkeypatch.setattr(
         bill_tasks,
@@ -176,105 +188,48 @@ def test_sync_bill_enqueues_only_new_notification_for_new_bill(monkeypatch):
     )
 
     assert result == {"bill_id": 42, "status": "ok"}
-    assert queued_summary_ids == [42]
-    assert len(notifications) == 1
+    assert (42, "proposal") in queued
+    assert (42, "amendments") in queued
     assert notifications[0]["change_type"] == "new"
-    assert notifications[0]["extra"]["origin"] == "executive"
 
 
-def test_sync_bill_enqueues_chamber_votes_when_source_is_bill_detail(monkeypatch):
-    """ADR-0013 failover path: embedded chamber-vote loop dispatches only when
-    INGESTOR_CHAMBER_VOTES_SOURCE=bill_detail.
-    """
-    first_db = object()
-    queued_summary_ids: list[int] = []
-    queued_votes: list[tuple[dict, str]] = []
+def test_sync_bill_skips_layers_when_nothing_changed(monkeypatch):
+    db = object()
+    queued: list[tuple[int, str]] = []
 
-    monkeypatch.setattr(bill_tasks, "task_session", session_sequence(first_db))
-    monkeypatch.setattr(
-        bill_tasks.settings, "ingestor_chamber_votes_source", "bill_detail"
-    )
+    monkeypatch.setattr(bill_tasks, "task_session", session_sequence(db))
+    monkeypatch.setattr(bill_tasks.settings, "ai_summary_enabled", True)
+    monkeypatch.setattr(bill_tasks.settings, "ai_summary_prompt_version", "v2")
+    monkeypatch.setattr(bill_tasks.settings, "anthropic_model", "claude-haiku-4-5")
 
-    def fake_upsert_bill(db, data):
-        assert db is first_db
+    def fake_upsert_bill(_db, _data):
         return ns(id=42), {
             "is_new": False,
             "status_changed": False,
             "stage_changed": False,
+            "full_text_url_changed": False,
+            "new_comparado_added": False,
             "old_status": BillStatus.PENDING,
             "new_status": BillStatus.PENDING,
         }
 
-    monkeypatch.setattr(bill_tasks, "upsert_bill", fake_upsert_bill)
-    monkeypatch.setattr(
-        bill_tasks.generate_bill_ai_summary, "delay", queued_summary_ids.append
-    )
-    monkeypatch.setattr(
-        bill_tasks.VoteParser,
-        "parse_chamber_vote",
-        lambda raw_vote, bulletin: {
-            "parsed": raw_vote,
-            "bulletin": bulletin,
-            "source": "camara",
-        },
-    )
-    monkeypatch.setattr(
-        bill_tasks.sync_voting_session,
-        "delay",
-        lambda payload, bulletin: queued_votes.append((payload, bulletin)),
-    )
-
-    result = bill_tasks.sync_bill.run(
-        {
-            "bulletin_number": "555-06",
-            "title": "Proyecto demo",
-            "entry_date": "2026-05-10",
-            "origin_type": BillOrigin.EXECUTIVE,
-            "_votaciones": [],
-            "_camara_votaciones": [{"id": 88980, "individual_votes": []}],
-        }
-    )
-
-    assert result == {"bill_id": 42, "status": "ok"}
-    assert queued_summary_ids == [42]
-    assert queued_votes == [
-        (
-            {
-                "parsed": {"id": 88980, "individual_votes": []},
-                "bulletin": "555-06",
-                "source": "camara",
-            },
-            "555-06",
-        )
-    ]
-
-
-def test_sync_bill_skips_embedded_chamber_votes_under_bulk_source(monkeypatch):
-    """ADR-0013 default: the dedicated chamber-votes task owns dispatch, so
-    the embedded loop in sync_bill is a no-op under source=bulk.
-    """
-    first_db = object()
-    queued_votes: list[tuple[dict, str]] = []
-
-    monkeypatch.setattr(bill_tasks, "task_session", session_sequence(first_db))
-    monkeypatch.setattr(bill_tasks.settings, "ingestor_chamber_votes_source", "bulk")
-
-    def fake_upsert_bill(db, data):
-        return ns(id=42), {
-            "is_new": False,
-            "status_changed": False,
-            "stage_changed": False,
-            "old_status": BillStatus.PENDING,
-            "new_status": BillStatus.PENDING,
-        }
+    fresh_row = ns(prompt_version="v2", model_name="claude-haiku-4-5")
 
     monkeypatch.setattr(bill_tasks, "upsert_bill", fake_upsert_bill)
-    monkeypatch.setattr(bill_tasks.generate_bill_ai_summary, "delay", lambda _: None)
     monkeypatch.setattr(
-        bill_tasks.sync_voting_session,
-        "delay",
-        lambda payload, bulletin: queued_votes.append((payload, bulletin)),
+        bill_tasks,
+        "get_bill_summary",
+        lambda _db, *, bill_id, kind: fresh_row,
     )
+    monkeypatch.setattr(
+        bill_tasks.generate_bill_summary_layer,
+        "delay",
+        lambda bill_id, kind: queued.append((bill_id, kind)),
+    )
+    monkeypatch.setattr(
+        bill_tasks.sync_voting_session, "delay", lambda *_a, **_kw: None
+    )
+    monkeypatch.setattr(bill_tasks, "send_alerta_proyecto", lambda **_kw: None)
 
     bill_tasks.sync_bill.run(
         {
@@ -283,8 +238,207 @@ def test_sync_bill_skips_embedded_chamber_votes_under_bulk_source(monkeypatch):
             "entry_date": "2026-05-10",
             "origin_type": BillOrigin.EXECUTIVE,
             "_votaciones": [],
-            "_camara_votaciones": [{"id": 88980, "individual_votes": []}],
         }
     )
 
-    assert queued_votes == []
+    assert queued == []
+
+
+def test_sync_bill_regenerates_proposal_on_status_change(monkeypatch):
+    db = object()
+    queued: list[tuple[int, str]] = []
+
+    monkeypatch.setattr(bill_tasks, "task_session", session_sequence(db))
+    monkeypatch.setattr(bill_tasks.settings, "ai_summary_enabled", True)
+    monkeypatch.setattr(bill_tasks.settings, "ai_summary_prompt_version", "v2")
+    monkeypatch.setattr(bill_tasks.settings, "anthropic_model", "claude-haiku-4-5")
+
+    def fake_upsert_bill(_db, _data):
+        return ns(id=42), {
+            "is_new": False,
+            "status_changed": True,
+            "stage_changed": False,
+            "full_text_url_changed": False,
+            "new_comparado_added": False,
+            "old_status": BillStatus.PENDING,
+            "new_status": BillStatus.APPROVED,
+        }
+
+    fresh_row = ns(prompt_version="v2", model_name="claude-haiku-4-5")
+
+    monkeypatch.setattr(bill_tasks, "upsert_bill", fake_upsert_bill)
+    monkeypatch.setattr(
+        bill_tasks,
+        "get_bill_summary",
+        lambda _db, *, bill_id, kind: fresh_row,
+    )
+    monkeypatch.setattr(
+        bill_tasks.generate_bill_summary_layer,
+        "delay",
+        lambda bill_id, kind: queued.append((bill_id, kind)),
+    )
+    monkeypatch.setattr(
+        bill_tasks.sync_voting_session, "delay", lambda *_a, **_kw: None
+    )
+    monkeypatch.setattr(bill_tasks, "send_alerta_proyecto", lambda **_kw: None)
+
+    bill_tasks.sync_bill.run(
+        {
+            "bulletin_number": "555-06",
+            "title": "Proyecto demo",
+            "entry_date": "2026-05-10",
+            "origin_type": BillOrigin.EXECUTIVE,
+            "_votaciones": [],
+        }
+    )
+
+    assert (42, "proposal") in queued
+    assert (42, "amendments") not in queued
+
+
+def test_sync_bill_regenerates_amendments_on_new_comparado(monkeypatch):
+    db = object()
+    queued: list[tuple[int, str]] = []
+
+    monkeypatch.setattr(bill_tasks, "task_session", session_sequence(db))
+    monkeypatch.setattr(bill_tasks.settings, "ai_summary_enabled", True)
+    monkeypatch.setattr(bill_tasks.settings, "ai_summary_prompt_version", "v2")
+    monkeypatch.setattr(bill_tasks.settings, "anthropic_model", "claude-haiku-4-5")
+
+    def fake_upsert_bill(_db, _data):
+        return ns(id=42), {
+            "is_new": False,
+            "status_changed": False,
+            "stage_changed": False,
+            "full_text_url_changed": False,
+            "new_comparado_added": True,
+            "old_status": BillStatus.PENDING,
+            "new_status": BillStatus.PENDING,
+        }
+
+    fresh_row = ns(prompt_version="v2", model_name="claude-haiku-4-5")
+
+    monkeypatch.setattr(bill_tasks, "upsert_bill", fake_upsert_bill)
+    monkeypatch.setattr(
+        bill_tasks,
+        "get_bill_summary",
+        lambda _db, *, bill_id, kind: fresh_row,
+    )
+    monkeypatch.setattr(
+        bill_tasks.generate_bill_summary_layer,
+        "delay",
+        lambda bill_id, kind: queued.append((bill_id, kind)),
+    )
+    monkeypatch.setattr(
+        bill_tasks.sync_voting_session, "delay", lambda *_a, **_kw: None
+    )
+    monkeypatch.setattr(bill_tasks, "send_alerta_proyecto", lambda **_kw: None)
+
+    bill_tasks.sync_bill.run(
+        {
+            "bulletin_number": "555-06",
+            "title": "Proyecto demo",
+            "entry_date": "2026-05-10",
+            "origin_type": BillOrigin.EXECUTIVE,
+            "_votaciones": [],
+        }
+    )
+
+    assert (42, "amendments") in queued
+    assert (42, "proposal") not in queued
+
+
+def test_sync_bill_enqueues_no_layers_when_feature_disabled(monkeypatch):
+    """Default AI_SUMMARY_ENABLED=False — no LLM tasks even on a brand-new bill."""
+    db = object()
+    queued: list[tuple[int, str]] = []
+
+    monkeypatch.setattr(bill_tasks, "task_session", session_sequence(db))
+    monkeypatch.setattr(bill_tasks.settings, "ai_summary_enabled", False)
+
+    def fake_upsert_bill(_db, _data):
+        return ns(id=42), {
+            "is_new": True,
+            "status_changed": False,
+            "stage_changed": False,
+            "full_text_url_changed": False,
+            "new_comparado_added": False,
+            "old_status": None,
+            "new_status": BillStatus.PENDING,
+        }
+
+    monkeypatch.setattr(bill_tasks, "upsert_bill", fake_upsert_bill)
+    monkeypatch.setattr(
+        bill_tasks.generate_bill_summary_layer,
+        "delay",
+        lambda bill_id, kind: queued.append((bill_id, kind)),
+    )
+    monkeypatch.setattr(
+        bill_tasks.sync_voting_session, "delay", lambda *_a, **_kw: None
+    )
+    monkeypatch.setattr(bill_tasks, "send_alerta_proyecto", lambda **_kw: None)
+
+    bill_tasks.sync_bill.run(
+        {
+            "bulletin_number": "555-06",
+            "title": "Proyecto demo",
+            "entry_date": "2026-05-10",
+            "origin_type": BillOrigin.EXECUTIVE,
+            "_votaciones": [],
+        }
+    )
+
+    assert queued == []
+
+
+def test_sync_bill_regenerates_layer_on_stale_prompt_version(monkeypatch):
+    db = object()
+    queued: list[tuple[int, str]] = []
+
+    monkeypatch.setattr(bill_tasks, "task_session", session_sequence(db))
+    monkeypatch.setattr(bill_tasks.settings, "ai_summary_enabled", True)
+    monkeypatch.setattr(bill_tasks.settings, "ai_summary_prompt_version", "v3")
+    monkeypatch.setattr(bill_tasks.settings, "anthropic_model", "claude-haiku-4-5")
+
+    def fake_upsert_bill(_db, _data):
+        return ns(id=42), {
+            "is_new": False,
+            "status_changed": False,
+            "stage_changed": False,
+            "full_text_url_changed": False,
+            "new_comparado_added": False,
+            "old_status": BillStatus.PENDING,
+            "new_status": BillStatus.PENDING,
+        }
+
+    stale_row = ns(prompt_version="v2", model_name="claude-haiku-4-5")
+
+    monkeypatch.setattr(bill_tasks, "upsert_bill", fake_upsert_bill)
+    monkeypatch.setattr(
+        bill_tasks,
+        "get_bill_summary",
+        lambda _db, *, bill_id, kind: stale_row,
+    )
+    monkeypatch.setattr(
+        bill_tasks.generate_bill_summary_layer,
+        "delay",
+        lambda bill_id, kind: queued.append((bill_id, kind)),
+    )
+    monkeypatch.setattr(
+        bill_tasks.sync_voting_session, "delay", lambda *_a, **_kw: None
+    )
+    monkeypatch.setattr(bill_tasks, "send_alerta_proyecto", lambda **_kw: None)
+
+    bill_tasks.sync_bill.run(
+        {
+            "bulletin_number": "555-06",
+            "title": "Proyecto demo",
+            "entry_date": "2026-05-10",
+            "origin_type": BillOrigin.EXECUTIVE,
+            "_votaciones": [],
+        }
+    )
+
+    # Both layers stale on prompt version bump → both enqueue
+    assert (42, "proposal") in queued
+    assert (42, "amendments") in queued

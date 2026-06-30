@@ -1,6 +1,31 @@
 from enum import Enum
 
 
+class BillSummaryKind(str, Enum):
+    """Layer of a bill's AI summary.
+
+    ``PROPOSAL`` summarises the foundational mensaje/moción PDF; ``AMENDMENTS``
+    summarises the comparados that accumulated during legislative tramitación.
+    A third deterministic ``status_line`` layer is composed in the API and not
+    stored. See ADR-0019.
+    """
+
+    PROPOSAL = "proposal"
+    AMENDMENTS = "amendments"
+
+
+class BillSummaryStatus(str, Enum):
+    """Outcome of an attempt to generate a bill summary layer.
+
+    Persisted on every attempt so callers can distinguish never-tried
+    (row missing) from tried-and-skipped/failed. See ADR-0019.
+    """
+
+    SUCCESS = "success"
+    SKIPPED = "skipped"
+    FAILED = "failed"
+
+
 class BillStatus(str, Enum):
     PENDING = "pending"
     APPROVED = "approved"

@@ -19,6 +19,8 @@ from app.models.diario_oficial import OfficialGazetteNorm, Regulation, Regulatio
 from app.models.enums import (
     BillOrigin,
     BillStatus,
+    BillSummaryKind,
+    BillSummaryStatus,
     BillType,
     Bloc,
     CalendarEventKind,
@@ -53,6 +55,7 @@ from app.models.proyecto import (
     BillEvent,
     BillSponsoringMinistry,
     BillStage,
+    BillSummary,
     BillUrgency,
 )
 from app.models.votacion import Vote, VotingSession
@@ -641,7 +644,13 @@ def _reconcile_stages(
 
 def _reconcile_documents(
     db: Session, bill: Bill, documents: list[dict[str, Any]]
-) -> bool:
+) -> tuple[bool, bool]:
+    """Returns ``(changed, new_comparado_added)``.
+
+    ``new_comparado_added`` flags an inserted row with ``document_type == "comparison"`` —
+    used by ``upsert_bill`` to signal the amendments-layer summary that
+    fresh comparado content is available (ADR-0019).
+    """
     current_by_key = {
         _document_key(
             doc.document_type, doc.title, doc.document_url or "", doc.document_date
@@ -650,6 +659,7 @@ def _reconcile_documents(
     }
     desired_keys: set[tuple[Any, ...]] = set()
     changed = False
+    new_comparado_added = False
 
     for payload in documents:
         document_type = (payload.get("document_type") or "other")[:50]
@@ -670,12 +680,14 @@ def _reconcile_documents(
                 )
             )
             changed = True
+            if document_type == "comparison":
+                new_comparado_added = True
 
     for key, document in list(current_by_key.items()):
         if key not in desired_keys:
             db.delete(document)
             changed = True
-    return changed
+    return changed, new_comparado_added
 
 
 def _reconcile_events(db: Session, bill: Bill, events: list[dict[str, Any]]) -> bool:
@@ -1360,14 +1372,18 @@ def _reconcile_orphan_voting_sessions(db: Session, bill: Bill) -> None:
 
 def upsert_bill(db: Session, data: dict[str, Any]) -> tuple[Bill, dict[str, Any]]:
     existing = db.execute(
-        select(Bill.id, Bill.status).where(
+        select(Bill.id, Bill.status, Bill.full_text_url).where(
             Bill.bulletin_number == data["bulletin_number"]
         )
     ).first()
     is_new = existing is None
     old_status = existing.status if existing is not None else None
+    old_full_text_url = existing.full_text_url if existing is not None else None
     new_status = _coerce_enum(BillStatus, data.get("status"), BillStatus.PENDING)
     already_terminal = existing is not None and existing.status in TERMINAL_STATUSES
+    new_full_text_url = (data.get("message_url") or data.get("full_text_url") or "")[
+        :500
+    ] or None
 
     origin_chamber = _get_or_create_chamber(
         db, data.get("_origin_chamber_type") or data.get("origin_chamber_type")
@@ -1389,8 +1405,7 @@ def upsert_bill(db: Session, data: dict[str, Any]) -> tuple[Bill, dict[str, Any]
         entry_date=entry_date_value,
         publication_date=_parse_date(data.get("publication_date")),
         law_number=(data.get("law_number") or "")[:50] or None,
-        full_text_url=(data.get("message_url") or data.get("full_text_url") or "")[:500]
-        or None,
+        full_text_url=new_full_text_url,
         origin_chamber_id=origin_chamber.id,
     )
     bill_id = db.execute(
@@ -1428,10 +1443,13 @@ def upsert_bill(db: Session, data: dict[str, Any]) -> tuple[Bill, dict[str, Any]
             db.flush()
         _reconcile_orphan_voting_sessions(db, bill)
         status_changed = old_status != new_status
+        full_text_url_changed = old_full_text_url != new_full_text_url
         return bill, {
             "is_new": False,
             "status_changed": status_changed,
             "stage_changed": False,
+            "full_text_url_changed": full_text_url_changed,
+            "new_comparado_added": False,
             "old_status": old_status,
             "new_status": new_status,
         }
@@ -1460,7 +1478,10 @@ def upsert_bill(db: Session, data: dict[str, Any]) -> tuple[Bill, dict[str, Any]
     )
     changed |= stages_changed
     changed |= _reconcile_events(db, bill, data.get("events") or [])
-    changed |= _reconcile_documents(db, bill, data.get("documents") or [])
+    documents_changed, new_comparado_added = _reconcile_documents(
+        db, bill, data.get("documents") or []
+    )
+    changed |= documents_changed
     changed |= _reconcile_sponsoring_ministries(
         db, bill, data.get("sponsoring_ministries") or []
     )
@@ -1482,35 +1503,88 @@ def upsert_bill(db: Session, data: dict[str, Any]) -> tuple[Bill, dict[str, Any]
 
     status_changed = (not is_new) and old_status != new_status
     stage_changed = (not is_new) and stages_changed
+    full_text_url_changed = old_full_text_url != new_full_text_url
 
     return bill, {
         "is_new": is_new,
         "status_changed": status_changed,
         "stage_changed": stage_changed,
+        "full_text_url_changed": full_text_url_changed,
+        "new_comparado_added": new_comparado_added,
         "old_status": old_status,
         "new_status": new_status,
     }
 
 
-def update_bill_ai_summary(
-    db: Session, bill_id: int, ai_summary: str | None
-) -> Bill | None:
+def upsert_bill_summary(
+    db: Session,
+    *,
+    bill_id: int,
+    kind: BillSummaryKind,
+    status: BillSummaryStatus,
+    content: dict[str, Any] | None,
+    prompt_version: str | None,
+    model_name: str | None,
+    source_url: str | None,
+    source_url_hash: str | None,
+    error_reason: str | None,
+) -> BillSummary | None:
+    """Idempotent upsert of one BillSummary row per (bill_id, kind).
+
+    Bumps the bill's ``sync_version`` (so mobile clients re-fetch the bill
+    detail and pick up the new structured summary) only when the summary
+    row actually changes. See ADR-0019.
+    """
     bill = db.execute(
         select(Bill).where(Bill.id == bill_id).with_for_update()
     ).scalar_one_or_none()
     if bill is None:
         return None
 
-    normalized = (ai_summary or "").strip() or None
-    should_update = bill.ai_summary != normalized or (
-        normalized is not None and bill.ai_summary_updated_at is None
-    )
-    if should_update:
-        bill.ai_summary = normalized
-        bill.ai_summary_updated_at = datetime.now(timezone.utc) if normalized else None
+    summary = db.execute(
+        select(BillSummary).where(
+            BillSummary.bill_id == bill_id, BillSummary.kind == kind
+        )
+    ).scalar_one_or_none()
+
+    now = datetime.now(timezone.utc)
+    fields = {
+        "status": status,
+        "content": content,
+        "prompt_version": prompt_version,
+        "model_name": model_name,
+        "source_url": source_url,
+        "source_url_hash": source_url_hash,
+        "error_reason": error_reason,
+        "generated_at": now,
+    }
+    if summary is None:
+        summary = BillSummary(bill_id=bill_id, kind=kind, **fields)
+        db.add(summary)
         _touch_syncable(db, bill)
-        db.flush()
-    return bill
+    else:
+        changed = any(
+            getattr(summary, key) != value
+            for key, value in fields.items()
+            if key != "generated_at"
+        )
+        for key, value in fields.items():
+            setattr(summary, key, value)
+        if changed:
+            _touch_syncable(db, summary)
+            _touch_syncable(db, bill)
+    db.flush()
+    return summary
+
+
+def get_bill_summary(
+    db: Session, *, bill_id: int, kind: BillSummaryKind
+) -> BillSummary | None:
+    return db.execute(
+        select(BillSummary).where(
+            BillSummary.bill_id == bill_id, BillSummary.kind == kind
+        )
+    ).scalar_one_or_none()
 
 
 def _normalize_match_name(value: str) -> str:

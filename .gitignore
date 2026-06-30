@@ -1,6 +1,7 @@
 __pycache__/
 *.pyc
 .env*
+!.env.example
 .venv/
 dump.rdb
 .mypy_cache/

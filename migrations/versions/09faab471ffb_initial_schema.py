@@ -1,8 +1,8 @@
 """initial_schema
 
-Revision ID: 9de1d22bdede
+Revision ID: 09faab471ffb
 Revises: 
-Create Date: 2026-06-25 13:13:19.698854
+Create Date: 2026-06-29 10:59:00.248470
 """
 
 from alembic import op
@@ -11,7 +11,7 @@ from sqlalchemy.dialects import postgresql
 
 
 # revision identifiers, used by Alembic.
-revision = '9de1d22bdede'
+revision = '09faab471ffb'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -426,7 +426,6 @@ def upgrade() -> None:
     sa.Column('bcn_id', sa.String(length=50), nullable=True),
     sa.Column('bulletin_number', sa.String(length=50), nullable=False),
     sa.Column('title', sa.String(length=500), nullable=False),
-    sa.Column('summary', sa.Text(), nullable=True),
     sa.Column('bill_type', sa.Enum('PROJECT', name='bill_type', native_enum=False), nullable=False),
     sa.Column('origin', sa.Enum('EXECUTIVE', 'DEPUTIES', name='bill_origin', native_enum=False), nullable=False),
     sa.Column('origin_chamber_id', sa.BigInteger(), nullable=True),
@@ -437,9 +436,6 @@ def upgrade() -> None:
     sa.Column('law_number', sa.String(length=50), nullable=True),
     sa.Column('current_committee_id', sa.BigInteger(), nullable=True),
     sa.Column('full_text_url', sa.String(length=500), nullable=True),
-    sa.Column('full_text', sa.Text(), nullable=True),
-    sa.Column('ai_summary', sa.Text(), nullable=True),
-    sa.Column('ai_summary_updated_at', sa.DateTime(timezone=True), nullable=True),
     sa.Column('id', sa.BigInteger(), nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
@@ -594,6 +590,28 @@ def upgrade() -> None:
     )
     op.create_index(op.f('ix_bill_stages_deleted_at'), 'bill_stages', ['deleted_at'], unique=False)
     op.create_index(op.f('ix_bill_stages_sync_version'), 'bill_stages', ['sync_version'], unique=False)
+    op.create_table('bill_summaries',
+    sa.Column('bill_id', sa.BigInteger(), nullable=False),
+    sa.Column('kind', sa.Enum('PROPOSAL', 'AMENDMENTS', name='bill_summary_kind', native_enum=False), nullable=False),
+    sa.Column('status', sa.Enum('SUCCESS', 'SKIPPED', 'FAILED', name='bill_summary_status', native_enum=False), nullable=False),
+    sa.Column('content', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+    sa.Column('prompt_version', sa.String(length=50), nullable=True),
+    sa.Column('model_name', sa.String(length=100), nullable=True),
+    sa.Column('source_url', sa.String(length=500), nullable=True),
+    sa.Column('source_url_hash', sa.String(length=64), nullable=True),
+    sa.Column('error_reason', sa.Text(), nullable=True),
+    sa.Column('generated_at', sa.DateTime(timezone=True), nullable=False),
+    sa.Column('id', sa.BigInteger(), nullable=False),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.Column('deleted_at', sa.DateTime(timezone=True), nullable=True),
+    sa.Column('sync_version', sa.BigInteger(), server_default=sa.text("nextval('global_sync_version_seq')"), nullable=False),
+    sa.ForeignKeyConstraint(['bill_id'], ['bills.id'], name=op.f('fk_bill_summaries_bill_id_bills'), ondelete='CASCADE'),
+    sa.PrimaryKeyConstraint('id', name=op.f('pk_bill_summaries')),
+    sa.UniqueConstraint('bill_id', 'kind', name='uq_bill_summaries_bill_kind')
+    )
+    op.create_index(op.f('ix_bill_summaries_deleted_at'), 'bill_summaries', ['deleted_at'], unique=False)
+    op.create_index(op.f('ix_bill_summaries_sync_version'), 'bill_summaries', ['sync_version'], unique=False)
     op.create_table('bill_topics',
     sa.Column('bill_id', sa.BigInteger(), nullable=False),
     sa.Column('topic_id', sa.BigInteger(), nullable=False),
@@ -797,6 +815,9 @@ def downgrade() -> None:
     op.drop_index(op.f('ix_bill_urgencies_deleted_at'), table_name='bill_urgencies')
     op.drop_table('bill_urgencies')
     op.drop_table('bill_topics')
+    op.drop_index(op.f('ix_bill_summaries_sync_version'), table_name='bill_summaries')
+    op.drop_index(op.f('ix_bill_summaries_deleted_at'), table_name='bill_summaries')
+    op.drop_table('bill_summaries')
     op.drop_index(op.f('ix_bill_stages_sync_version'), table_name='bill_stages')
     op.drop_index(op.f('ix_bill_stages_deleted_at'), table_name='bill_stages')
     op.drop_table('bill_stages')

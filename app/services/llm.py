@@ -33,14 +33,85 @@ REQUIRED_KEYS = {
     "importancia_ciudadana",
 }
 
-BILL_SUMMARY_SYSTEM_PROMPT = """Eres un analista legislativo chileno. Resume proyectos de ley en espanol claro para publico general.
+BILL_PROPOSAL_SYSTEM_PROMPT = (
+    "Eres un analista legislativo chileno que traduce proyectos de ley al "
+    "lenguaje ciudadano. Responde llamando a la herramienta record_proposal_summary "
+    "con un resumen claro, conciso y honesto en español neutro. Evita "
+    "tecnicismos, juicios de valor y reproducciones literales del articulado."
+)
 
-REGLAS:
-- Responde solo con texto plano, sin JSON.
-- Escribe 2 o 3 parrafos breves.
-- Explica que propone, a quien afecta y por que importa.
-- Evita tecnicismos innecesarios, listas y encabezados.
-"""
+BILL_AMENDMENTS_SYSTEM_PROMPT = (
+    "Eres un analista legislativo chileno. Te entregaré uno o más comparados "
+    "que registran las modificaciones acumuladas durante la tramitación de un "
+    "proyecto de ley. Llama a la herramienta record_amendments_summary con una "
+    "lista breve y específica de los cambios sustantivos respecto al texto "
+    "original — en español neutro, sin repetir el articulado."
+)
+
+PROPOSAL_TOOL = {
+    "name": "record_proposal_summary",
+    "description": (
+        "Registra el resumen ciudadano del texto fundacional (mensaje o moción) "
+        "del proyecto de ley."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "propose": {
+                "type": "string",
+                "description": (
+                    "Qué propone el proyecto, en 1 a 3 oraciones, lenguaje ciudadano."
+                ),
+            },
+            "affected_groups": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": (
+                    "Grupos o sectores específicos afectados (ej. trabajadores "
+                    "del retail, estudiantes de educación superior)."
+                ),
+            },
+            "why_it_matters": {
+                "type": "string",
+                "description": (
+                    "Por qué importa: contexto, problema que aborda, "
+                    "consecuencias esperadas."
+                ),
+            },
+            "key_objections": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": (
+                    "Posibles objeciones o tensiones que el texto deja "
+                    "explícitas. Lista vacía si no hay."
+                ),
+            },
+        },
+        "required": ["propose", "affected_groups", "why_it_matters", "key_objections"],
+    },
+}
+
+AMENDMENTS_TOOL = {
+    "name": "record_amendments_summary",
+    "description": (
+        "Registra los cambios sustantivos introducidos por los comparados "
+        "acumulados del proyecto de ley."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "changes": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": (
+                    "Cada cambio sustantivo descrito en una oración. Si los "
+                    "comparados no introducen modificaciones de fondo, lista vacía."
+                ),
+            },
+        },
+        "required": ["changes"],
+    },
+}
 
 
 def _httpx():
@@ -143,26 +214,74 @@ def analyze_norm_text(texto: str, titulo: str) -> dict[str, Any]:
 
 
 def can_generate_bill_summary() -> bool:
-    return bool(settings.gemini_api_key or settings.openwebui_api_key)
+    """Whether the Claude backend for bill summaries is configured.
+
+    See ADR-0019: bill summaries use Anthropic Claude exclusively; the
+    Gemini/OpenWebUI stack is reserved for the norms pipeline.
+    """
+    return bool(settings.anthropic_api_key)
 
 
-def generate_bill_summary(full_text: str) -> str:
+def generate_proposal_summary(full_text: str) -> dict[str, Any]:
+    """Generate the proposal-layer structured summary from the bill's PDF text.
+
+    Returns ``{propose, affected_groups, why_it_matters, key_objections}``.
+    Raises on any LLM or schema validation error; callers persist
+    ``status=FAILED`` with the exception message.
+    """
     text = (full_text or "").strip()
     if not text:
         raise ValueError("full_text is empty")
+    return _claude_tool_call(
+        system_prompt=BILL_PROPOSAL_SYSTEM_PROMPT,
+        tool=PROPOSAL_TOOL,
+        user_text=("Texto fundacional del proyecto de ley:\n\n" + text),
+    )
 
-    if settings.gemini_api_key:
-        try:
-            return _gemini_bill_summary(text)
-        except Exception as exc:
-            logger.warning(
-                "Gemini bill summary failed, falling back to Open WebUI: %s", exc
-            )
 
-    if settings.openwebui_api_key:
-        return _openwebui_bill_summary(text)
+def generate_amendments_summary(comparado_texts: list[str]) -> dict[str, Any]:
+    """Generate the amendments-layer structured summary from comparado documents.
 
-    raise RuntimeError("No LLM backend configured for bill summaries")
+    Returns ``{changes: list[str]}``. Raises on LLM or schema validation error.
+    """
+    texts = [t.strip() for t in comparado_texts if t and t.strip()]
+    if not texts:
+        raise ValueError("comparado_texts is empty")
+    joined = "\n\n---\n\n".join(texts)
+    return _claude_tool_call(
+        system_prompt=BILL_AMENDMENTS_SYSTEM_PROMPT,
+        tool=AMENDMENTS_TOOL,
+        user_text="Comparados acumulados del proyecto de ley:\n\n" + joined,
+    )
+
+
+def _claude_client():
+    if not settings.anthropic_api_key:
+        raise RuntimeError("ANTHROPIC_API_KEY is not configured")
+    import anthropic
+
+    return anthropic.Anthropic(api_key=settings.anthropic_api_key)
+
+
+def _claude_tool_call(
+    *, system_prompt: str, tool: dict[str, Any], user_text: str
+) -> dict[str, Any]:
+    client = _claude_client()
+    response = client.messages.create(
+        model=settings.anthropic_model,
+        max_tokens=2048,
+        temperature=0.2,
+        system=system_prompt,
+        tools=[tool],
+        tool_choice={"type": "tool", "name": tool["name"]},
+        messages=[{"role": "user", "content": user_text}],
+    )
+    for block in response.content:
+        if getattr(block, "type", None) == "tool_use" and block.name == tool["name"]:
+            return dict(block.input)
+    raise RuntimeError(
+        f"Claude did not emit the expected tool_use block ({tool['name']})"
+    )
 
 
 def _openwebui_with_pdf(pdf_bytes: bytes, filename: str, titulo: str) -> dict[str, Any]:
@@ -222,31 +341,6 @@ def _openwebui_text(texto: str, titulo: str) -> dict[str, Any]:
         return _parse_json(response.json()["choices"][0]["message"]["content"])
 
 
-def _openwebui_bill_summary(full_text: str) -> str:
-    if not settings.openwebui_api_key:
-        raise RuntimeError("OPENWEBUI_API_KEY is not configured")
-
-    prompt = (
-        "Resume el siguiente proyecto de ley chileno en lenguaje ciudadano.\n\n"
-        f"Texto:\n{full_text[:12000]}"
-    )
-    httpx = _httpx()
-    with httpx.Client(base_url=settings.openwebui_url, timeout=120) as client:
-        response = client.post(
-            "/api/chat/completions",
-            headers={**_headers(), "Content-Type": "application/json"},
-            json={
-                "model": settings.openwebui_model,
-                "messages": [
-                    {"role": "system", "content": BILL_SUMMARY_SYSTEM_PROMPT},
-                    {"role": "user", "content": prompt},
-                ],
-            },
-        )
-        response.raise_for_status()
-        return response.json()["choices"][0]["message"]["content"].strip()
-
-
 def _gemini_client():
     if not settings.gemini_api_key:
         raise RuntimeError("GEMINI_API_KEY is not configured")
@@ -296,22 +390,3 @@ def _gemini_text(texto: str, titulo: str) -> dict[str, Any]:
         ),
     )
     return _parse_json(response.text)
-
-
-def _gemini_bill_summary(full_text: str) -> str:
-    from google.genai import types
-
-    client = _gemini_client()
-    prompt = (
-        "Resume el siguiente proyecto de ley chileno en lenguaje ciudadano.\n\n"
-        f"Texto:\n{full_text[:12000]}"
-    )
-    response = client.models.generate_content(
-        model=settings.gemini_model,
-        contents=prompt,
-        config=types.GenerateContentConfig(
-            system_instruction=BILL_SUMMARY_SYSTEM_PROMPT,
-            temperature=0.2,
-        ),
-    )
-    return response.text.strip()

@@ -15,12 +15,21 @@ from sqlalchemy import (
     UniqueConstraint,
 )
 from sqlalchemy import Enum as SqlEnum
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
 from app.models.base import SyncableMixin
 from app.models.core import Topic
-from app.models.enums import BillOrigin, BillStatus, BillType, StageType, UrgencyType
+from app.models.enums import (
+    BillOrigin,
+    BillStatus,
+    BillSummaryKind,
+    BillSummaryStatus,
+    BillType,
+    StageType,
+    UrgencyType,
+)
 from app.models.legislature import Chamber, Committee, Legislator
 
 if TYPE_CHECKING:
@@ -73,10 +82,6 @@ class Bill(SyncableMixin, Base):
         ForeignKey("committees.id", ondelete="SET NULL")
     )
     full_text_url: Mapped[str | None] = mapped_column(String(500))
-    ai_summary: Mapped[str | None] = mapped_column(Text)
-    ai_summary_updated_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True)
-    )
     origin_chamber: Mapped[Chamber | None] = relationship(
         back_populates="originated_bills", foreign_keys=[origin_chamber_id]
     )
@@ -98,10 +103,56 @@ class Bill(SyncableMixin, Base):
         back_populates="bill"
     )
     voting_sessions: Mapped[list["VotingSession"]] = relationship(back_populates="bill")
+    summaries: Mapped[list["BillSummary"]] = relationship(back_populates="bill")
 
     def __str__(self) -> str:
         title = self.title if len(self.title) <= 80 else f"{self.title[:77]}..."
         return f"Boletin {self.bulletin_number} - {title}"
+
+
+class BillSummary(SyncableMixin, Base):
+    """A layered AI summary attempt for a bill. See ADR-0019."""
+
+    __tablename__ = "bill_summaries"
+    __table_args__ = (
+        UniqueConstraint("bill_id", "kind", name="uq_bill_summaries_bill_kind"),
+    )
+
+    bill_id: Mapped[int] = mapped_column(
+        ForeignKey("bills.id", ondelete="CASCADE"), nullable=False
+    )
+    kind: Mapped[BillSummaryKind] = mapped_column(
+        SqlEnum(
+            BillSummaryKind,
+            name="bill_summary_kind",
+            native_enum=False,
+            validate_strings=True,
+        ),
+        nullable=False,
+    )
+    status: Mapped[BillSummaryStatus] = mapped_column(
+        SqlEnum(
+            BillSummaryStatus,
+            name="bill_summary_status",
+            native_enum=False,
+            validate_strings=True,
+        ),
+        nullable=False,
+    )
+    content: Mapped[dict | None] = mapped_column(JSONB)
+    prompt_version: Mapped[str | None] = mapped_column(String(50))
+    model_name: Mapped[str | None] = mapped_column(String(100))
+    source_url: Mapped[str | None] = mapped_column(String(500))
+    source_url_hash: Mapped[str | None] = mapped_column(String(64))
+    error_reason: Mapped[str | None] = mapped_column(Text)
+    generated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+
+    bill: Mapped[Bill] = relationship(back_populates="summaries")
+
+    def __str__(self) -> str:
+        return f"{self.bill_id} - {self.kind.value} - {self.status.value}"
 
 
 class BillSponsoringMinistry(SyncableMixin, Base):

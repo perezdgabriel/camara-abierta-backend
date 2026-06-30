@@ -30,7 +30,10 @@ def _to_detail(bill) -> BillDetail:
     # chamber reflects the term they held when the bill was filed, not
     # today's active term. Mirrors voting's as-of-voting-date pattern.
     authors = svc.build_author_briefs(bill)
-    return BillDetail.model_validate({**bill.__dict__, **extra, "authors": authors})
+    ai_summary = svc.build_bill_ai_summary(bill, extra["last_activity_date"])
+    return BillDetail.model_validate(
+        {**bill.__dict__, **extra, "authors": authors, "ai_summary": ai_summary}
+    )
 
 
 @router.get("", response_model=BillsResponse)

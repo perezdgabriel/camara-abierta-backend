@@ -33,6 +33,19 @@ class Settings(BaseSettings):
     openwebui_api_key: str = Field(default="", alias="OPENWEBUI_API_KEY")
     openwebui_model: str = Field(default="llama3", alias="OPENWEBUI_MODEL")
     file_process_timeout: int = Field(default=120, alias="FILE_PROCESS_TIMEOUT")
+    # Bills AI summary (ADR-0019): Claude is the sole provider for the layered
+    # bill summaries. Gemini/OpenWebUI above are retained for the norms pipeline.
+    anthropic_api_key: str = Field(default="", alias="ANTHROPIC_API_KEY")
+    anthropic_model: str = Field(default="claude-haiku-4-5", alias="ANTHROPIC_MODEL")
+    ai_summary_prompt_version: str = Field(
+        default="v2", alias="AI_SUMMARY_PROMPT_VERSION"
+    )
+    # Global gate for the bills AI summary feature (ADR-0019). Default off so
+    # a fresh ``ingestors bills`` scan does not burn LLM budget; flip on per
+    # environment when ready (and use ``ai bills regenerate --bulletin X``
+    # for single-bill smoke tests). Applies to both the auto-enqueue in
+    # ``sync_bill`` and the ``ai bills regenerate`` backfill.
+    ai_summary_enabled: bool = Field(default=False, alias="AI_SUMMARY_ENABLED")
     resend_api_key: str = Field(default="", alias="RESEND_API_KEY")
     notification_email: str | None = Field(default=None, alias="NOTIFICATION_EMAIL")
     notification_from_email: str = Field(
@@ -60,7 +73,7 @@ class Settings(BaseSettings):
         alias="INGESTOR_BASE_URL_BCN",
     )
     ingestor_bills_start_year: int = Field(
-        default=2022,
+        default=1990,
         alias="INGESTOR_BILLS_START_YEAR",
     )
     ingestor_base_url_restsil: str = Field(

@@ -37,6 +37,7 @@ def _list_jobs(_: argparse.Namespace) -> dict[str, list[str]]:
         "voting-signals": ["backfill", "refresh-aggregate", "seed-fixtures"],
         "legislator-stats": ["refresh"],
         "audit": ["mocion-authors"],
+        "ai": ["bills regenerate"],
     }
 
 
@@ -207,6 +208,21 @@ def _run_audit_mocion_authors(args: argparse.Namespace) -> dict[str, Any]:
         lambda db: audit_run(db, reparse=args.reparse, export_csv=args.export_csv)
     )
     return {"job": "audit-mocion-authors", **payload}
+
+
+def _run_ai_bills_regenerate(args: argparse.Namespace) -> dict[str, Any]:
+    regenerate = _load_attr(
+        "app.services.bill_summary_backfill", "regenerate_bill_summaries"
+    )
+    payload = _with_session(
+        lambda db: regenerate(
+            db,
+            bulletin=args.bulletin,
+            kind=args.kind,
+            stale_only=args.stale_only,
+        )
+    )
+    return {"job": "ai-bills-regenerate", **payload}
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -541,6 +557,48 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Write a detail-rows CSV (one row per moción) to PATH.",
     )
     mocion_authors_parser.set_defaults(runner=_run_audit_mocion_authors)
+
+    ai_parser = subparsers.add_parser(
+        "ai",
+        help="AI enrichment commands (Claude-backed bill summaries; see ADR-0019).",
+    )
+    ai_subparsers = ai_parser.add_subparsers(dest="ai_command")
+    ai_subparsers.required = True
+
+    ai_bills_parser = ai_subparsers.add_parser(
+        "bills",
+        help="Bill summary regeneration commands.",
+    )
+    ai_bills_subparsers = ai_bills_parser.add_subparsers(dest="ai_bills_command")
+    ai_bills_subparsers.required = True
+
+    regenerate_parser = ai_bills_subparsers.add_parser(
+        "regenerate",
+        help=(
+            "Enqueue summary regeneration tasks. Honors the same triggers as "
+            "live sync; --stale-only restricts to rows whose prompt/model "
+            "differ from current config."
+        ),
+    )
+    regenerate_parser.add_argument(
+        "--bulletin",
+        help="Restrict to a single bulletin number. Default: all bills.",
+    )
+    regenerate_parser.add_argument(
+        "--kind",
+        choices=["proposal", "amendments", "all"],
+        default="all",
+        help="Summary layer to regenerate. Default: all layers.",
+    )
+    regenerate_parser.add_argument(
+        "--stale-only",
+        action="store_true",
+        help=(
+            "Only enqueue bills whose stored prompt_version or model_name "
+            "differs from current settings."
+        ),
+    )
+    regenerate_parser.set_defaults(runner=_run_ai_bills_regenerate)
 
     return parser
 
