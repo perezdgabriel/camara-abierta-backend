@@ -1,0 +1,64 @@
+name: deploy
+
+# CDK builds + pushes the container image asset to ECR during `cdk deploy`,
+# so there is no separate docker build/push step. Auth is GitHub OIDC -> the
+# `camara-github-deploy` role (see infra/cicd_stack.py); no static AWS keys.
+#
+# One-time setup before this can run:
+#   1. locally, with admin creds:  cd infra && cdk bootstrap && \
+#        cdk deploy CamaraCicd -c github_owner=<owner> -c github_repo=<repo>
+#   2. add the `AWS_ACCOUNT_ID` repo secret.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  id-token: write        # required for OIDC
+  contents: read
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/camara-github-deploy
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install CDK CLI + infra deps
+        run: |
+          npm i -g aws-cdk
+          pip install -r infra/requirements.txt
+
+      # Only the app stacks: CamaraCicd is bootstrap-only (managed locally) so the
+      # deploy role never modifies its own trust. Docker on the runner builds the
+      # image asset; CDK pushes it to the bootstrap ECR repo.
+      - name: CDK deploy
+        working-directory: infra
+        run: cdk deploy CamaraNetwork CamaraCompute --require-approval never
+
+      - name: Apply DB migrations (alembic upgrade head)
+        run: |
+          aws lambda invoke \
+            --function-name camara-migrate \
+            --cli-binary-format raw-in-base64-out \
+            /dev/stdout

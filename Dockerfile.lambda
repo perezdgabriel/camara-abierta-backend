@@ -1,0 +1,23 @@
+# Lambda-compatible image for API + jobs + llm + migrate (see infra/compute_stack.py).
+# One image, four handlers; CDK sets the CMD (handler) per function.
+FROM public.ecr.aws/lambda/python:3.14
+
+# uv for fast, locked installs (resolves from uv.lock).
+RUN pip install --no-cache-dir "uv>=0.8,<1"
+
+# Install runtime deps into the Lambda task root so imports resolve at runtime.
+# Requires `mangum` in the project deps (uv add mangum) for the API handler.
+# psycopg must ship libpq — use psycopg[binary] (wheel bundles it) since the
+# Lambda base image has no system libpq.
+COPY pyproject.toml uv.lock README.md ./
+RUN uv export --frozen --no-dev --no-emit-project -o requirements.txt \
+    && pip install --no-cache-dir -r requirements.txt --target "${LAMBDA_TASK_ROOT}"
+
+# App code + migration assets (alembic runs from the migration handler).
+COPY app        ${LAMBDA_TASK_ROOT}/app
+COPY alembic.ini ${LAMBDA_TASK_ROOT}/
+COPY migrations ${LAMBDA_TASK_ROOT}/migrations
+COPY templates  ${LAMBDA_TASK_ROOT}/templates
+
+# No CMD here: infra/compute_stack.py overrides it per function
+# (app.lambdas.api.handler | jobs.handler | llm.handler | migrate.handler).

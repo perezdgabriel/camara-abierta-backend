@@ -76,7 +76,7 @@ The default test suite (`uv run pytest`) uses SQLite in-memory (`sqlite+pysqlite
 
 ## Key conventions
 
-**No Alembic migrations in pre-release.** Modify SQLAlchemy models and run `recreate_db.py` to regenerate the schema. The single `*_initial_schema.py` migration is regenerated each time.
+**No Alembic migrations in pre-release — *local dev only*.** Modify SQLAlchemy models and run `recreate_db.py` to regenerate the schema. The single `*_initial_schema.py` migration is regenerated each time. This applies to local/ephemeral databases; **deployed environments (AWS RDS) are Alembic-only** — schema is evolved with additive `alembic upgrade head` migrations run by the migration Lambda, never `recreate_db` (which drops all data). See ADR-0022.
 
 **Enums for all categorical fields.** See `app/models/enums.py`. Never use raw strings for `status`, `origin`, vote type, chamber type, etc.
 
