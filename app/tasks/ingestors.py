@@ -47,7 +47,6 @@ from app.tasks.legislators import (
     sync_parliamentary_appointment,
 )
 from app.tasks.legislature import sync_legislature, sync_period
-from app.tasks.reference import sync_topic
 from app.tasks.voting import sync_voting_session
 
 logger = logging.getLogger(__name__)
@@ -1461,33 +1460,6 @@ def run_ingest_tabla_semanal(
     )
 
 
-def run_ingest_reference_data(*, dry_run: bool = False) -> dict[str, Any]:
-    dispatched = 0
-    errors = 0
-
-    try:
-        with OpenDataCamaraClient() as opendata:
-            for topic in opendata.get_materias():
-                try:
-                    if topic.get("name"):
-                        if not dry_run:
-                            _dispatch(sync_topic, topic)
-                        dispatched += 1
-                except Exception:
-                    logger.exception(
-                        "Failed to parse reference topic name=%s", topic.get("name")
-                    )
-                    errors += 1
-    except Exception:
-        logger.exception("Failed to fetch reference data from OpenDataCamaraClient")
-        errors += 1
-
-    if not dry_run:
-        _mark_synced("reference")
-
-    return _build_dispatch_result(dispatched, errors, dry_run)
-
-
 @app.task(name="app.tasks.ingestors.ingest_bills", bind=True, base=DatabaseTask)
 def ingest_bills(self, bulletin: str | None = None, since: str | None = None) -> dict:
     return run_ingest_bills(bulletin=bulletin, since=since)
@@ -1520,10 +1492,3 @@ def ingest_committees(self) -> dict:
 @app.task(name="app.tasks.ingestors.ingest_legislature", bind=True, base=DatabaseTask)
 def ingest_legislature(self) -> dict:
     return run_ingest_legislature()
-
-
-@app.task(
-    name="app.tasks.ingestors.ingest_reference_data", bind=True, base=DatabaseTask
-)
-def ingest_reference_data(self) -> dict:
-    return run_ingest_reference_data()

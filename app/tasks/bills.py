@@ -6,6 +6,7 @@ from app.core.celery_app import app
 from app.core.config import settings
 from app.core.session import task_session
 from app.ingestors.parsers.votes import VoteParser
+from app.models.core import Topic
 from app.models.enums import BillSummaryKind, BillSummaryStatus
 from app.services.llm import (
     can_generate_bill_summary,
@@ -15,7 +16,12 @@ from app.services.llm import (
 from app.services.notifications import send_alerta_proyecto
 from app.services.pdf import extract_comparado_text_from_url, extract_text_from_url
 from app.services.proyectos import get_bill
-from app.services.write import get_bill_summary, upsert_bill, upsert_bill_summary
+from app.services.write import (
+    apply_bill_topic_classification,
+    get_bill_summary,
+    upsert_bill,
+    upsert_bill_summary,
+)
 from app.tasks.base import DatabaseTask
 from app.tasks.voting import sync_voting_session
 
@@ -274,8 +280,11 @@ def _generate_proposal_layer(bill_id: int) -> dict:
             "status": status,
         }
 
+    with task_session() as db:
+        existing_topics = [name for (name,) in db.query(Topic.name).all()]
+
     try:
-        content = generate_proposal_summary(full_text)
+        content = generate_proposal_summary(full_text, existing_topics)
     except Exception as exc:
         logger.warning("Claude proposal summary failed for bill %s: %s", bill_id, exc)
         status = _persist_layer(
@@ -300,6 +309,17 @@ def _generate_proposal_layer(bill_id: int) -> dict:
         source_url=full_text_url,
         error_reason=None,
     )
+
+    # Claude's strict tool-use schema can't express minItems/maxItems on
+    # arrays, so the 1-3 count from ADR-0021 is enforced here rather than
+    # structurally.
+    topics = (content.get("topics") or [])[:3]
+    if topics:
+        with task_session() as db:
+            bill = get_bill(db, bill_id)
+            if bill is not None:
+                apply_bill_topic_classification(db, bill, topics)
+
     return {
         "bill_id": bill_id,
         "kind": BillSummaryKind.PROPOSAL.value,

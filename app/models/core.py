@@ -30,14 +30,7 @@ class Topic(SyncableMixin, Base):
     slug: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
     description: Mapped[str | None] = mapped_column(Text)
     icon: Mapped[str | None] = mapped_column(String(50))
-    parent_id: Mapped[int | None] = mapped_column(
-        ForeignKey("topics.id", ondelete="SET NULL")
-    )
 
-    parent: Mapped[Topic | None] = relationship(
-        remote_side="Topic.id", back_populates="children"
-    )
-    children: Mapped[list[Topic]] = relationship(back_populates="parent")
     bills: Mapped[list["Bill"]] = relationship(
         secondary="bill_topics", back_populates="topics"
     )

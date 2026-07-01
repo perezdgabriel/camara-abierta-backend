@@ -74,7 +74,7 @@ A core feature. Legislative language and official gazette content are simplified
 _Avoid_: a single `Bill.ai_summary` Text column (removed); free-text bill summaries without prompt/model versioning; running the LLM call on every `sync_bill` regardless of what changed; treating a missing summary row as identical to a tried-and-skipped row
 
 **Geography**:
-Chile's administrative and electoral geography: `Region`, `Province`, `Commune` (administrative), `District` (Chamber of Deputies), `Circumscription` (Senate). Users find their representatives by selecting their commune, which maps to both a district and a circumscription. The authoritative current baseline is the checked-in dataset at `app/geography/data/chile_current.json`, loaded manually with `python -m app.cli geography` and applied atomically via `apply_geography_dataset`. The live `reference-data` ingest is topic-only; geography is no longer fetched from OpenData. `IngestorState(entity_type="geography")` stores the applied dataset version in `last_cursor`.
+Chile's administrative and electoral geography: `Region`, `Province`, `Commune` (administrative), `District` (Chamber of Deputies), `Circumscription` (Senate). Users find their representatives by selecting their commune, which maps to both a district and a circumscription. The authoritative current baseline is the checked-in dataset at `app/geography/data/chile_current.json`, loaded manually with `python -m app.cli geography` and applied atomically via `apply_geography_dataset`. Geography is no longer fetched from OpenData at all — the OpenData `reference-data` ingest it used to share with topics was removed once topics became LLM-curated (see Topics, below; ADR-0021). `IngestorState(entity_type="geography")` stores the applied dataset version in `last_cursor`.
 
 **Search**:
 Elasticsearch indexes bills for full-text search across titles, summaries, and full text. Other domains (normas, reglamentos) use filtered DB queries.
@@ -86,7 +86,8 @@ A core feature (not yet implemented). Users will subscribe to bills, representat
 Internal tool (`sqladmin`) for manual data management. Used to update reference data or fix records when data collectors can't capture them.
 
 **Topics**:
-Hierarchical tags for bills (e.g. "Education" → "Higher Education"). Pre-defined reference data, but new topics can appear when fetching bills from upstream APIs. Also creatable via the admin panel.
+A small, flat, curated set of generic legislative-area tags (e.g. Trabajo, Salud, Educación) — not upstream legal "materias", and no longer hierarchical. Claude assigns 1-3 per bill as part of the proposal layer's call (no separate LLM call), preferring to reuse an existing topic over coining a new one; new ones go live immediately, no approval step. Seeded with a starting vocabulary (`scripts/seed_topics.py`) so early classifications converge instead of drifting. Also editable via the admin panel. See ADR-0021.
+_Avoid_: treating `Topic` as hierarchical (the `parent_id` field was dropped); assuming topics come from an upstream API ingest (that path was removed)
 
 **Período Legislativo**:
 The 4-year presidential and Chamber-of-Deputies cycle — all 155 deputies are elected together, anchored to the presidential mandate. Stored as `LegislativePeriod`. Date range is half-open `[start_date, end_date)`; the 2026–2030 period is `[2026-03-11, 2030-03-11)`. `number` is the historical period count. Senators serve 8-year terms with half renewing each period; `LegislatorTerm.period_id` ties each stint to its covering period. See ADR-0016.

@@ -350,7 +350,7 @@ class TopicAdmin(ModelView, model=Topic):
     icon = "fa-solid fa-tags"
     category = "Legislación"
 
-    column_list = [Topic.id, Topic.name, Topic.slug, Topic.parent]
+    column_list = [Topic.id, Topic.name, Topic.slug, Topic.icon]
     column_searchable_list = [Topic.name, Topic.slug]
     column_sortable_list = [Topic.id, Topic.name]
 

@@ -37,7 +37,13 @@ BILL_PROPOSAL_SYSTEM_PROMPT = (
     "Eres un analista legislativo chileno que traduce proyectos de ley al "
     "lenguaje ciudadano. Responde llamando a la herramienta record_proposal_summary "
     "con un resumen claro, conciso y honesto en español neutro. Evita "
-    "tecnicismos, juicios de valor y reproducciones literales del articulado."
+    "tecnicismos, juicios de valor y reproducciones literales del articulado.\n\n"
+    "Además, asigna entre 1 y 3 temas generales (áreas legislativas amplias, "
+    "no materias legales específicas — ej. 'Trabajo', no 'Negociación colectiva "
+    "en el sector pesquero'). Se te entregará la lista de temas existentes: "
+    "reutiliza uno de esa lista cuando razonablemente aplique al proyecto. Solo "
+    "crea un tema nuevo cuando ninguno de los existentes calce, y en ese caso "
+    "usa también un nombre genérico y breve."
 )
 
 BILL_AMENDMENTS_SYSTEM_PROMPT = (
@@ -91,8 +97,24 @@ PROPOSAL_TOOL = {
                     "explícitas. Lista vacía si no hay."
                 ),
             },
+            "topics": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": (
+                    "Entre 1 y 3 temas generales del proyecto (áreas "
+                    "legislativas amplias, no materias legales específicas). "
+                    "Reutiliza un tema de la lista entregada cuando aplique; "
+                    "crea uno nuevo solo si ninguno calza."
+                ),
+            },
         },
-        "required": ["propose", "affected_groups", "why_it_matters", "key_objections"],
+        "required": [
+            "propose",
+            "affected_groups",
+            "why_it_matters",
+            "key_objections",
+            "topics",
+        ],
     },
 }
 
@@ -229,20 +251,31 @@ def can_generate_bill_summary() -> bool:
     return bool(settings.anthropic_api_key)
 
 
-def generate_proposal_summary(full_text: str) -> dict[str, Any]:
+def generate_proposal_summary(
+    full_text: str, existing_topics: list[str]
+) -> dict[str, Any]:
     """Generate the proposal-layer structured summary from the bill's PDF text.
 
-    Returns ``{propose, affected_groups, why_it_matters, key_objections}``.
-    Raises on any LLM or schema validation error; callers persist
-    ``status=FAILED`` with the exception message.
+    Returns ``{propose, affected_groups, why_it_matters, key_objections, topics}``.
+    ``existing_topics`` is the current curated topic vocabulary; it's given to
+    the model so it prefers reusing an existing label over coining a new one
+    (see ADR-0021). Raises on any LLM or schema validation error; callers
+    persist ``status=FAILED`` with the exception message.
     """
     text = (full_text or "").strip()
     if not text:
         raise ValueError("full_text is empty")
+    topics_list = ", ".join(existing_topics) if existing_topics else "(ninguno aún)"
+    user_text = (
+        "Temas existentes (reutilizar cuando aplique): "
+        + topics_list
+        + "\n\nTexto fundacional del proyecto de ley:\n\n"
+        + text
+    )
     return _claude_tool_call(
         system_prompt=BILL_PROPOSAL_SYSTEM_PROMPT,
         tool=PROPOSAL_TOOL,
-        user_text=("Texto fundacional del proyecto de ley:\n\n" + text),
+        user_text=user_text,
     )
 
 

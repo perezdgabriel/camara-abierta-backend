@@ -392,6 +392,12 @@ def _get_or_create_circumscription(
     return circumscription
 
 
+def upsert_topic(db: Session, name: str) -> Topic:
+    """Upsert a curated :class:`Topic` by name. See ADR-0021."""
+    topic, _ = _upsert_topic_record(db, name)
+    return topic
+
+
 def _upsert_topic_record(db: Session, name: str) -> tuple[Topic, bool]:
     normalized_name = name.strip()
     if not normalized_name:
@@ -439,6 +445,13 @@ def _reconcile_topics(db: Session, bill: Bill, topic_names: list[str]) -> bool:
         bill.topics = desired_topics
         changed = True
     return changed
+
+
+def apply_bill_topic_classification(
+    db: Session, bill: Bill, topic_names: list[str]
+) -> bool:
+    """Apply an LLM-assigned topic classification to a bill. See ADR-0021."""
+    return _reconcile_topics(db, bill, topic_names)
 
 
 _AUTHORSHIP_NON_ALPHA_RE = re.compile(r"[^a-z0-9\s]")
@@ -2565,11 +2578,6 @@ def apply_geography_dataset(db: Session, dataset: GeographyDataset) -> dict[str,
         "districts": len(dataset.districts),
         "circumscriptions": len(dataset.circumscriptions),
     }
-
-
-def upsert_topic(db: Session, data: dict[str, Any]) -> Topic:
-    topic, _ = _upsert_topic_record(db, data.get("name") or "")
-    return topic
 
 
 def upsert_calendar_event(db: Session, data: dict[str, Any]) -> CalendarEvent:

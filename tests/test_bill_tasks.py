@@ -9,6 +9,19 @@ def ns(**kwargs):
     return SimpleNamespace(**kwargs)
 
 
+class FakeTopicDb:
+    """Fake session supporting the ``db.query(Topic.name).all()`` lookup."""
+
+    def __init__(self, names=()):
+        self._names = [(n,) for n in names]
+
+    def query(self, *_args):
+        return self
+
+    def all(self):
+        return self._names
+
+
 def session_sequence(*dbs):
     queue = list(dbs)
 
@@ -34,16 +47,20 @@ def test_generate_proposal_layer_returns_llm_unavailable_when_no_backend(monkeyp
 
 def test_generate_proposal_layer_persists_success(monkeypatch):
     first_db = object()
+    topics_db = FakeTopicDb(["Trabajo", "Salud"])
     second_db = object()
+    apply_db = object()
     upserts: list[dict] = []
+    applied: list[tuple] = []
 
     monkeypatch.setattr(bill_tasks, "can_generate_bill_summary", lambda: True)
     monkeypatch.setattr(
-        bill_tasks, "task_session", session_sequence(first_db, second_db)
+        bill_tasks,
+        "task_session",
+        session_sequence(first_db, topics_db, second_db, apply_db),
     )
 
     def fake_get_bill(db, bill_id):
-        assert db is first_db
         assert bill_id == 7
         return ns(full_text_url="https://example.com/bill.pdf")
 
@@ -51,13 +68,15 @@ def test_generate_proposal_layer_persists_success(monkeypatch):
         assert url == "https://example.com/bill.pdf"
         return "texto completo"
 
-    def fake_generate_proposal(text):
+    def fake_generate_proposal(text, existing_topics):
         assert text == "texto completo"
+        assert existing_topics == ["Trabajo", "Salud"]
         return {
             "propose": "Cosa",
             "affected_groups": ["A"],
             "why_it_matters": "Importa",
             "key_objections": [],
+            "topics": ["Trabajo"],
         }
 
     def fake_upsert(db, **kwargs):
@@ -65,10 +84,15 @@ def test_generate_proposal_layer_persists_success(monkeypatch):
         upserts.append(kwargs)
         return ns(id=1)
 
+    def fake_apply(db, bill, topic_names):
+        assert db is apply_db
+        applied.append(topic_names)
+
     monkeypatch.setattr(bill_tasks, "get_bill", fake_get_bill)
     monkeypatch.setattr(bill_tasks, "extract_text_from_url", fake_extract)
     monkeypatch.setattr(bill_tasks, "generate_proposal_summary", fake_generate_proposal)
     monkeypatch.setattr(bill_tasks, "upsert_bill_summary", fake_upsert)
+    monkeypatch.setattr(bill_tasks, "apply_bill_topic_classification", fake_apply)
 
     result = bill_tasks.generate_bill_summary_layer.run(7, "proposal")
 
@@ -81,6 +105,7 @@ def test_generate_proposal_layer_persists_success(monkeypatch):
     assert payload["content"]["propose"] == "Cosa"
     assert payload["source_url"] == "https://example.com/bill.pdf"
     assert payload["source_url_hash"] is not None
+    assert applied == [["Trabajo"]]
 
 
 def test_generate_proposal_layer_persists_skipped_when_no_full_text_url(monkeypatch):
@@ -112,7 +137,7 @@ def test_generate_proposal_layer_persists_failed_when_llm_raises(monkeypatch):
     monkeypatch.setattr(
         bill_tasks,
         "task_session",
-        session_sequence(object(), object()),
+        session_sequence(object(), FakeTopicDb(), object()),
     )
     monkeypatch.setattr(
         bill_tasks,
@@ -121,7 +146,7 @@ def test_generate_proposal_layer_persists_failed_when_llm_raises(monkeypatch):
     )
     monkeypatch.setattr(bill_tasks, "extract_text_from_url", lambda _url: "texto")
 
-    def raise_(_text):
+    def raise_(_text, _existing_topics):
         raise RuntimeError("boom")
 
     monkeypatch.setattr(bill_tasks, "generate_proposal_summary", raise_)

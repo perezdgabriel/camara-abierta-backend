@@ -30,7 +30,6 @@ def _list_jobs(_: argparse.Namespace) -> dict[str, list[str]]:
             "bcn-sparql-enrichment",
             "committees",
             "legislature",
-            "reference-data",
             "tabla-semanal",
         ],
         "loaders": ["geography"],
@@ -126,14 +125,6 @@ def _run_legislature(args: argparse.Namespace) -> dict[str, Any]:
     run_ingest_legislature = _load_attr("app.tasks.ingestors", "run_ingest_legislature")
     result = run_ingest_legislature(dry_run=args.dry_run)
     return {"job": "legislature", **result}
-
-
-def _run_reference_data(args: argparse.Namespace) -> dict[str, Any]:
-    run_ingest_reference_data = _load_attr(
-        "app.tasks.ingestors", "run_ingest_reference_data"
-    )
-    result = run_ingest_reference_data(dry_run=args.dry_run)
-    return {"job": "reference-data", **result}
 
 
 def _run_tabla_semanal(args: argparse.Namespace) -> dict[str, Any]:
@@ -436,13 +427,6 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Fetch and enqueue legislature sync jobs.",
     )
     legislature_parser.set_defaults(runner=_run_legislature)
-
-    reference_data_parser = ingestor_subparsers.add_parser(
-        "reference-data",
-        parents=[dry_run_parent],
-        help="Fetch and enqueue topic reference-data sync jobs.",
-    )
-    reference_data_parser.set_defaults(runner=_run_reference_data)
 
     tabla_semanal_parser = ingestor_subparsers.add_parser(
         "tabla-semanal",

@@ -1,8 +1,8 @@
 """initial_schema
 
-Revision ID: 6112e5691e01
+Revision ID: 7bd063487e79
 Revises: 
-Create Date: 2026-06-30 11:40:29.408102
+Create Date: 2026-06-30 20:02:35.052698
 """
 
 from alembic import op
@@ -11,7 +11,7 @@ from sqlalchemy.dialects import postgresql
 
 
 # revision identifiers, used by Alembic.
-revision = '6112e5691e01'
+revision = '7bd063487e79'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -230,13 +230,11 @@ def upgrade() -> None:
     sa.Column('slug', sa.String(length=100), nullable=False),
     sa.Column('description', sa.Text(), nullable=True),
     sa.Column('icon', sa.String(length=50), nullable=True),
-    sa.Column('parent_id', sa.BigInteger(), nullable=True),
     sa.Column('id', sa.BigInteger(), nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.Column('deleted_at', sa.DateTime(timezone=True), nullable=True),
     sa.Column('sync_version', sa.BigInteger(), server_default=sa.text("nextval('global_sync_version_seq')"), nullable=False),
-    sa.ForeignKeyConstraint(['parent_id'], ['topics.id'], name=op.f('fk_topics_parent_id_topics'), ondelete='SET NULL'),
     sa.PrimaryKeyConstraint('id', name=op.f('pk_topics')),
     sa.UniqueConstraint('name', name=op.f('uq_topics_name')),
     sa.UniqueConstraint('slug', name=op.f('uq_topics_slug'))

@@ -544,41 +544,6 @@ def test_run_ingest_bcn_sparql_enrichment_tolerates_sparql_outage(monkeypatch):
     assert dispatched == []
 
 
-def test_run_ingest_reference_data_dispatches_topics_only(monkeypatch):
-    dispatched: list[tuple[object, dict]] = []
-
-    class FakeOpenDataCamaraClient:
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *args):
-            return None
-
-        def get_materias(self) -> list[dict]:
-            return [{"name": "Transparencia", "source_id": 3}]
-
-    monkeypatch.setattr(
-        ingestor_tasks, "OpenDataCamaraClient", FakeOpenDataCamaraClient
-    )
-    monkeypatch.setattr(
-        ingestor_tasks,
-        "_dispatch",
-        lambda task, payload: dispatched.append((task, payload)),
-    )
-    monkeypatch.setattr(ingestor_tasks, "_mark_synced", lambda entity_type: None)
-    monkeypatch.setattr(ingestor_tasks.time, "sleep", lambda _: None)
-
-    result = ingestor_tasks.run_ingest_reference_data(dry_run=False)
-
-    assert result == {"errors": 0, "dry_run": False, "dispatched": 1}
-    assert dispatched == [
-        (
-            ingestor_tasks.sync_topic,
-            {"name": "Transparencia", "source_id": 3},
-        ),
-    ]
-
-
 def test_run_ingest_bills_merges_opendata_detail_before_dispatch(monkeypatch):
     dispatched: list[tuple[object, dict]] = []
 

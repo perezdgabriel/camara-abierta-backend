@@ -335,19 +335,6 @@ class OpenDataCamaraClient(BaseCongresoClient):
         logger.info("Fetched %d districts (opendata)", len(distritos))
         return distritos
 
-    def get_materias(self) -> list[dict[str, Any]]:
-        root = self._get_xml("WSLegislativo.asmx/retornarMaterias")
-        materias = [
-            {
-                "name": self._txt(materia, "Nombre"),
-                "source_id": self._int_val(materia, "Id") or None,
-            }
-            for materia in self._iter(root, "Materia")
-            if self._txt(materia, "Nombre")
-        ]
-        logger.info("Fetched %d topics (opendata)", len(materias))
-        return materias
-
     def _parse_proyecto_ley(self, proyecto: ET.Element) -> dict:
         return {
             "id": self._int_val(proyecto, "Id"),

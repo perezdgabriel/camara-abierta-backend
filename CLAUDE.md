@@ -39,7 +39,7 @@ python -m app.cli scrapers diario-oficial --target-date 2026-05-04 --dry-run
 just recreate-db      # or: python scripts/recreate_db.py --yes
 
 # Seed reference data
-just seed             # runs: reference, legislature, legislators
+just seed             # runs: geography, legislature, legislators, seed-blocs, seed-topics
 ```
 
 ## Architecture
@@ -98,6 +98,7 @@ The default test suite (`uv run pytest`) uses SQLite in-memory (`sqlite+pysqlite
 | BCN biographic enrichment | Out-of-band: `python -m app.cli ingestors bcn-sparql-enrichment` — profession, twitter, ParliamentaryAppointment history (ADR-0012) |
 | Senate votes | Dedicated `run_ingest_senate_votes` task via restsil `buscarVotaciones` (ADR-0013) |
 | Chamber votes | Dedicated `run_ingest_chamber_votes` task via OpenData `retornarVotacionesXAnno` + per-bulletin + per-deputy enrichment (ADR-0013) |
+| Bill topics | LLM-curated — Claude assigns 1-3 generic topics as part of the PROPOSAL AI-summary call (`app/services/llm.py`); not ingested from any upstream API (ADR-0021) |
 
 ## Domain language
 
@@ -106,4 +107,4 @@ The default test suite (`uv run pytest`) uses SQLite in-memory (`sqlite+pysqlite
 - **Sponsoring ministries:** Bill-scoped upstream labels, not a shared catalog.
 - **Data collector:** The concept covering both `scrapers/` (Playwright browser-driven) and `ingestors/` (httpx API clients). The split is an implementation detail.
 - **Sync:** Client-side delta sync protocol using `sync_version`. `ClientSyncState` tracks per-device progress; `ChangeLog` records mutations.
-- **Topics:** Hierarchical bill tags. Pre-defined reference data, but new ones can appear from upstream APIs.
+- **Topics:** A small, flat, curated set of generic legislative-area tags (e.g. Trabajo, Salud, Educación) — not upstream legal "materias". Claude assigns 1-3 per bill as part of the PROPOSAL AI-summary call, preferring to reuse an existing topic over coining a new one. See ADR-0021.

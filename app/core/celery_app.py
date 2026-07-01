@@ -26,6 +26,5 @@ app.conf.update(
         "app.tasks.committees",
         "app.tasks.voting",
         "app.tasks.legislature",
-        "app.tasks.reference",
     ),
 )
