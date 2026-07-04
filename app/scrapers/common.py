@@ -12,7 +12,7 @@ except ImportError:
     HAS_STEALTH = False
 
 try:
-    from camoufox.async_api import AsyncCamoufox
+    from camoufox.async_api import AsyncCamoufox  # type: ignore
 
     HAS_CAMOUFOX = True
 except ImportError:
@@ -25,7 +25,19 @@ try:
 except ImportError:
     HAS_PATCHRIGHT = False
 
-from playwright.async_api import BrowserContext, Page, ViewportSize, async_playwright
+try:
+    from playwright.async_api import (
+        BrowserContext,
+        Page,
+        ViewportSize,
+        async_playwright,
+    )
+
+    HAS_PLAYWRIGHT = True
+except ImportError:  # playwright is descoped from the deployed Lambda image
+    BrowserContext = Page = ViewportSize = Any  # type: ignore
+    async_playwright = None  # type: ignore
+    HAS_PLAYWRIGHT = False
 
 USER_AGENTS = [
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -150,7 +162,7 @@ async def launch_patchright(headed: bool = False) -> tuple[Any, BrowserContext, 
 async def launch_camoufox(headed: bool = False) -> tuple[Any, None, Page]:
     if not HAS_CAMOUFOX:
         raise RuntimeError("camoufox is not installed")
-    from browserforge.fingerprints import Screen
+    from browserforge.fingerprints import Screen  # type: ignore
 
     viewport = random.choice(VIEWPORTS)
     fox = AsyncCamoufox(
