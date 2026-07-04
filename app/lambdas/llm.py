@@ -1,25 +1,29 @@
-"""LLM handler: SQS-driven bill summarization (the `-c 1` llm worker analog).
+"""LLM handler: SQS-driven task execution (the `-c 1` llm worker analog).
 
 Reserved concurrency (set in infra/compute_stack.py) caps parallel Anthropic
-calls; batch_size=1 means one bill per invocation. Raising on failure returns the
-message to the queue, and after max_receive_count (3) it lands in the DLQ, which
-the CloudWatch alarm watches.
+calls; batch_size=1 means one message per invocation. The message is the generic
+dispatch envelope produced by app/core/dispatch.py:
 
-Wire `_summarize_bill` to the real summary path (app/services/llm.py — the same
-call `ai bills regenerate` uses).
+    {"task": "<celery task name>", "args": [...], "kwargs": {...}}
+
+We look the task up in the Celery registry and run its body eagerly in-process
+(`task.apply(...).get()`), which re-raises on failure — that returns the message
+to the queue, and after max_receive_count (3) it lands in the DLQ, which the
+CloudWatch alarm watches.
 """
 
 import json
 from typing import Any
 
+from app.core.celery_app import app as celery_app
 
-def _summarize_bill(bill_id: int) -> None:
-    # TODO: call the existing PROPOSAL AI-summary path (app/services/llm.py),
-    # e.g. within a task_session(). Kept as a stub to avoid guessing the API.
-    raise NotImplementedError
+# Populate the task registry (celery_app.conf.imports) so lookups by name work
+# without a running worker. Done once at cold start.
+celery_app.loader.import_default_modules()
 
 
 def handler(event: dict[str, Any], context: Any) -> None:
     for record in event.get("Records", []):
         body = json.loads(record["body"])
-        _summarize_bill(int(body["bill_id"]))
+        task = celery_app.tasks[body["task"]]
+        task.apply(args=body.get("args", []), kwargs=body.get("kwargs", {})).get()
