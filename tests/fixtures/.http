@@ -10,5 +10,9 @@ Authorization: Apikey 55d99a70-c1da-4f5c-bbc3-b5f9c2620515
 
 ###
 
-GET https://web-back.senado.cl/api/votes?id_legislatura=507&limit=10&offset=0&palabra_clave=&desde=&hasta= HTTP/1.1
-Accept: */*
+GET https://restsil.senado.cl/v3/proyectos/tramitacionProyecto/
+Accept: application/json, text/plain, */*
+Authorization: Apikey 55d99a70-c1da-4f5c-bbc3-b5f9c2620515
+/*
+
+proyectos/tramitacionProyecto
