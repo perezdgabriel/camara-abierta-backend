@@ -61,11 +61,9 @@ aws ssm put-parameter --type SecureString --name /camara/frontend-revalidate-tok
 Deploy-time context (passed with `-c`):
 
 - **`alarm_email`** — *required*; SNS alarm subscription target.
-- **`frontend_url`** — optional; base URL for the post-ingest revalidation ping
-  (empty disables it).
 
 ```bash
-cdk deploy CamaraCompute -c alarm_email=you@example.com -c frontend_url=https://camaraabierta.cl
+cdk deploy CamaraCompute -c alarm_email=you@example.com
 ```
 
 The `API_SHARED_SECRET` value (`/camara/api-shared-secret`) is the header the

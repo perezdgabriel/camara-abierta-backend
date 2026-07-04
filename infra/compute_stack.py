@@ -123,9 +123,6 @@ class ComputeStack(Stack):
         lambda_sg = network.lambda_sg
 
         base_env = {"DB_SECRET_ARN": network.db.secret.secret_arn}
-        # A public (non-secret) URL for the frontend revalidation ping. Set via
-        # `cdk deploy -c frontend_url=https://…`; empty disables the ping.
-        frontend_url = self.node.try_get_context("frontend_url") or ""
 
         def image(handler: str) -> _lambda.DockerImageCode:
             # Same build context/hash for every function -> image is built and
@@ -226,7 +223,7 @@ class ComputeStack(Stack):
                 "INGESTOR_RESTSIL_API_KEY_PARAM": _RESTSIL_KEY_PARAM,
                 "AI_SUMMARY_ENABLED": "false",
                 # Post-ingest cache revalidation ping to the frontend.
-                "FRONTEND_URL": frontend_url,
+                "FRONTEND_URL_PARAM": "https://camaraabierta.cl",
                 "FRONTEND_REVALIDATE_TOKEN_PARAM": _FRONTEND_REVALIDATE_TOKEN_PARAM,
             },
             **common,
