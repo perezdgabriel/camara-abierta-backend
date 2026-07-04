@@ -69,31 +69,46 @@ _FRONTEND_REVALIDATE_TOKEN_PARAM = "/camara/frontend-revalidate-token"
 # Mirrors app/core/celery_beat.py. Scraper entries are intentionally dropped
 # (descoped from the deployed image — see ADR-0022). Cron is UTC.
 _SCHEDULES: list[tuple[str, dict, str]] = [
-    ("ingest-bills", {"minute": "0", "hour": "5,9,13,17,21"}, "ingest_bills"),
+    (
+        "ingest-bills",
+        {"minute": "0", "hour": "10,13,17,21,23", "week_day": "MON-FRI"},
+        "ingest_bills",
+    ),
     (
         "ingest-senate-votes",
-        {"minute": "15", "hour": "5,9,13,17,21"},
+        {"minute": "15", "hour": "10,13,17,21,23", "week_day": "MON-FRI"},
         "ingest_senate_votes",
     ),
     (
         "ingest-chamber-votes",
-        {"minute": "30", "hour": "5,9,13,17,21"},
+        {"minute": "30", "hour": "10,13,17,21,23", "week_day": "MON-FRI"},
         "ingest_chamber_votes",
     ),
-    ("ingest-legislators", {"minute": "0", "hour": "3"}, "ingest_legislators"),
-    ("ingest-committees", {"minute": "0", "hour": "3"}, "ingest_committees"),
-    ("ingest-legislature", {"minute": "0", "hour": "3"}, "ingest_legislature"),
+    (
+        "ingest-legislators",
+        {"minute": "0", "hour": "3", "week_day": "MON-FRI"},
+        "ingest_legislators",
+    ),
+    (
+        "ingest-legislature",
+        {"minute": "0", "hour": "3", "week_day": "MON-FRI"},
+        "ingest_legislature",
+    ),
     (
         "refresh-voting-window",
-        {"minute": "0", "hour": "4"},
+        {"minute": "0", "hour": "4", "week_day": "MON-FRI"},
         "refresh_voting_window_aggregate",
     ),
     (
         "refresh-legislator-stats",
-        {"minute": "20", "hour": "4"},
+        {"minute": "20", "hour": "4", "week_day": "MON-FRI"},
         "refresh_legislator_voting_stats",
     ),
-    ("alert-orphan-votes", {"minute": "45", "hour": "5"}, "alert_orphan_votes"),
+    (
+        "alert-orphan-votes",
+        {"minute": "45", "hour": "5", "week_day": "MON-FRI"},
+        "alert_orphan_votes",
+    ),
 ]
 
 

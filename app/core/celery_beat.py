@@ -13,48 +13,44 @@ app.conf.beat_schedule = {
     },
     "ingest-bills": {
         "task": "app.tasks.ingestors.ingest_bills",
-        "schedule": crontab(hour="5,9,13,17,21", minute=0),
+        "schedule": crontab(hour="10,13,17,21,23", minute=0, day_of_week="mon-fri"),
     },
     "ingest-senate-votes": {
         # Same 5×/day cadence as bills. The watermarked desc-walk is cheap
         # (one paged restsil call when nothing new) so cadence is mostly a
         # freshness knob — see ADR-0013.
         "task": "app.tasks.ingestors.ingest_senate_votes",
-        "schedule": crontab(hour="5,9,13,17,21", minute=15),
+        "schedule": crontab(hour="10,13,17,21,23", minute=15, day_of_week="mon-fri"),
     },
     "ingest-chamber-votes": {
         # OpenData bulk-year-feed driven, watermarked by `<Id>`. Offset 30
         # minutes from bills/senate-votes within each wave so the upstream
         # isn't hit by three tasks at once. See ADR-0013.
         "task": "app.tasks.ingestors.ingest_chamber_votes",
-        "schedule": crontab(hour="5,9,13,17,21", minute=30),
+        "schedule": crontab(hour="10,13,17,21,23", minute=30, day_of_week="mon-fri"),
     },
     "ingest-legislators": {
         "task": "app.tasks.ingestors.ingest_legislators",
-        "schedule": crontab(hour=3, minute=0),
-    },
-    "ingest-committees": {
-        "task": "app.tasks.ingestors.ingest_committees",
-        "schedule": crontab(hour=3, minute=0),
+        "schedule": crontab(hour=3, minute=0, day_of_week="mon-fri"),
     },
     "ingest-legislature": {
         "task": "app.tasks.ingestors.ingest_legislature",
-        "schedule": crontab(hour=3, minute=0),
+        "schedule": crontab(hour=3, minute=0, day_of_week="mon-fri"),
     },
     "refresh-voting-window-aggregate": {
         "task": "app.tasks.voting.refresh_voting_window_aggregate",
-        "schedule": crontab(hour=4, minute=0),
+        "schedule": crontab(hour=4, minute=0, day_of_week="mon-fri"),
         "kwargs": {"window_days": 30},
     },
     "refresh-legislator-voting-stats": {
         "task": "app.tasks.voting.refresh_legislator_voting_stats",
-        "schedule": crontab(hour=4, minute=20),
+        "schedule": crontab(hour=4, minute=20, day_of_week="mon-fri"),
     },
     "alert-orphan-votes": {
-        # Daily SLA check on vote rows that resolved with legislator_id=NULL.
+        # Weekday SLA check on vote rows that resolved with legislator_id=NULL.
         # See ADR-0015 — orphans get claimed by _reconcile_orphan_votes once
         # the matching LegislatorTerm arrives; this surfaces ones that don't.
         "task": "app.tasks.legislators.alert_orphan_votes",
-        "schedule": crontab(hour=5, minute=45),
+        "schedule": crontab(hour=5, minute=45, day_of_week="mon-fri"),
     },
 }
