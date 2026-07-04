@@ -19,7 +19,15 @@ class Base(DeclarativeBase):
 
 
 def build_engine(database_url: str) -> Engine:
-    engine = create_engine(database_url, pool_pre_ping=True)
+    # Postgres (deployed): a small, recycled pool sized for Lambda — a warm
+    # container reuses one connection, pre_ping revalidates after a freeze, and
+    # recycle avoids RDS-side idle drops, all while staying well under
+    # max_connections. The pool_size/max_overflow kwargs are invalid for the
+    # in-memory SQLite test pool, so only Postgres gets them.
+    kwargs: dict[str, object] = {"pool_pre_ping": True}
+    if database_url.startswith("postgresql"):
+        kwargs.update(pool_size=1, max_overflow=2, pool_recycle=1800)
+    engine = create_engine(database_url, **kwargs)
     if engine.dialect.name == "sqlite":
         register_sqlite_unaccent(engine)
     return engine

@@ -23,6 +23,22 @@ class Settings(BaseSettings):
     )
     database_url: str = Field(..., alias="DATABASE_URL")
     redis_url: str = Field(default="redis://localhost:6379/0", alias="REDIS_URL")
+    # Deployment / serverless (ADR-0022). Defaults keep local dev on Celery and
+    # unauthenticated; CDK sets these on the deployed functions.
+    dispatch_backend: Literal["celery", "serverless"] = Field(
+        default="celery", alias="DISPATCH_BACKEND"
+    )
+    llm_queue_url: str | None = Field(default=None, alias="LLM_QUEUE_URL")
+    # Shared secret for the API Function URL. Empty locally -> middleware is a
+    # no-op (open); set in prod -> non-exempt paths require the header.
+    api_shared_secret: str = Field(default="", alias="API_SHARED_SECRET")
+    # Interactive docs on by default; CDK sets DOCS_ENABLED=false on the API fn.
+    docs_enabled: bool = Field(default=True, alias="DOCS_ENABLED")
+    # Frontend cache revalidation ping target (fire-and-forget after ingests).
+    frontend_url: str | None = Field(default=None, alias="FRONTEND_URL")
+    frontend_revalidate_token: str | None = Field(
+        default=None, alias="FRONTEND_REVALIDATE_TOKEN"
+    )
     gobierno_actual_inicio: date = date(2026, 3, 11)
     admin_secret_key: str = Field(default="change-me", alias="ADMIN_SECRET_KEY")
     admin_username: str = Field(default="admin", alias="ADMIN_USERNAME")
@@ -140,6 +156,11 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
+    # In the deployed path, resolve DB_SECRET_ARN + *_PARAM references into the
+    # plain env vars Settings reads, before construction. No-op locally.
+    from app.core.secrets import hydrate_secrets_into_env
+
+    hydrate_secrets_into_env()
     return Settings()  # type: ignore[call-arg]
 
 
