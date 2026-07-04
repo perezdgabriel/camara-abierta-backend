@@ -7,6 +7,8 @@ migration Lambda, CloudWatch alarms -> SNS) is the next piece to add and will
 consume NetworkStack's `vpc` / `db` / `db_sg` / `nat`.
 """
 
+import os
+
 import aws_cdk as cdk
 
 from cicd_stack import CicdStack
@@ -15,8 +17,13 @@ from network_stack import NetworkStack
 
 app = cdk.App()
 
-# us-east-1 per ADR-0022 (cheapest / best free-tier coverage).
-env = cdk.Environment(region="us-east-1")
+# us-east-1 per ADR-0022 (cheapest / best free-tier coverage). The account must
+# be concrete (not env-agnostic) or context lookups like fck-nat's AMI search
+# fail; the cdk CLI sets CDK_DEFAULT_ACCOUNT from the active credentials.
+env = cdk.Environment(
+    account=os.environ.get("CDK_DEFAULT_ACCOUNT"),
+    region="us-east-1",
+)
 
 network = NetworkStack(app, "CamaraNetwork", env=env)
 ComputeStack(app, "CamaraCompute", network=network, env=env)

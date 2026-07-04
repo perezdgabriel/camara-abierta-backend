@@ -64,8 +64,12 @@ coldstart: recreate-db seed bills senate-votes chamber-votes
 # ONLY — never `recreate_db` against a deployed DB.
 
 # 1. Dump local data only (schema comes from Alembic on RDS, not this dump).
+#    Exclude alembic_version: Alembic owns the migration state on RDS (the migrate
+#    Lambda stamps it), so shipping it here collides with the existing row.
+#    --disable-triggers is dropped — it's a no-op for the -Fc archive, and the
+#    restore instead uses `session_replication_role = replica` (see restore-rds).
 coldstart-dump db_url=env_var_or_default("DATABASE_URL", "postgresql://postgres@localhost:5432/camara_abierta"):
-    pg_dump "{{db_url}}" --data-only --disable-triggers --no-owner --no-privileges -Fc -f coldstart.dump
+    pg_dump "{{db_url}}" --data-only --no-owner --no-privileges --exclude-table=alembic_version -Fc -f coldstart.dump
 
 # 2. Open an SSM port-forward to the private RDS through the fck-nat bastion.
 #    fck-nat enables SSM automatically and runs as an ASG (min=max=1), so we
@@ -86,7 +90,16 @@ rds-tunnel rds_endpoint:
 
 # 3. Restore into the Alembic-created RDS schema through the step-2 tunnel, then
 #    verify the shared sync sequence carried over (must exceed max(sync_version)).
-#    rds_url e.g. postgresql://<master>:<pw>@localhost:55432/camara_abierta
+#    rds_url e.g. postgresql://camara:<pw>@localhost:55432/camara
+#    NOTE: pg_restore --disable-triggers needs true superuser to disable the FK
+#    RI_ConstraintTrigger system triggers, which RDS's rds_superuser cannot do.
+#    Instead we stream the data-only SQL through psql with
+#    `session_replication_role = replica` (RDS-permitted), which suppresses FK/
+#    user triggers for the session so rows load regardless of dump order.
 restore-rds rds_url:
-    pg_restore --data-only --disable-triggers --no-owner -d "{{rds_url}}" coldstart.dump
+    #!/usr/bin/env bash
+    set -euo pipefail
+    { echo "SET session_replication_role = replica;"; \
+      pg_restore --data-only --no-owner -f - coldstart.dump; } \
+      | psql "{{rds_url}}" --single-transaction -v ON_ERROR_STOP=1
     psql "{{rds_url}}" -c "SELECT last_value FROM global_sync_version_seq;"

@@ -44,6 +44,34 @@ Then add the **`AWS_ACCOUNT_ID`** repo secret. After that, pushes to `main` run
 (`alembic upgrade head`). `CamaraCicd` is deliberately **not** deployed by the
 pipeline, so the deploy role never edits its own trust.
 
+## Secrets & deploy-time context (one-time)
+
+App secrets are **not** in the CDK template. `compute_stack.py` passes each
+function the SSM parameter *name* (e.g. `ANTHROPIC_API_KEY_PARAM`) + GetParameter
+permission; `app/core/secrets.py` resolves the value at cold start. Create the
+SecureString parameters once before the first `CamaraCompute` deploy:
+
+```bash
+aws ssm put-parameter --type SecureString --name /camara/anthropic-key            --value "sk-ant-…"
+aws ssm put-parameter --type SecureString --name /camara/restsil-key              --value "…"
+aws ssm put-parameter --type SecureString --name /camara/api-shared-secret        --value "$(openssl rand -hex 32)"
+aws ssm put-parameter --type SecureString --name /camara/frontend-revalidate-token --value "…"  # matches Vercel REVALIDATE_TOKEN
+```
+
+Deploy-time context (passed with `-c`):
+
+- **`alarm_email`** — *required*; SNS alarm subscription target.
+- **`frontend_url`** — optional; base URL for the post-ingest revalidation ping
+  (empty disables it).
+
+```bash
+cdk deploy CamaraCompute -c alarm_email=you@example.com -c frontend_url=https://camaraabierta.cl
+```
+
+The `API_SHARED_SECRET` value (`/camara/api-shared-secret`) is the header the
+frontend sends as `X-Camara-Api-Key`; the API Function URL is emitted as the
+`ApiFunctionUrl` stack output.
+
 ## One-time data bootstrap (see ADR-0022)
 
 The 1990→present backfill runs **locally**, then loads into the private RDS

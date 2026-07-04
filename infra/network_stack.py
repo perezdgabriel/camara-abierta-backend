@@ -8,11 +8,14 @@ CloudWatch alarms) lives in a separate stack that consumes `vpc`, `db`,
 
 Layout:
   - public              : fck-nat lives here
-  - PRIVATE_WITH_EGRESS : job + LLM Lambdas (egress to Congress APIs / Anthropic via fck-nat)
-  - PRIVATE_ISOLATED    : RDS + the API Lambda (no internet route at all)
+  - PRIVATE_WITH_EGRESS : API + job + LLM + migrate Lambdas (egress to Congress
+                          APIs / Anthropic / Secrets Manager / SSM via fck-nat)
+  - PRIVATE_ISOLATED    : RDS only (no internet route at all)
 """
 
-from aws_cdk import Stack, Tags, aws_ec2 as ec2, aws_rds as rds
+from aws_cdk import Stack, Tags
+from aws_cdk import aws_ec2 as ec2
+from aws_cdk import aws_rds as rds
 from cdk_fck_nat import FckNatInstanceProvider
 from constructs import Construct
 
@@ -21,17 +24,24 @@ class NetworkStack(Stack):
     def __init__(self, scope: Construct, id: str, **kwargs) -> None:
         super().__init__(scope, id, **kwargs)
 
-        # --- NAT: t4g.nano via fck-nat (ASG min=max=1, self-healing) ---
-        # enable_ssm defaults True, so the SSM policy is attached automatically
-        # and this box is a Session Manager target out of the box. That's what
-        # lets it double as the bastion for `just rds-tunnel`.
+        # --- NAT: t3.micro via fck-nat (ASG min=max=1, self-healing) ---
+        # t3.micro (x86) is free-tier eligible (750h/mo/12mo); the ARM t4g.nano
+        # the ADR originally chose is not, and new-account Free Plans hard-fail
+        # its launch. fck-nat auto-selects the matching x86 AMI. enable_ssm
+        # defaults True, so this box is a Session Manager target out of the box —
+        # what lets it double as the bastion for `just rds-tunnel`.
         self.nat = FckNatInstanceProvider(
             instance_type=ec2.InstanceType.of(
-                ec2.InstanceClass.T4G, ec2.InstanceSize.NANO
+                ec2.InstanceClass.T3, ec2.InstanceSize.MICRO
+            ),
+            # fck-nat defaults to its arm64 AMI and does NOT auto-switch when the
+            # instance type is x86 -> launch-template arch mismatch. Pin the amd64
+            # fck-nat AMI (owner 568608671756) to match t3.micro.
+            machine_image=ec2.LookupMachineImage(
+                name="fck-nat-al2023-*-x86_64-ebs",
+                owners=["568608671756"],
             ),
         )
-        # Deterministic tag so `rds-tunnel` can resolve the live ASG instance.
-        Tags.of(self.nat).add("role", "nat-bastion")
 
         self.vpc = ec2.Vpc(
             self,
@@ -65,6 +75,14 @@ class NetworkStack(Stack):
             "Allow VPC private subnets to egress via fck-nat",
         )
 
+        # Deterministic tag so `just rds-tunnel` can resolve the live NAT box by
+        # `role=nat-bastion`. The NAT runs under an ASG (only populated once the
+        # VPC above has configured it), so tag the ASG — CDK propagates ASG tags
+        # to instances at launch. Tagging the provider directly fails (it isn't a
+        # construct in the tree until configured).
+        for asg in self.nat.auto_scaling_groups:
+            Tags.of(asg).add("role", "nat-bastion")
+
         # --- RDS: private, single-AZ, PG16 to match the local `postgres:16` engine ---
         self.db_sg = ec2.SecurityGroup(
             self, "DbSg", vpc=self.vpc, allow_all_outbound=False
@@ -77,8 +95,9 @@ class NetworkStack(Stack):
                 # Pin to a 16.x currently offered in the target region; must match local.
                 version=rds.PostgresEngineVersion.VER_16_4,
             ),
+            # db.t3.micro (x86) is RDS-free-tier eligible; matches the Free Plan.
             instance_type=ec2.InstanceType.of(
-                ec2.InstanceClass.T4G, ec2.InstanceSize.MICRO
+                ec2.InstanceClass.T3, ec2.InstanceSize.MICRO
             ),
             vpc=self.vpc,
             vpc_subnets=ec2.SubnetSelection(
@@ -86,6 +105,10 @@ class NetworkStack(Stack):
             ),
             security_groups=[self.db_sg],
             multi_az=False,
+            # Explicit DB name so the generated secret carries `dbname=camara`
+            # deterministically (app builds DATABASE_URL from it; restore-rds
+            # targets it). Without this the secret may omit dbname.
+            database_name="camara",
             allocated_storage=20,
             storage_type=rds.StorageType.GP3,
             # The one justified Secrets Manager use (~$0.40/mo): generated master
@@ -101,11 +124,14 @@ class NetworkStack(Stack):
         self.db_sg.add_ingress_rule(
             self.nat.security_group,
             ec2.Port.tcp(5432),
-            "SSM tunnel via NAT bastion -> Postgres",
+            "SSM tunnel via NAT bastion to Postgres",
         )
 
-    def allow_lambda(self, lambda_sg: ec2.ISecurityGroup) -> None:
-        """Let a compute-stack Lambda's SG reach Postgres. Call from ComputeStack."""
+        # Shared SG for all DB-talking Lambdas. Defined here (not in ComputeStack)
+        # so the db_sg <- lambda_sg ingress rule lives entirely in this stack;
+        # putting the rule across stacks makes NetworkStack depend on ComputeStack
+        # while ComputeStack already depends on NetworkStack -> dependency cycle.
+        self.lambda_sg = ec2.SecurityGroup(self, "LambdaSg", vpc=self.vpc)
         self.db_sg.add_ingress_rule(
-            lambda_sg, ec2.Port.tcp(5432), "Lambda -> Postgres"
+            self.lambda_sg, ec2.Port.tcp(5432), "Lambda to Postgres"
         )

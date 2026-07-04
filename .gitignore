@@ -7,3 +7,8 @@ dump.rdb
 .mypy_cache/
 .pytest_cache/
 .ruff_cache/
+cdk.out/
+# Deploy artifacts (local RDS bootstrap / tooling)
+coldstart.dump
+*.pem
+session-manager-plugin.pkg
