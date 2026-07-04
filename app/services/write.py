@@ -6,7 +6,7 @@ import logging
 import re
 import unicodedata
 from datetime import date, datetime, timedelta, timezone
-from typing import Any
+from typing import Any, NamedTuple
 
 from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -476,39 +476,109 @@ def _canonicalize_legislator_name(name: str) -> str:
     return _AUTHORSHIP_WHITESPACE_RE.sub(" ", name).strip()
 
 
-def _build_legislator_lookup(db: Session) -> dict[str, int]:
-    """Map ``canonicalize(Legislator.full_name) -> Legislator.id``.
+class _LegislatorLookup(NamedTuple):
+    by_full_name: dict[str, int]
+    by_last_name: dict[str, list[tuple[int, str]]]
 
-    Collisions (two legislators normalizing to the same key) are logged at
-    ERROR and dropped from the lookup — matching them later would be
-    ambiguous, so we prefer a logged miss over a silent wrong-match.
+
+def _build_legislator_lookup(db: Session) -> _LegislatorLookup:
+    """Build the exact and surname-fallback indices used for authorship matching.
+
+    ``by_full_name`` maps ``canonicalize(Legislator.full_name) -> Legislator.id``
+    for the primary exact match. Collisions (two legislators normalizing to the
+    same key) are logged at ERROR and dropped from that index — matching them
+    later would be ambiguous, so we prefer a logged miss over a silent
+    wrong-match.
+
+    ``by_last_name`` maps the canonicalized surname to a list of
+    ``(legislator_id, canonicalized first_name)`` pairs. It backs
+    ``_match_authorship_by_surname``, used when the exact match misses because
+    upstream and the DB disagree on how many given names to carry (e.g. a bill's
+    author string reads "Kuschel Silva, Carlos Ignacio" while the DB only has
+    "Carlos", or "Ñanco Vásquez, Ericka" while the DB leads with "Coca Ericka").
     """
-    lookup: dict[str, int] = {}
+    by_full_name: dict[str, int] = {}
+    by_last_name: dict[str, list[tuple[int, str]]] = {}
     seen_full_names: dict[str, str] = {}
     collided: set[str] = set()
-    for legislator_id, full_name in db.execute(
-        select(Legislator.id, Legislator.full_name)
+    for legislator_id, full_name, last_name, first_name in db.execute(
+        select(
+            Legislator.id,
+            Legislator.full_name,
+            Legislator.last_name,
+            Legislator.first_name,
+        )
     ):
         key = _canonicalize_legislator_name(full_name or "")
-        if not key:
-            continue
-        if key in collided:
-            continue
-        prior = seen_full_names.get(key)
-        if prior is not None:
-            logger.error(
-                "Legislator canonical-key collision on %r: %r and %r both "
-                "normalize to the same key; both skipped from authorship matching",
-                key,
-                prior,
-                full_name,
-            )
-            collided.add(key)
-            lookup.pop(key, None)
-            continue
-        seen_full_names[key] = full_name
-        lookup[key] = legislator_id
-    return lookup
+        if key and key not in collided:
+            prior = seen_full_names.get(key)
+            if prior is not None:
+                logger.error(
+                    "Legislator canonical-key collision on %r: %r and %r both "
+                    "normalize to the same key; both skipped from authorship matching",
+                    key,
+                    prior,
+                    full_name,
+                )
+                collided.add(key)
+                by_full_name.pop(key, None)
+            else:
+                seen_full_names[key] = full_name
+                by_full_name[key] = legislator_id
+
+        last_key = _normalize_match_name(last_name or "")
+        first_key = _normalize_match_name(first_name or "")
+        if last_key and first_key:
+            by_last_name.setdefault(last_key, []).append((legislator_id, first_key))
+
+    return _LegislatorLookup(by_full_name=by_full_name, by_last_name=by_last_name)
+
+
+def _match_authorship_by_surname(
+    by_last_name: dict[str, list[tuple[int, str]]], name: str
+) -> int | None:
+    """Fall back to a surname-exact / given-name-subset match.
+
+    Upstream author strings arrive as ``"Apellidos, Nombres"``. This matches
+    the surname exactly and accepts a given-name match when one side's given
+    names are a subset of the other's — covering both a dropped middle name
+    ("Carlos" vs "Carlos Ignacio") and a commonly-used name that isn't the
+    first one on record ("Ericka" vs "Coca Ericka"). Returns ``None`` when
+    there's no comma to split on, or when zero or several legislators qualify
+    — an ambiguous match is left for the caller's warning log rather than
+    guessed at.
+    """
+    if "," not in name:
+        return None
+    last_part, first_part = name.split(",", 1)
+    last_key = _normalize_match_name(last_part)
+    first_key = _normalize_match_name(first_part)
+    if not last_key or not first_key:
+        return None
+    first_tokens = set(first_key.split())
+    matches = [
+        legislator_id
+        for legislator_id, candidate_first in by_last_name.get(last_key, [])
+        if (candidate_tokens := set(candidate_first.split()))
+        and (first_tokens <= candidate_tokens or candidate_tokens <= first_tokens)
+    ]
+    if len(matches) == 1:
+        return matches[0]
+    return None
+
+
+def _match_authorship_name(lookup: _LegislatorLookup, name: str) -> int | None:
+    """Resolve a single upstream author name against the legislator roster.
+
+    Tries the canonical-key exact match first, then falls back to the
+    surname/given-name-subset match. Shared by ``_reconcile_authorships`` and
+    the mocion-authors audit tool so both agree on what counts as unmatched.
+    """
+    key = _canonicalize_legislator_name(name)
+    legislator_id = lookup.by_full_name.get(key)
+    if legislator_id is None:
+        legislator_id = _match_authorship_by_surname(lookup.by_last_name, name)
+    return legislator_id
 
 
 def _reconcile_authorships(
@@ -526,8 +596,7 @@ def _reconcile_authorships(
         name = (author.get("name") or "").strip()
         if not name:
             continue
-        key = _canonicalize_legislator_name(name)
-        legislator_id = lookup.get(key)
+        legislator_id = _match_authorship_name(lookup, name)
         if legislator_id is None:
             logger.warning(
                 "Unmatched authorship name on bill %s: %r",

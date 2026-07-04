@@ -148,9 +148,9 @@ def test_write_csv_with_reparse_includes_unmatched_names_and_upstream_count(tmp_
 
 
 class _LegislatorRowsDB:
-    """Fake DB whose execute() yields the seeded (id, full_name) rows
-    that `_build_legislator_lookup` consumes once at the top of
-    `reparse_subset`. No per-name queries happen anymore.
+    """Fake DB whose execute() yields the seeded (id, full_name, last_name,
+    first_name) rows that `_build_legislator_lookup` consumes once at the
+    top of `reparse_subset`. No per-name queries happen anymore.
     """
 
     def __init__(self, rows):
@@ -181,7 +181,7 @@ def test_reparse_subset_fills_counts_and_unmatched_names():
     }
     # Only Ada is in the roster; the matcher's canonical-key dict will
     # therefore flag Grace and Margaret as unmatched.
-    fake_db = _LegislatorRowsDB([(7, "Ada Lovelace")])
+    fake_db = _LegislatorRowsDB([(7, "Ada Lovelace", "Lovelace", "Ada")])
 
     audit.reparse_subset(fake_db, rows, fetcher=fetched.get)
 
@@ -205,7 +205,10 @@ def test_reparse_subset_uses_canonical_matcher_for_upstream_format():
         }
     }
     fake_db = _LegislatorRowsDB(
-        [(1, "Paulina Núñez Urrutia"), (2, "Jaime Araya Guerrero")]
+        [
+            (1, "Paulina Núñez Urrutia", "Núñez Urrutia", "Paulina"),
+            (2, "Jaime Araya Guerrero", "Araya Guerrero", "Jaime"),
+        ]
     )
 
     audit.reparse_subset(fake_db, rows, fetcher=fetched.get)

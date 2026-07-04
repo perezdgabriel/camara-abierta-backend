@@ -311,7 +311,7 @@ class _FakeBill:
 
 
 class _LegislatorRowsDB:
-    """Fake DB whose execute() yields the seeded (id, full_name) rows."""
+    """Fake DB whose execute() yields the seeded (id, full_name, last_name, first_name) rows."""
 
     def __init__(self, rows):
         self._rows = list(rows)
@@ -331,9 +331,9 @@ class _LegislatorRowsDB:
 def test_reconcile_authorships_matches_upstream_format_names():
     db = _LegislatorRowsDB(
         [
-            (1, "Paulina Núñez Urrutia"),
-            (2, "Jaime Araya Guerrero"),
-            (3, "Luis Cuello Peña y Lillo"),
+            (1, "Paulina Núñez Urrutia", "Núñez Urrutia", "Paulina"),
+            (2, "Jaime Araya Guerrero", "Araya Guerrero", "Jaime"),
+            (3, "Luis Cuello Peña y Lillo", "Cuello Peña y Lillo", "Luis"),
         ]
     )
     bill = _FakeBill(bulletin="100-06")
@@ -355,7 +355,7 @@ def test_reconcile_authorships_matches_upstream_format_names():
 
 def test_reconcile_authorships_warns_on_unmatched_name(caplog):
     caplog.set_level("WARNING", logger="app.services.write")
-    db = _LegislatorRowsDB([(1, "Paulina Núñez Urrutia")])
+    db = _LegislatorRowsDB([(1, "Paulina Núñez Urrutia", "Núñez Urrutia", "Paulina")])
     bill = _FakeBill(bulletin="200-07")
 
     write._reconcile_authorships(
@@ -384,8 +384,9 @@ def test_reconcile_authorships_logs_collision_and_skips_both(caplog):
     # from the lookup, so even the literal upstream name won't match.
     db = _LegislatorRowsDB(
         [
-            (1, "Paulina Núñez Urrutia"),
-            (2, "Paulina Nunez Urrutia"),  # same key after accent strip
+            (1, "Paulina Núñez Urrutia", "Núñez Urrutia", "Paulina"),
+            # same key after accent strip
+            (2, "Paulina Nunez Urrutia", "Nunez Urrutia", "Paulina"),
         ]
     )
     bill = _FakeBill(bulletin="300-08")
@@ -401,10 +402,57 @@ def test_reconcile_authorships_logs_collision_and_skips_both(caplog):
     assert len(collision_errors) == 1
 
 
+def test_reconcile_authorships_matches_when_db_is_missing_a_middle_given_name():
+    # DB row lacks "Ignacio" (upstream sources don't agree on how many given
+    # names to carry) — exact full-name match misses, surname fallback should
+    # still resolve it via the given-name subset check.
+    db = _LegislatorRowsDB([(1, "Carlos Kuschel Silva", "Kuschel Silva", "Carlos")])
+    bill = _FakeBill(bulletin="18218-25")
+
+    write._reconcile_authorships(db, bill, [{"name": "Kuschel Silva, Carlos Ignacio"}])
+
+    assert {a.legislator_id for a in db.added} == {1}
+
+
+def test_reconcile_authorships_matches_when_upstream_uses_second_given_name():
+    # DB leads with an unused first given name ("Coca") while upstream (and
+    # common usage) only carries the second ("Ericka").
+    db = _LegislatorRowsDB(
+        [(1, "Coca Ericka Ñanco Vásquez", "Ñanco Vásquez", "Coca Ericka")]
+    )
+    bill = _FakeBill(bulletin="18228-04")
+
+    write._reconcile_authorships(db, bill, [{"name": "Ñanco Vásquez, Ericka"}])
+
+    assert {a.legislator_id for a in db.added} == {1}
+
+
+def test_reconcile_authorships_surname_fallback_stays_unmatched_when_ambiguous(caplog):
+    caplog.set_level("WARNING", logger="app.services.write")
+    # Two legislators share a surname and both have a compound given name
+    # that's subset-compatible with the upstream name — neither the exact
+    # full-name match nor the fallback should guess between them.
+    db = _LegislatorRowsDB(
+        [
+            (1, "Juan Ignacio Pérez Soto", "Pérez Soto", "Juan Ignacio"),
+            (2, "Juan Carlos Pérez Soto", "Pérez Soto", "Juan Carlos"),
+        ]
+    )
+    bill = _FakeBill(bulletin="18240-01")
+
+    write._reconcile_authorships(db, bill, [{"name": "Pérez Soto, Juan"}])
+
+    assert db.added == []
+    assert any(
+        r.levelname == "WARNING" and "Unmatched authorship name" in r.message
+        for r in caplog.records
+    )
+
+
 def test_reconcile_authorships_deletes_no_longer_matched():
     existing = SimpleNamespace(legislator_id=1, author_type="author")
     bill = _FakeBill(bulletin="400-09", authorships=[existing])
-    db = _LegislatorRowsDB([(1, "Paulina Núñez Urrutia")])
+    db = _LegislatorRowsDB([(1, "Paulina Núñez Urrutia", "Núñez Urrutia", "Paulina")])
 
     write._reconcile_authorships(db, bill, [])  # upstream now empty
 

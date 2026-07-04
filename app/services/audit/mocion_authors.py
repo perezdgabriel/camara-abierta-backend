@@ -158,10 +158,7 @@ def reparse_subset(
     "unmatched" verdict matches what `_reconcile_authorships` would do on
     a fresh write — no risk of the audit drifting from the matcher.
     """
-    from app.services.write import (
-        _build_legislator_lookup,
-        _canonicalize_legislator_name,
-    )
+    from app.services.write import _build_legislator_lookup, _match_authorship_name
 
     lookup = _build_legislator_lookup(db)
 
@@ -178,7 +175,7 @@ def reparse_subset(
         names = [n for n in names if n]
         row.upstream_xml_author_count = len(names)
         for name in names:
-            if _canonicalize_legislator_name(name) not in lookup:
+            if _match_authorship_name(lookup, name) is None:
                 row.unmatched_names.append(name)
 
 
