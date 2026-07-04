@@ -166,6 +166,84 @@ def test_jobs_dispatch_targets_all_resolve():
         assert jobs._resolve(module_name, attr) is not None
 
 
+def test_jobs_handler_s3_event_downloads_and_ingests(monkeypatch):
+    import app.lambdas.jobs as jobs
+
+    fake_s3 = MagicMock()
+    monkeypatch.setattr(boto3, "client", lambda service: fake_s3)
+
+    fake_run = MagicMock(return_value={"dispatched": 3, "errors": 0})
+    # Patch the *source* module attribute, not jobs.run_ingest_tabla_semanal —
+    # the import inside _run_tabla_semanal_from_s3 is local/lazy, so it looks
+    # this up at call time from app.tasks.ingestors.
+    monkeypatch.setattr("app.tasks.ingestors.run_ingest_tabla_semanal", fake_run)
+    reval = MagicMock()
+    monkeypatch.setattr(jobs, "revalidate", reval)
+
+    event = {
+        "Records": [
+            {
+                "eventSource": "aws:s3",
+                "s3": {
+                    "bucket": {"name": "camara-tabla-semanal"},
+                    "object": {"key": "tabla-semanal/2026-07-01.pdf"},
+                },
+            }
+        ]
+    }
+
+    out = jobs.handler(event, None)
+
+    fake_s3.download_file.assert_called_once_with(
+        "camara-tabla-semanal",
+        "tabla-semanal/2026-07-01.pdf",
+        "/tmp/2026-07-01.pdf",
+    )
+    fake_run.assert_called_once_with(pdf_path="/tmp/2026-07-01.pdf", dry_run=False)
+    reval.assert_called_once_with(jobs._TABLA_SEMANAL_REVAL_TAGS)
+    assert out == {"task": "ingest_tabla_semanal", "result": [fake_run.return_value]}
+
+
+def test_jobs_handler_task_shaped_event_still_works(monkeypatch):
+    import app.lambdas.jobs as jobs
+
+    # Regression guard: S3-shape detection must not swallow the existing path.
+    monkeypatch.setattr(jobs, "_resolve", lambda m, a: lambda: {"ran": a})
+    monkeypatch.setattr(jobs, "revalidate", MagicMock())
+
+    out = jobs.handler({"task": "ingest_bills"}, None)
+
+    assert out == {"task": "ingest_bills", "result": {"ran": "run_ingest_bills"}}
+
+
+def test_jobs_handler_s3_event_url_decodes_key(monkeypatch):
+    import app.lambdas.jobs as jobs
+
+    fake_s3 = MagicMock()
+    monkeypatch.setattr(boto3, "client", lambda service: fake_s3)
+    fake_run = MagicMock(return_value={"dispatched": 0, "errors": 0})
+    monkeypatch.setattr("app.tasks.ingestors.run_ingest_tabla_semanal", fake_run)
+    monkeypatch.setattr(jobs, "revalidate", MagicMock())
+
+    event = {
+        "Records": [
+            {
+                "eventSource": "aws:s3",
+                "s3": {
+                    "bucket": {"name": "b"},
+                    "object": {"key": "tabla-semanal/tabla+semanal+2.pdf"},
+                },
+            }
+        ]
+    }
+
+    jobs.handler(event, None)
+
+    fake_s3.download_file.assert_called_once_with(
+        "b", "tabla-semanal/tabla semanal 2.pdf", "/tmp/tabla semanal 2.pdf"
+    )
+
+
 # --------------------------------------------------------------------------- #
 # Workstream 5 — LLM handler
 # --------------------------------------------------------------------------- #

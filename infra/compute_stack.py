@@ -2,7 +2,8 @@
 
 One container image (Dockerfile.lambda), four functions selected by CMD:
   - API   (isolated subnets, Function URL, RDS-only)        cmd: app.lambdas.api.handler
-  - jobs  (egress subnets, EventBridge-scheduled ingestion) cmd: app.lambdas.jobs.handler
+  - jobs  (egress subnets, EventBridge-scheduled + S3-triggered ingestion)
+          cmd: app.lambdas.jobs.handler
   - llm   (egress subnets, SQS-driven summaries, capped)    cmd: app.lambdas.llm.handler
   - migrate (isolated, `alembic upgrade head`, CI-invoked)  cmd: app.lambdas.migrate.handler
 
@@ -14,6 +15,7 @@ import os
 from aws_cdk import (
     CfnOutput,
     Duration,
+    RemovalPolicy,
     Stack,
 )
 from aws_cdk import (
@@ -41,6 +43,12 @@ from aws_cdk import (
     aws_lambda_event_sources as sources,
 )
 from aws_cdk import (
+    aws_s3 as s3,
+)
+from aws_cdk import (
+    aws_s3_notifications as s3_notifications,
+)
+from aws_cdk import (
     aws_sns as sns,
 )
 from aws_cdk import (
@@ -65,6 +73,9 @@ _ANTHROPIC_KEY_PARAM = "/camara/anthropic-key"
 _RESTSIL_KEY_PARAM = "/camara/restsil-key"
 _API_SHARED_SECRET_PARAM = "/camara/api-shared-secret"
 _FRONTEND_REVALIDATE_TOKEN_PARAM = "/camara/frontend-revalidate-token"
+_ADMIN_USERNAME_PARAM = "/camara/admin-username"
+_ADMIN_PASSWORD_PARAM = "/camara/admin-password"
+_ADMIN_SECRET_KEY_PARAM = "/camara/admin-secret-key"
 
 # Mirrors app/core/celery_beat.py. Scraper entries are intentionally dropped
 # (descoped from the deployed image — see ADR-0022). Cron is UTC.
@@ -162,6 +173,9 @@ class ComputeStack(Stack):
                 "DISPATCH_BACKEND": "serverless",
                 "DOCS_ENABLED": "false",
                 "API_SHARED_SECRET_PARAM": _API_SHARED_SECRET_PARAM,
+                "ADMIN_USERNAME_PARAM": _ADMIN_USERNAME_PARAM,
+                "ADMIN_PASSWORD_PARAM": _ADMIN_PASSWORD_PARAM,
+                "ADMIN_SECRET_KEY_PARAM": _ADMIN_SECRET_KEY_PARAM,
             },
             **common,
         )
@@ -206,6 +220,19 @@ class ComputeStack(Stack):
             sources.SqsEventSource(self.llm_queue, batch_size=1)
         )
 
+        # --- tabla-semanal ingest bucket: human uploads PDF, triggers job_fn via
+        # S3 event. Portfolio project: DESTROY + auto_delete so `cdk destroy`
+        # doesn't orphan a bucket (mirrors RDS's deletion_protection=False stance).
+        self.tabla_semanal_bucket = s3.Bucket(
+            self,
+            "TablaSemanalBucket",
+            removal_policy=RemovalPolicy.DESTROY,
+            auto_delete_objects=True,
+            block_public_access=s3.BlockPublicAccess.BLOCK_ALL,
+            versioned=True,
+            enforce_ssl=True,
+        )
+
         # --- jobs: EventBridge-scheduled ingestion; enqueues summaries to SQS ---
         self.job_fn = _lambda.DockerImageFunction(
             self,
@@ -229,6 +256,14 @@ class ComputeStack(Stack):
             **common,
         )
         self.llm_queue.grant_send_messages(self.job_fn)
+
+        # S3 upload -> job_fn (ADR-0017 amendment: delivery mechanism change only).
+        self.tabla_semanal_bucket.add_event_notification(
+            s3.EventType.OBJECT_CREATED,
+            s3_notifications.LambdaDestination(self.job_fn),
+            s3.NotificationKeyFilter(prefix="tabla-semanal/", suffix=".pdf"),
+        )
+        self.tabla_semanal_bucket.grant_read(self.job_fn)
 
         # Classic EventBridge scheduled rules (stable L2). If you want the newer
         # EventBridge Scheduler L2, add @aws-cdk/aws-scheduler-alpha.
@@ -280,6 +315,15 @@ class ComputeStack(Stack):
         secure_param(
             "FrontendRevalidateTokenParam", _FRONTEND_REVALIDATE_TOKEN_PARAM
         ).grant_read(self.job_fn)
+        secure_param("AdminUsernameParam", _ADMIN_USERNAME_PARAM).grant_read(
+            self.api_fn
+        )
+        secure_param("AdminPasswordParam", _ADMIN_PASSWORD_PARAM).grant_read(
+            self.api_fn
+        )
+        secure_param("AdminSecretKeyParam", _ADMIN_SECRET_KEY_PARAM).grant_read(
+            self.api_fn
+        )
 
         # --- observability: CloudWatch alarms -> SNS -> email ---
         # Set with `cdk deploy -c alarm_email=me@example.com`.
@@ -316,3 +360,6 @@ class ComputeStack(Stack):
         # --- outputs: consumed by the frontend agent / CI ---
         CfnOutput(self, "ApiFunctionUrl", value=self.api_url.url)
         CfnOutput(self, "LlmQueueUrl", value=self.llm_queue.queue_url)
+        CfnOutput(
+            self, "TablaSemanalBucketName", value=self.tabla_semanal_bucket.bucket_name
+        )

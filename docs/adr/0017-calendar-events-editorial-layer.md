@@ -1,6 +1,6 @@
 # Calendar events as an editorial layer
 
-**Status:** Accepted, 2026-06-24. Amended 2026-06-24 — added `votacion` kind (see §3 below). Amended 2026-06-24 — Tabla Semanal CLI ingestor + two new kinds (see §7 below).
+**Status:** Accepted, 2026-06-24. Amended 2026-06-24 — added `votacion` kind (see §3 below). Amended 2026-06-24 — Tabla Semanal CLI ingestor + two new kinds (see §7 below). Amended 2026-07-04 — S3-triggered ingestion replaces the manual DB-tunnel step (see §8 below).
 
 ## Context
 
@@ -203,6 +203,41 @@ ingestion paths stay decoupled.
 URL-fetching is deferred until the upstream URL pattern at camara.cl is
 known stable enough for a scheduled scrape. Manual download → CLI run is
 the v1 workflow.
+
+### 8. S3-triggered ingestion replaces the manual DB-tunnel step
+
+Running the CLI against production required an SSM tunnel through the
+NAT-bastion box (`just rds-tunnel`) plus manually pulling DB credentials
+from Secrets Manager — fragile, unaudited, and outside the
+`revalidate()`/CloudWatch coverage every other ingestor gets from the
+`jobs` Lambda (ADR-0022).
+
+**What changed, what didn't.** The human-downloads-a-PDF step from §7 is
+unchanged — this does **not** add URL-fetching; that remains deferred.
+Only the delivery mechanism changed: the PDF is now uploaded to an S3
+bucket (`tabla-semanal/` prefix, `.pdf` suffix) instead of sitting on a
+laptop for the CLI to read. An `OBJECT_CREATED` event notification
+invokes the existing `job_fn` Lambda, which downloads the object and calls
+`run_ingest_tabla_semanal` in-process — the same Lambda that already
+resolves `DB_SECRET_ARN` and fires the post-ingest `revalidate()` ping.
+The CLI `--pdf` path is untouched and remains the recommended way to
+dry-run a PDF locally before uploading.
+
+**Idempotency carries over unchanged.** The `external_ref` dedup from §7
+(re-publishing the same week's PDF upserts in place) makes both Lambda
+async-invoke retries and accidental re-uploads safe by construction — no
+new safeguard was needed for the new trigger.
+
+**No DLQ / on-failure destination.** At roughly one upload per week,
+Lambda's default async-invoke retry (two attempts) is enough. A failed
+run is visible in CloudWatch Logs; the fix is to re-upload the same PDF,
+which is safe per the idempotency guarantee above. A dedicated DLQ +
+alarm (mirroring `llm_dlq`) was judged disproportionate at this volume —
+revisit if the upload cadence increases.
+
+**Revalidate tag.** Reuses the existing `"dashboard"` tag (already
+expired by other ingestors) rather than inventing an unconfirmed
+`"calendar"` tag with no established frontend contract.
 
 ## Alternatives considered
 

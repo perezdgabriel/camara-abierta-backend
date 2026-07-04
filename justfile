@@ -103,3 +103,17 @@ restore-rds rds_url:
       pg_restore --data-only --no-owner -f - coldstart.dump; } \
       | psql "{{rds_url}}" --single-transaction -v ON_ERROR_STOP=1
     psql "{{rds_url}}" -c "SELECT last_value FROM global_sync_version_seq;"
+
+# ── Tabla Semanal ingestion (see ADR-0017 §8) ──────────────────────────────
+# Upload the weekly agenda PDF to the S3 bucket that triggers job_fn. Resolves
+# the bucket name from the CFN output (never hardcoded) the same way rds-tunnel
+# resolves the NAT instance dynamically rather than hardcoding an ID.
+tabla-semanal-upload pdf_path:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    BUCKET=$(aws cloudformation describe-stacks --stack-name CamaraCompute \
+      --query "Stacks[0].Outputs[?OutputKey=='TablaSemanalBucketName'].OutputValue" \
+      --output text)
+    DATE=$(date +%Y-%m-%d)
+    aws s3 cp "{{pdf_path}}" "s3://${BUCKET}/tabla-semanal/${DATE}.pdf"
+    echo "Uploaded -> s3://${BUCKET}/tabla-semanal/${DATE}.pdf (job_fn will fire async)"

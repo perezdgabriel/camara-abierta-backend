@@ -56,6 +56,9 @@ aws ssm put-parameter --type SecureString --name /camara/anthropic-key          
 aws ssm put-parameter --type SecureString --name /camara/restsil-key              --value "…"
 aws ssm put-parameter --type SecureString --name /camara/api-shared-secret        --value "$(openssl rand -hex 32)"
 aws ssm put-parameter --type SecureString --name /camara/frontend-revalidate-token --value "…"  # matches Vercel REVALIDATE_TOKEN
+aws ssm put-parameter --type SecureString --name /camara/admin-username            --value "…"
+aws ssm put-parameter --type SecureString --name /camara/admin-password            --value "$(openssl rand -base64 24)"
+aws ssm put-parameter --type SecureString --name /camara/admin-secret-key          --value "$(openssl rand -hex 32)"
 ```
 
 Deploy-time context (passed with `-c`):
@@ -69,6 +72,12 @@ cdk deploy CamaraCompute -c alarm_email=you@example.com
 The `API_SHARED_SECRET` value (`/camara/api-shared-secret`) is the header the
 frontend sends as `X-Camara-Api-Key`; the API Function URL is emitted as the
 `ApiFunctionUrl` stack output.
+
+`/admin` is exempt from the shared-secret middleware (it enforces its own
+sqladmin login), so `/camara/admin-username`, `/camara/admin-password`, and
+`/camara/admin-secret-key` (session cookie signing key) are the only things
+gating it — without them the app falls back to `app/core/config.py`'s
+`admin`/`admin`/`change-me` defaults. Log in at `<ApiFunctionUrl>/admin`.
 
 ## One-time data bootstrap (see ADR-0022)
 
