@@ -15,3 +15,15 @@ tests
 *.pyd
 *.swp
 .DS_Store
+# CDK: the infra/ tree (incl. infra/cdk.out and infra/.venv) is not part of the
+# Lambda image and, being inside the build context, recurses into the asset
+# staging dir (ENAMETOOLONG) if not excluded.
+infra
+cdk.out
+**/cdk.out
+# Local data / secrets that must never land in the image.
+coldstart.dump
+*.dump
+.env
+.env.local
+node_modules

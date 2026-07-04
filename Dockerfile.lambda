@@ -9,8 +9,10 @@ RUN pip install --no-cache-dir "uv>=0.8,<1"
 # Requires `mangum` in the project deps (uv add mangum) for the API handler.
 # psycopg must ship libpq — use psycopg[binary] (wheel bundles it) since the
 # Lambda base image has no system libpq.
+# Exclude the `scrapers` group (playwright/stealth) — descoped from the deployed
+# image (ADR-0022); keeps it lean and cp314-resolvable on the Lambda base.
 COPY pyproject.toml uv.lock README.md ./
-RUN uv export --frozen --no-dev --no-emit-project -o requirements.txt \
+RUN uv export --frozen --no-dev --no-group scrapers --no-emit-project -o requirements.txt \
     && pip install --no-cache-dir -r requirements.txt --target "${LAMBDA_TASK_ROOT}"
 
 # App code + migration assets (alembic runs from the migration handler).
