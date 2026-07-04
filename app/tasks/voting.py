@@ -1,4 +1,5 @@
 from app.core.celery_app import app
+from app.core.dispatch import dispatch
 from app.core.session import task_session
 from app.services import legislator_stats, voting_signals
 from app.services.write import upsert_voting_session
@@ -12,7 +13,7 @@ def sync_voting_session(self, data: dict, bill_bulletin: str | None = None) -> d
         session_id = voting_session.id
     # Dispatch signal recomputation in its own task. Decoupling lets the sync
     # finish quickly even if signal compute is heavy (e.g. PR-2 cohesion JOIN).
-    compute_voting_session_signals.delay(session_id)
+    dispatch(compute_voting_session_signals, session_id)
     return {"voting_session_id": session_id, "status": "ok"}
 
 

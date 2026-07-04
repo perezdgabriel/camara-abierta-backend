@@ -8,6 +8,7 @@ from sqlalchemy import select
 
 from app.core.celery_app import app
 from app.core.config import settings
+from app.core.dispatch import dispatch
 from app.core.session import task_session
 from app.ingestors.clients.bcn import (
     fetch_person_appointments_parallel,
@@ -98,7 +99,7 @@ def _mark_synced(entity_type: str) -> None:
 
 
 def _dispatch(task: Any, *args: Any) -> None:
-    task.delay(*args)
+    dispatch(task, *args)
 
 
 def _load_opendata_bill_details_with_votes(
@@ -1020,7 +1021,7 @@ def _trigger_targeted_bill_ingest(bulletin: str) -> None:
     # Local import avoids a circular dependency at module load.
     from app.tasks.ingestors import ingest_bills as _ingest_bills_task
 
-    _ingest_bills_task.delay(bulletin=bulletin)
+    dispatch(_ingest_bills_task, bulletin=bulletin)
 
 
 def run_ingest_legislators(*, dry_run: bool = False) -> dict[str, Any]:

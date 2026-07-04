@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.dispatch import dispatch
 from app.models.enums import BillSummaryKind
 from app.models.proyecto import Bill, BillSummary
 
@@ -65,7 +66,7 @@ def regenerate_bill_summaries(
                     and summary.model_name == model_name
                 ):
                     continue
-            generate_bill_summary_layer.delay(bill_id, kind_enum.value)
+            dispatch(generate_bill_summary_layer, bill_id, kind_enum.value)
             enqueued.append(
                 {
                     "bulletin": bulletin_number,

@@ -4,6 +4,7 @@ from typing import Any
 
 from app.core.celery_app import app
 from app.core.config import settings
+from app.core.dispatch import dispatch
 from app.core.session import task_session
 from app.ingestors.parsers.votes import VoteParser
 from app.models.core import Topic
@@ -126,10 +127,11 @@ def sync_bill(self, data: dict) -> dict:
         )
 
     for kind in summary_kinds:
-        generate_bill_summary_layer.delay(bill_id, kind.value)
+        dispatch(generate_bill_summary_layer, bill_id, kind.value)
 
     for raw_vote in data.get("_votaciones", []):
-        sync_voting_session.delay(
+        dispatch(
+            sync_voting_session,
             VoteParser.parse_senate_vote(raw_vote, bulletin=data["bulletin_number"]),
             data["bulletin_number"],
         )
@@ -141,7 +143,8 @@ def sync_bill(self, data: dict) -> dict:
         for raw_vote in data.get("_camara_votaciones", []):
             if not raw_vote.get("id"):
                 continue
-            sync_voting_session.delay(
+            dispatch(
+                sync_voting_session,
                 VoteParser.parse_chamber_vote(
                     raw_vote, bulletin=data["bulletin_number"]
                 ),
