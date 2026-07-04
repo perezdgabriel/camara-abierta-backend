@@ -4,7 +4,11 @@ import pytest
 
 from app.models.enums import ChamberType, StageType, VotingType
 from app.models.proyecto import BillStage
-from app.services.write import upsert_bill, upsert_voting_session
+from app.services.write import (
+    apply_bill_topic_classification,
+    upsert_bill,
+    upsert_voting_session,
+)
 
 from .bill_payloads import make_initial_bill_payload, make_secondary_bill_payload
 
@@ -68,6 +72,7 @@ def test_list_bills_uses_recent_activity_by_default_and_supports_entry_date_sort
 
 def test_get_bill_returns_nested_relations_from_real_database(client, db_session):
     bill, _ = upsert_bill(db_session, make_initial_bill_payload())
+    apply_bill_topic_classification(db_session, bill, ["Transparencia", "Probidad"])
     db_session.flush()
 
     response = client.get(f"/api/v1/bills/{bill.id}")

@@ -34,7 +34,6 @@ def test_bill_parser_maps_canonical_enums_and_discards_blank_authors():
                 {"legislator": "Ada Demo"},
                 {"legislator": "  "},
             ],
-            "materias": [" Transparencia ", ""],
             "tramitaciones": [
                 {
                     "stage": "Primer trámite constitucional",
@@ -56,7 +55,6 @@ def test_bill_parser_maps_canonical_enums_and_discards_blank_authors():
     assert payload["status"] is BillStatus.PUBLISHED
     assert payload["_current_urgency_type"] is UrgencyType.IMMEDIATE
     assert payload["authors"] == [{"name": "Ada Demo"}]
-    assert payload["topics"] == ["Transparencia"]
     assert payload["stages"][0]["stage_type"] is StageType.FIRST_CONSTITUTIONAL_TRAMITE
     assert payload["stages"][0]["_chamber_type"] is ChamberType.SENATE
     assert payload["events"] == [
@@ -294,7 +292,6 @@ def test_senado_bill_xml_maps_through_bill_and_vote_parsers():
     assert bill_payload["status"] is BillStatus.PUBLISHED
     assert bill_payload["_current_urgency_type"] is UrgencyType.IMMEDIATE
     assert bill_payload["authors"] == [{"name": "Ada Demo"}]
-    assert bill_payload["topics"] == ["Transparencia"]
     assert (
         bill_payload["stages"][0]["stage_type"]
         is StageType.FIRST_CONSTITUTIONAL_TRAMITE
@@ -679,7 +676,6 @@ def test_bill_parser_restsil_detail_mensaje_emits_parse_bill_contract():
         "message_url",
         "_current_urgency_type",
         "authors",
-        "topics",
         "stages",
         "events",
         "documents",
@@ -697,7 +693,6 @@ def test_bill_parser_restsil_detail_mensaje_emits_parse_bill_contract():
     assert payload["message_url"].startswith(
         "https://microservicio-documentos.senado.cl/"
     )
-    assert payload["topics"] == []  # restsil detail doesn't ship Materias
     assert payload["_votaciones"] == []  # dedicated vote tasks own these
 
     # AUTORES "Ministerio de Hacienda" is one row (mensaje carrier); the

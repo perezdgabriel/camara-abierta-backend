@@ -1558,7 +1558,6 @@ def upsert_bill(db: Session, data: dict[str, Any]) -> tuple[Bill, dict[str, Any]
     ).scalar_one()
 
     changed = False
-    changed |= _reconcile_topics(db, bill, data.get("topics") or [])
     changed |= _reconcile_authorships(db, bill, data.get("authors") or [])
     stages_changed, current_chamber_id = _reconcile_stages(
         db, bill, data.get("stages") or []

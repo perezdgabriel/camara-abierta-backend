@@ -4,7 +4,7 @@ from sqlalchemy.orm import selectinload, sessionmaker
 
 from app.models.core import Topic
 from app.models.proyecto import Bill, BillEvent, BillStage, BillUrgency
-from app.services.write import upsert_bill
+from app.services.write import apply_bill_topic_classification, upsert_bill
 
 from .bill_payloads import make_initial_bill_payload, make_updated_bill_payload
 
@@ -36,16 +36,15 @@ def test_upsert_bill_tracks_create_update_and_noop_contract(
         "is_new": True,
         "status_changed": False,
         "stage_changed": False,
+        "full_text_url_changed": False,
+        "new_comparado_added": False,
         "old_status": None,
         "new_status": created_bill.status,
     }
 
     persisted_bill = _load_bill(db_session_factory, "100-06")
     assert persisted_bill.title == "Proyecto de integracion inicial"
-    assert {topic.name for topic in persisted_bill.topics} == {
-        "Transparencia",
-        "Probidad",
-    }
+    assert persisted_bill.topics == []
     assert len(persisted_bill.stages) == 1
     assert persisted_bill.stages[0].description == "Ingreso al Senado"
     assert len(persisted_bill.events) == 1
@@ -53,6 +52,13 @@ def test_upsert_bill_tracks_create_update_and_noop_contract(
     assert persisted_bill.events[0].description == "Primer trámite constitucional"
     assert len(persisted_bill.urgencies) == 1
     assert persisted_bill.urgencies[0].is_active is True
+
+    # Simulate the LLM topic-classification step (app/tasks/bills.py) — the
+    # only place bill_topics rows are ever written per ADR-0021.
+    apply_bill_topic_classification(
+        db_session, created_bill, ["Transparencia", "Probidad"]
+    )
+    db_session.flush()
 
     updated_bill, updated_change = upsert_bill(db_session, make_updated_bill_payload())
     db_session.flush()
@@ -64,7 +70,13 @@ def test_upsert_bill_tracks_create_update_and_noop_contract(
 
     refreshed_bill = _load_bill(db_session_factory, "100-06")
     assert refreshed_bill.title == "Proyecto de integracion actualizado"
-    assert {topic.name for topic in refreshed_bill.topics} == {"Salud"}
+    # Regression check: re-ingesting the bill (e.g. a broader-range ingest
+    # run) must not touch LLM-assigned topics — only
+    # apply_bill_topic_classification may write bill_topics.
+    assert {topic.name for topic in refreshed_bill.topics} == {
+        "Transparencia",
+        "Probidad",
+    }
     assert len(refreshed_bill.stages) == 1
     assert refreshed_bill.stages[0].description == "Pasa a segundo tramite"
     assert len(refreshed_bill.events) == 1
@@ -107,5 +119,5 @@ def test_upsert_bill_tracks_create_update_and_noop_contract(
     assert bill_count == 1
     assert stage_count == 1
     assert event_count == 1
-    assert "Salud" in topic_names
+    assert topic_names == {"Transparencia", "Probidad"}
     assert urgency_count == 2

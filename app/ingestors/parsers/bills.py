@@ -142,11 +142,6 @@ class BillParser:
             if author.get("legislator", "").strip()
         ]
         tramitaciones = raw.get("tramitaciones", [])
-        topics = [
-            materia.strip()
-            for materia in raw.get("materias", [])
-            if materia and materia.strip()
-        ]
         stages = BillParser._parse_stages(tramitaciones)
         events = BillParser._parse_events(tramitaciones)
         documents = BillParser._parse_documents(
@@ -166,7 +161,6 @@ class BillParser:
             "message_url": raw.get("message_url") or "",
             "_current_urgency_type": urgency_type,
             "authors": authors,
-            "topics": topics,
             "stages": stages,
             "events": events,
             "documents": documents,
@@ -196,13 +190,16 @@ class BillParser:
           intentionally dropped (mensaje URL is captured at the bill level;
           indicaciones don't map to any current ``document_type``).
 
-        Three sources are intentionally **not** populated here (see ADR-0020):
+        Two sources are intentionally **not** populated here (see ADR-0020):
 
-        - ``materias`` (topics) — null for recent bills upstream; ships empty.
         - ``BillUrgency`` history — ``current_urgency`` still flows to
           ``Bill.current_urgency``, but per-event urgency rows are dropped.
         - ``_votaciones`` — owned end-to-end by the dedicated Senate / Chamber
           vote tasks per ADR-0013.
+
+        Bill topics (``Bill.topics``) are not part of this contract at all —
+        per ADR-0021 they're LLM-curated exclusively, via
+        ``apply_bill_topic_classification``, never ingested from upstream.
 
         Authors come from the discovery feed (``AUTORES`` slash-separated
         canonical names) and are passed in via ``authors_text``.
@@ -342,7 +339,6 @@ class BillParser:
             "message_url": message_url,
             "_current_urgency_type": urgency_type,
             "authors": authors,
-            "topics": [],
             "stages": stages,
             "events": events,
             "documents": documents,

@@ -17,7 +17,6 @@ def make_initial_bill_payload() -> dict[str, object]:
         "status": BillStatus.PENDING,
         "entry_date": "2026-05-01",
         "_origin_chamber_type": ChamberType.SENATE,
-        "topics": ["Transparencia", "Probidad"],
         "authors": [],
         "stages": [
             {
@@ -49,7 +48,6 @@ def make_updated_bill_payload() -> dict[str, object]:
         "status": BillStatus.APPROVED,
         "entry_date": "2026-05-01",
         "_origin_chamber_type": ChamberType.SENATE,
-        "topics": ["Salud"],
         "authors": [],
         "stages": [
             {
@@ -81,7 +79,6 @@ def make_secondary_bill_payload() -> dict[str, object]:
         "status": BillStatus.APPROVED,
         "entry_date": "2026-05-03",
         "_origin_chamber_type": ChamberType.DEPUTIES,
-        "topics": ["Economia"],
         "authors": [],
         "stages": [
             {
