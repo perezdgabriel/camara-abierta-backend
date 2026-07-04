@@ -8,6 +8,7 @@ name: deploy
 #   1. locally, with admin creds:  cd infra && cdk bootstrap && \
 #        cdk deploy CamaraCicd -c github_owner=<owner> -c github_repo=<repo>
 #   2. add the `AWS_ACCOUNT_ID` repo secret.
+#   3. add the `ALARM_EMAIL` repo secret (for CloudWatch alarms).
 
 on:
   push:
@@ -42,7 +43,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "24"
 
       - name: Install CDK CLI + infra deps
         run: |
@@ -54,7 +55,7 @@ jobs:
       # image asset; CDK pushes it to the bootstrap ECR repo.
       - name: CDK deploy
         working-directory: infra
-        run: cdk deploy CamaraNetwork CamaraCompute --require-approval never
+        run: cdk deploy CamaraNetwork CamaraCompute -c alarm_email=${{ secrets.ALARM_EMAIL }} --require-approval never
 
       - name: Apply DB migrations (alembic upgrade head)
         run: |
