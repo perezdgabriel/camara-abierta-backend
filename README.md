@@ -1,6 +1,40 @@
-# Camara Abierta
+# Cámara Abierta — Backend
 
-Backend principal para una plataforma de transparencia legislativa enfocada en proyectos de ley, legisladores, votaciones, Diario Oficial y reglamentos CGR. Construido sobre FastAPI, SQLAlchemy 2, Alembic y Celery, con una arquitectura modular organizada por dominio.
+> Plataforma de transparencia legislativa para Chile: proyectos de ley, legisladores, votaciones, unificados en una sola API.
+
+[![Python 3.14](https://img.shields.io/badge/Python-3.14-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![SQLAlchemy 2](https://img.shields.io/badge/SQLAlchemy-2.0-D71F00)](https://www.sqlalchemy.org/)
+[![Celery](https://img.shields.io/badge/Celery-37814A?logo=celery&logoColor=white)](https://docs.celeryq.dev/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
+
+## Sobre el proyecto
+
+Los datos del Congreso de Chile existen, pero están repartidos entre varias APIs y sitios web con formatos, autenticaciones y calidades distintas. **Cámara Abierta** los recolecta, normaliza y enriquece en un único modelo de dominio consultable, para que ciudadanía, periodistas y desarrolladores puedan seguir la actividad legislativa sin pelear con cada fuente por separado.
+
+Este repositorio es el backend: la API, los recolectores de datos (scrapers e ingestors), el enriquecimiento con LLM y los workers asíncronos que mantienen todo actualizado.
+
+**Highlights técnicos:**
+
+- **Pipeline de datos estricto y testeable** — `cliente → parser → task Celery → servicio de escritura`. Las mutaciones de base de datos ocurren en un único lugar (`services/write.py`), nunca dispersas en handlers o tareas.
+- **Múltiples fuentes reconciliadas** — restsil, OpenData Cámara, BCN, senado.cl y scrapers browser-driven, con estrategias de failover configurables por variable de entorno.
+- **Enriquecimiento con LLM** — resúmenes y clasificación temática de proyectos de ley con Claude.
+- **Sync incremental** basado en una secuencia global de PostgreSQL (`sync_version`) para clientes móviles/offline.
+- **ADRs** documentando decisiones de arquitectura, más un `CONTEXT.md` que captura el modelo de dominio.
+- **Despliegue serverless en AWS** vía CDK (Lambda + RDS + migraciones Alembic).
+
+## Stack
+
+| Capa | Tecnología |
+| --- | --- |
+| API | FastAPI, Pydantic v2 |
+| Datos | PostgreSQL, SQLAlchemy 2, Alembic |
+| Async / jobs | Celery, Redis |
+| Scraping | Playwright, httpx |
+| LLM | Anthropic Claude, Google Gemini |
+| Búsqueda | Elasticsearch (opcional) |
+| Tooling | uv, Ruff, ty, pytest |
+| Infra | Docker Compose (local), AWS CDK + Lambda (deploy) |
 
 ## Alcance v0.1
 
@@ -9,10 +43,8 @@ La version actual prioriza cinco superficies de producto:
 - Seguimiento de proyectos de ley (`/api/v1/bills`)
 - Directorio de legisladores (`/api/v1/legislators`)
 - Sesiones de votacion (`/api/v1/voting-sessions`)
-- Diario Oficial (`/api/v1/diario-oficial`)
-- Reglamentos CGR (`/api/v1/reglamentos`)
 
-La busqueda con Elasticsearch y el sync orientado a clientes se mantienen en codigo, pero no forman parte de los flujos principales de v0.1.
+El sync orientado a clientes se mantiene en codigo, pero no forma parte de los flujos principales de v0.1.
 
 ## Endpoints principales
 
@@ -29,47 +61,10 @@ GET /api/v1/legislators/{id}
 GET /api/v1/voting-sessions
 GET /api/v1/voting-sessions/{id}
 
-GET /api/v1/diario-oficial/normas
-GET /api/v1/reglamentos
 GET /api/v1/health
 ```
 
-Este repositorio ahora concentra la API, los scrapers de Diario Oficial y CGR, los ingestors legislativos y los workers asincronicos. Redis actua como broker/result backend de Celery; PostgreSQL es la fuente de verdad; Elasticsearch mantiene la indexacion full text de proyectos de ley.
-
-## Estructura del proyecto
-
-```
-app/
-├── api/
-│   └── v1/
-│       ├── diario_oficial.py   # /api/v1/diario-oficial/*
-│       ├── reglamentos.py      # /api/v1/reglamentos/*
-│       ├── proyectos.py        # /api/v1/proyectos/* (en desarrollo)
-│       └── sync.py             # /api/v1/sync/*     (en desarrollo)
-├── core/
-│   ├── config.py               # Settings via pydantic-settings
-│   ├── database.py             # Engine, sesion y Base declarativa
-│   ├── session.py              # task_session() para workers Celery
-│   ├── celery_app.py           # App Celery para workers
-│   └── celery_beat.py          # Beat schedule
-├── ingestors/                  # Clientes/parsers para APIs del Congreso
-├── models/
-│   ├── base.py                 # Mixins: SyncableMixin, TimestampMixin, etc.
-│   ├── diario_oficial.py       # NormaGeneral, Reglamento, ReglamentoEtapa
-│   ├── ingestor_state.py       # Estado incremental de ingestors
-│   ├── core.py                 # Geografía y temas (Region, Commune, Topic…)
-│   ├── legislature.py          # Partido, Legislador, Camara, Comision…
-│   ├── proyecto.py             # Bill, BillStage, BillDocument…
-│   ├── votacion.py             # VotingSession, Vote, LegislatorVotingStats
-│   └── sync.py                 # ClientSyncState, ChangeLog
-├── scrapers/                   # Scrapers browser-driven de Diario Oficial y CGR
-├── schemas/                    # Esquemas Pydantic de entrada/salida
-├── services/                   # Logica de lectura, escritura, LLM, PDF y notificaciones
-└── tasks/                      # Tareas Celery periodicas y por-item
-migrations/
-└── versions/
-  └── ...
-```
+Este repositorio ahora concentra la API, los ingestors legislativos y los workers asincronicos. Redis actua como broker/result backend de Celery; PostgreSQL es la fuente de verdad.
 
 ## Ejecución local
 
@@ -155,10 +150,6 @@ python -m app.cli ingestors bills --bulletin 17123-06
 python -m app.cli ingestors voting-sessions --since 2026-05-03
 ```
 
-`python -m app.cli geography` aplica el baseline geográfico versionado desde `app/geography/data/chile_current.json` en una sola transacción y registra la versión cargada en `ingestor_state` con `entity_type="geography"`.
-
-`python -m app.cli ingestors reference-data` ahora sincroniza solo temas (`Topic`). La geografía ya no se toma desde APIs en vivo.
-
 `--dry-run` ejecuta la recoleccion y el parseo, pero no encola tareas downstream ni actualiza `ingestor_state`.
 
 ## Alembic
@@ -178,80 +169,6 @@ La imagen de Docker instala dependencias desde `pyproject.toml` y `uv.lock`, que
 
 Servicios incluidos: `api`, `celery-worker`, `celery-beat`, `postgres`, `redis`.
 
-## Endpoints disponibles
+## Fuentes de datos y uso responsable
 
-### Diario Oficial
-
-| Método | Ruta                                            | Descripción                           |
-| ------ | ----------------------------------------------- | ------------------------------------- |
-| `GET`  | `/api/v1/diario-oficial/normas`                 | Lista normas con filtros y paginación |
-| `GET`  | `/api/v1/diario-oficial/normas/{cve}`           | Norma por CVE                         |
-| `GET`  | `/api/v1/diario-oficial/normas/por-importancia` | Normas destacadas                     |
-| `GET`  | `/api/v1/diario-oficial/dates/available`        | Fechas con publicaciones              |
-| `GET`  | `/api/v1/diario-oficial/stats/by-ministry`      | Conteo por ministerio                 |
-
-Parámetros de filtro para `/normas`: `date_from`, `date_to`, `ministry`, `branch`, `search`, `offset`, `limit` (máx 500).
-
-### Reglamentos CGR
-
-| Método | Ruta                                           | Descripción                          |
-| ------ | ---------------------------------------------- | ------------------------------------ |
-| `GET`  | `/api/v1/reglamentos`                          | Lista reglamentos con filtros        |
-| `GET`  | `/api/v1/reglamentos/{id}`                     | Detalle de un reglamento             |
-| `GET`  | `/api/v1/reglamentos/recientes`                | Último estado de reglamentos activos |
-| `GET`  | `/api/v1/reglamentos/stats/por-ministerio`     | Conteo por ministerio                |
-| `GET`  | `/api/v1/reglamentos/stats/por-categoria`      | Conteo por categoría                 |
-| `GET`  | `/api/v1/reglamentos/stats/tiempo-tramitacion` | Tiempo promedio de tramitación       |
-| `GET`  | `/api/v1/reglamentos/stats/mas-etapas`         | Reglamentos con más etapas           |
-
-### Proyectos de ley
-
-| Método | Ruta                              | Descripción                            |
-| ------ | --------------------------------- | -------------------------------------- |
-| `GET`  | `/api/v1/bills`                   | Lista proyectos de ley con filtros     |
-| `GET`  | `/api/v1/bills/{id}`              | Detalle de un proyecto                 |
-| `GET`  | `/api/v1/bills/{id}/etapas`       | Etapas del proyecto                    |
-| `GET`  | `/api/v1/bills/{id}/votaciones`   | Votaciones asociadas al proyecto       |
-| `GET`  | `/api/v1/bills/{id}/documentos`   | Documentos asociados al proyecto       |
-
-### Legisladores y votaciones
-
-| Método | Ruta                              | Descripción                            |
-| ------ | --------------------------------- | -------------------------------------- |
-| `GET`  | `/api/v1/legislators`             | Lista legisladores con filtros         |
-| `GET`  | `/api/v1/legislators/{id}`        | Detalle de legislador                  |
-| `GET`  | `/api/v1/voting-sessions`         | Lista sesiones de votación             |
-| `GET`  | `/api/v1/voting-sessions/{id}`    | Detalle de sesión con votos            |
-
-### Sync
-
-| Método | Ruta                              | Descripción                            |
-| ------ | --------------------------------- | -------------------------------------- |
-| `GET`  | `/api/v1/sync/normas`             | Delta sync de normas                   |
-| `GET`  | `/api/v1/sync/reglamentos`        | Delta sync de reglamentos              |
-
-## Variables de entorno
-
-| Variable                            | Requerida | Descripción                              |
-| ----------------------------------- | --------- | ---------------------------------------- |
-| `DATABASE_URL`                      | ✅        | URL de conexión PostgreSQL               |
-| `REDIS_URL`                         | ✅        | Broker y result backend de Celery        |
-| `GEMINI_API_KEY`                    | Opcional  | Clave Gemini para analisis de normas     |
-| `OPENWEBUI_URL`                     | Opcional  | Endpoint Open WebUI para analisis de PDF |
-| `OPENWEBUI_API_KEY`                 | Opcional  | Token Open WebUI                         |
-| `OPENWEBUI_MODEL`                   | Opcional  | Modelo Open WebUI                        |
-| `RESEND_API_KEY`                    | Opcional  | Clave Resend para alertas                |
-| `NOTIFICATION_EMAIL`                | Opcional  | Destinatario de alertas                  |
-| `NOTIFICATION_FROM_EMAIL`           | Opcional  | Remitente de alertas                     |
-| `INGESTOR_BASE_URL_CAMARA`          | Opcional  | Override base URL API Camara legacy      |
-| `INGESTOR_BASE_URL_OPENDATA_CAMARA` | Opcional  | Override base URL OpenData Camara        |
-| `INGESTOR_BASE_URL_SENADO`          | Opcional  | Override base URL API Senado             |
-| `INGESTOR_BASE_URL_RESTSIL`         | Opcional  | Override base URL portallegislativo backend |
-| `INGESTOR_RESTSIL_API_KEY`          | ✅¹       | Apikey para `restsil.senado.cl/v3/` (ADR-0013) |
-| `INGESTOR_BILLS_SOURCE`             | Opcional  | `restsil` (default) o `opendata` (failover) |
-| `INGESTOR_SENATE_VOTES_SOURCE`      | Opcional  | `restsil` (default) o `wspublico` (failover) |
-| `INGESTOR_RESTSIL_ASYNC_CONCURRENCY`| Opcional  | Concurrencia de fan-out paginado (default 10) |
-
-¹ Requerido cuando alguna `*_SOURCE` apunta a `restsil` (que es el default).
-La clave se obtiene desde el panel de admin de portallegislativo y se rota
-sin tocar el repo.
+Cámara Abierta se construye exclusivamente sobre **datos públicos** del Estado de Chile: APIs abiertas del Congreso (Cámara de Diputados, Senado), la Biblioteca del Congreso Nacional (BCN), el Diario Oficial y la Contraloría General de la República. Los recolectores respetan los ritmos y límites de cada fuente (paginación acotada, concurrencia configurable, ejecución incremental) y no republican credenciales de acceso. Este proyecto no está afiliado ni respaldado por ninguna de esas instituciones.
