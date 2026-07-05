@@ -60,10 +60,11 @@ _REVAL_TAGS: dict[str, list[str]] = {
 }
 
 
-# Frontend cache tags to expire after a Tabla Semanal ingest. Reuses "dashboard"
-# (already expired by several other ingestors) rather than inventing an
-# unconfirmed "calendar" tag.
-_TABLA_SEMANAL_REVAL_TAGS: list[str] = ["dashboard"]
+# Frontend cache tags to expire after a Tabla Semanal ingest. "calendar" is
+# listCalendarEvents()'s own tag (frontend src/lib/api/calendar.ts); "dashboard"
+# is kept too since several other ingestors already expire it and some
+# calendar data may surface there.
+_TABLA_SEMANAL_REVAL_TAGS: list[str] = ["dashboard", "calendar"]
 
 
 def _resolve(module_name: str, attr: str) -> Any:

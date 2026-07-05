@@ -235,9 +235,16 @@ which is safe per the idempotency guarantee above. A dedicated DLQ +
 alarm (mirroring `llm_dlq`) was judged disproportionate at this volume —
 revisit if the upload cadence increases.
 
-**Revalidate tag.** Reuses the existing `"dashboard"` tag (already
-expired by other ingestors) rather than inventing an unconfirmed
-`"calendar"` tag with no established frontend contract.
+**Revalidate tag.** Originally reused only `"dashboard"` (already expired
+by other ingestors), on the grounds that a `"calendar"` tag had no
+established frontend contract yet. That contract now exists —
+`listCalendarEvents()` (`camara-abierta-web/src/lib/api/calendar.ts`) tags
+its fetch `["calendar"]`, and the frontend's revalidate webhook already
+allowlists `"calendar"` (`KNOWN_TAGS` in
+`src/app/api/revalidate/route.ts`) — so `_TABLA_SEMANAL_REVAL_TAGS` in
+`app/lambdas/jobs.py` now sends both `["dashboard", "calendar"]` (2026-07-04
+correction). Until this fix, calendar reads only refreshed via their 60s
+ISR TTL, never on-demand after an ingest.
 
 ### 9. Orphan boletínes are proactively retrieved and self-heal
 
