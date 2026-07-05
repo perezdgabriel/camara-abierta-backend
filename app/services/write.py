@@ -2721,6 +2721,22 @@ def upsert_calendar_event(db: Session, data: dict[str, Any]) -> CalendarEvent:
     if external_ref is not None:
         external_ref = str(external_ref).strip() or None
 
+    bulletin_number = (data.get("bulletin_number") or None) and str(
+        data["bulletin_number"]
+    )[:50]
+
+    # Re-resolve the bill at write time when the caller couldn't (mirrors
+    # ``upsert_voting_session``). In serverless mode ``dispatch`` runs the
+    # targeted orphan-bill ingest *inline* and commits the bill before this
+    # event is written, so a fresh lookup here self-heals the link — the
+    # caller's pre-loop ``bill_ids`` map and the async ``upsert_bill``
+    # reconcile step both miss that inline-committed bill (ADR-0017 §9).
+    bill_id = data.get("bill_id")
+    if bill_id is None and bulletin_number:
+        bill_id = db.execute(
+            select(Bill.id).where(Bill.bulletin_number == bulletin_number)
+        ).scalar_one_or_none()
+
     attrs = {
         "kind": kind,
         "starts_at": starts_at,
@@ -2729,9 +2745,8 @@ def upsert_calendar_event(db: Session, data: dict[str, Any]) -> CalendarEvent:
         "description": data.get("description") or None,
         "location": (data.get("location") or None) and data["location"][:200],
         "chamber_type": chamber_type,
-        "bill_id": data.get("bill_id"),
-        "bulletin_number": (data.get("bulletin_number") or None)
-        and str(data["bulletin_number"])[:50],
+        "bill_id": bill_id,
+        "bulletin_number": bulletin_number,
         "legislator_id": data.get("legislator_id"),
         "committee_id": data.get("committee_id"),
         "source": source,

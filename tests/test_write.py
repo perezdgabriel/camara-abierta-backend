@@ -515,7 +515,7 @@ def test_upsert_calendar_event_rejects_blank_title():
 def test_upsert_calendar_event_persists_bulletin_number_for_orphan_relink():
     """ADR-0017 §9: bulletin_number must survive the upsert even when the
     bill hasn't arrived yet, so upsert_bill's reconcile step can find it."""
-    db = FakeDB()
+    db = FakeDB(None)  # bill lookup by bulletin misses → stays orphan
     event = write.upsert_calendar_event(
         db,
         {
@@ -528,6 +528,41 @@ def test_upsert_calendar_event_persists_bulletin_number_for_orphan_relink():
     assert event.bulletin_number == "100-06"
     assert event.bill_id is None
     assert db.added == [event]
+
+
+def test_upsert_calendar_event_resolves_bill_id_from_bulletin_at_write_time():
+    """In serverless mode the targeted orphan-bill ingest runs inline and
+    commits the bill *before* this event is written, so upsert must re-resolve
+    bill_id from bulletin_number itself — the caller's pre-loop bill_ids map
+    and the async reconcile step both miss that inline-committed bill."""
+    db = FakeDB(77)  # bill lookup by bulletin hits → link self-heals
+    event = write.upsert_calendar_event(
+        db,
+        {
+            "kind": CalendarEventKind.VOTACION,
+            "starts_at": datetime(2026, 7, 1, 10, 0),
+            "title": "Vota Boletín 100-06",
+            "bulletin_number": "100-06",
+        },
+    )
+    assert event.bulletin_number == "100-06"
+    assert event.bill_id == 77
+
+
+def test_upsert_calendar_event_trusts_explicit_bill_id_without_lookup():
+    """When the caller already resolved bill_id, no bulletin lookup happens."""
+    db = FakeDB()  # any db.execute would assert "unexpected"
+    event = write.upsert_calendar_event(
+        db,
+        {
+            "kind": CalendarEventKind.VOTACION,
+            "starts_at": datetime(2026, 7, 1, 10, 0),
+            "title": "Vota Boletín 100-06",
+            "bulletin_number": "100-06",
+            "bill_id": 5,
+        },
+    )
+    assert event.bill_id == 5
 
 
 # ── _reconcile_orphan_calendar_events (ADR-0017 §9) ──────────────────────
