@@ -1457,6 +1457,24 @@ def _reconcile_orphan_voting_sessions(db: Session, bill: Bill) -> None:
     )
 
 
+def _reconcile_orphan_calendar_events(db: Session, bill: Bill) -> None:
+    """Link previously orphaned ``CalendarEvent`` rows to this bill (ADR-0017 §9).
+
+    The Tabla Semanal ingestor may upsert a calendar event before its bill
+    has been ingested; in that case ``bill_id`` is null and the upstream
+    bulletin is stashed in ``bulletin_number``. When the bill finally
+    arrives we deterministically attach those rows here.
+    """
+    db.execute(
+        update(CalendarEvent)
+        .where(
+            CalendarEvent.bill_id.is_(None),
+            CalendarEvent.bulletin_number == bill.bulletin_number,
+        )
+        .values(bill_id=bill.id)
+    )
+
+
 def upsert_bill(db: Session, data: dict[str, Any]) -> tuple[Bill, dict[str, Any]]:
     existing = db.execute(
         select(Bill.id, Bill.status, Bill.full_text_url).where(
@@ -1529,6 +1547,7 @@ def upsert_bill(db: Session, data: dict[str, Any]) -> tuple[Bill, dict[str, Any]
             _touch_syncable(db, bill)
             db.flush()
         _reconcile_orphan_voting_sessions(db, bill)
+        _reconcile_orphan_calendar_events(db, bill)
         status_changed = old_status != new_status
         full_text_url_changed = old_full_text_url != new_full_text_url
         return bill, {
@@ -1586,6 +1605,7 @@ def upsert_bill(db: Session, data: dict[str, Any]) -> tuple[Bill, dict[str, Any]
 
     db.flush()
     _reconcile_orphan_voting_sessions(db, bill)
+    _reconcile_orphan_calendar_events(db, bill)
 
     status_changed = (not is_new) and old_status != new_status
     stage_changed = (not is_new) and stages_changed
@@ -2710,6 +2730,8 @@ def upsert_calendar_event(db: Session, data: dict[str, Any]) -> CalendarEvent:
         "location": (data.get("location") or None) and data["location"][:200],
         "chamber_type": chamber_type,
         "bill_id": data.get("bill_id"),
+        "bulletin_number": (data.get("bulletin_number") or None)
+        and str(data["bulletin_number"])[:50],
         "legislator_id": data.get("legislator_id"),
         "committee_id": data.get("committee_id"),
         "source": source,

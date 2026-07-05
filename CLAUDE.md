@@ -35,8 +35,12 @@ python -m app.cli ingestors bills --since 2026-05-01 --dry-run
 python -m app.cli ingestors legislators
 python -m app.cli scrapers diario-oficial --target-date 2026-05-04 --dry-run
 
-# Database reset (pre-release only — drops all, regenerates schema)
-just recreate-db      # or: python scripts/recreate_db.py --yes
+# Schema changes: author an Alembic migration, don't recreate-db
+uv run alembic revision --autogenerate -m "..."
+uv run alembic upgrade head
+# `just recreate-db` / `scripts/recreate_db.py` are pre-release-only relics —
+# the project is past pre-release now, DROP DATABASE is never appropriate,
+# local included. See ADR-0022 and "Key conventions" below.
 
 # Seed reference data
 just seed             # runs: geography, legislature, legislators, seed-blocs, seed-topics
@@ -76,7 +80,7 @@ The default test suite (`uv run pytest`) uses SQLite in-memory (`sqlite+pysqlite
 
 ## Key conventions
 
-**No Alembic migrations in pre-release — *local dev only*.** Modify SQLAlchemy models and run `recreate_db.py` to regenerate the schema. The single `*_initial_schema.py` migration is regenerated each time. This applies to local/ephemeral databases; **deployed environments (AWS RDS) are Alembic-only** — schema is evolved with additive `alembic upgrade head` migrations run by the migration Lambda, never `recreate_db` (which drops all data). See ADR-0022.
+**Alembic-only, everywhere — the project is past pre-release.** Every schema change, local or deployed, is a real incremental migration: `uv run alembic revision --autogenerate -m "..."` against a DB at the current head, review the generated file, then `uv run alembic upgrade head`. **Never run `recreate_db.py` / `just recreate-db`** — it does `DROP DATABASE` and regenerates a single squashed `*_initial_schema.py`, which was only ever safe while the project had no data worth keeping. Deployed (AWS RDS) applies the same migrations via `alembic upgrade head` run by the migration Lambda. See ADR-0022.
 
 **Enums for all categorical fields.** See `app/models/enums.py`. Never use raw strings for `status`, `origin`, vote type, chamber type, etc.
 

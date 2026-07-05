@@ -1382,3 +1382,116 @@ def test_run_ingest_chamber_votes_targeted_bulletin_skips_discovery(monkeypatch)
     assert result["dispatched"] == 1
     # Targeted runs do not advance the watermark.
     assert watermark_advances == []
+
+
+# ── Tabla Semanal — orphan bulletin auto-retrieval (ADR-0017 §9) ────────
+
+
+def test_run_ingest_tabla_semanal_triggers_targeted_ingest_for_orphan_bulletins(
+    monkeypatch, tmp_path
+):
+    from app.models.enums import CalendarEventKind, CalendarEventSource
+
+    pdf_path = tmp_path / "tabla.pdf"
+    pdf_path.write_bytes(b"irrelevant")
+
+    events = [
+        {
+            "kind": CalendarEventKind.VOTACION,
+            "starts_at": datetime.datetime(2026, 7, 1, tzinfo=datetime.timezone.utc),
+            "title": "Vota Boletín 100-06",
+            "source": CalendarEventSource.TABLA_SEMANAL,
+            "external_ref": "tabla-semanal:100-06:2026-07-01",
+            "bulletin_number": "100-06",  # known bill — resolves
+        },
+        {
+            "kind": CalendarEventKind.SESION,
+            "starts_at": datetime.datetime(2026, 7, 1, tzinfo=datetime.timezone.utc),
+            "title": "Sesión ordinaria",
+            "source": CalendarEventSource.TABLA_SEMANAL,
+            "external_ref": "tabla-semanal:sesion:2026-07-01",
+            "bulletin_number": "200-07",  # orphan, cited again below
+        },
+        {
+            "kind": CalendarEventKind.VOTACION,
+            "starts_at": datetime.datetime(2026, 7, 1, tzinfo=datetime.timezone.utc),
+            "title": "Vota Boletín 200-07",
+            "source": CalendarEventSource.TABLA_SEMANAL,
+            "external_ref": "tabla-semanal:200-07:2026-07-01",
+            "bulletin_number": "200-07",  # same orphan again — dedup expected
+        },
+    ]
+
+    class FakeResult:
+        def all(self):
+            return [("100-06", 42)]
+
+    class FakeDB:
+        def execute(self, stmt):
+            return FakeResult()
+
+    upserted: list[dict] = []
+    triggered_bill_ingests: list[str] = []
+
+    monkeypatch.setattr(
+        "app.ingestors.parsers.tabla_semanal.parse_tabla_semanal_pdf",
+        lambda pdf_bytes: events,
+    )
+    monkeypatch.setattr(ingestor_tasks, "task_session", session_sequence(FakeDB()))
+    monkeypatch.setattr(
+        "app.services.write.upsert_calendar_event",
+        lambda db, payload: upserted.append(payload),
+    )
+    monkeypatch.setattr(
+        ingestor_tasks,
+        "_trigger_targeted_bill_ingest",
+        lambda bulletin: triggered_bill_ingests.append(bulletin),
+    )
+
+    result = ingestor_tasks.run_ingest_tabla_semanal(str(pdf_path), dry_run=False)
+
+    # Only the distinct orphan boletín triggers a fetch, once, despite being
+    # cited in two rows.
+    assert triggered_bill_ingests == ["200-07"]
+    assert result["orphan_bulletins"] == 2
+    assert len(upserted) == 3
+    assert upserted[0]["bill_id"] == 42
+    assert "bill_id" not in upserted[1]
+    assert upserted[1]["bulletin_number"] == "200-07"
+
+
+def test_run_ingest_tabla_semanal_dry_run_does_not_trigger_ingest(
+    monkeypatch, tmp_path
+):
+    from app.models.enums import CalendarEventKind, CalendarEventSource
+
+    pdf_path = tmp_path / "tabla.pdf"
+    pdf_path.write_bytes(b"irrelevant")
+
+    events = [
+        {
+            "kind": CalendarEventKind.VOTACION,
+            "starts_at": datetime.datetime(2026, 7, 1, tzinfo=datetime.timezone.utc),
+            "title": "Vota Boletín 200-07",
+            "source": CalendarEventSource.TABLA_SEMANAL,
+            "external_ref": "tabla-semanal:200-07:2026-07-01",
+            "bulletin_number": "200-07",
+        },
+    ]
+
+    triggered_bill_ingests: list[str] = []
+
+    monkeypatch.setattr(
+        "app.ingestors.parsers.tabla_semanal.parse_tabla_semanal_pdf",
+        lambda pdf_bytes: events,
+    )
+    monkeypatch.setattr(
+        ingestor_tasks,
+        "_trigger_targeted_bill_ingest",
+        lambda bulletin: triggered_bill_ingests.append(bulletin),
+    )
+
+    result = ingestor_tasks.run_ingest_tabla_semanal(str(pdf_path), dry_run=True)
+
+    assert triggered_bill_ingests == []
+    assert result["dry_run"] is True

@@ -1392,6 +1392,7 @@ def run_ingest_tabla_semanal(
     bulletins_needed = {
         ev["bulletin_number"] for ev in events if ev.get("bulletin_number")
     }
+    triggered_bill_ingests: set[str] = set()
 
     if dry_run:
         bill_ids: dict[str, int] = {}
@@ -1423,10 +1424,20 @@ def run_ingest_tabla_semanal(
                                     "bill_id=None",
                                     bulletin,
                                 )
+                                if bulletin not in triggered_bill_ingests:
+                                    triggered_bill_ingests.add(bulletin)
+                                    try:
+                                        _trigger_targeted_bill_ingest(bulletin)
+                                    except Exception:
+                                        logger.exception(
+                                            "Failed to enqueue bill ingest for "
+                                            "orphan bulletin %s",
+                                            bulletin,
+                                        )
                         payload = {
                             k: v
                             for k, v in event_data.items()
-                            if k not in ("bulletin_number", "related_bulletins")
+                            if k not in ("related_bulletins",)
                         }
                         upsert_calendar_event(db, payload)
                         dispatched += 1

@@ -1,6 +1,6 @@
 # Calendar events as an editorial layer
 
-**Status:** Accepted, 2026-06-24. Amended 2026-06-24 — added `votacion` kind (see §3 below). Amended 2026-06-24 — Tabla Semanal CLI ingestor + two new kinds (see §7 below). Amended 2026-07-04 — S3-triggered ingestion replaces the manual DB-tunnel step (see §8 below).
+**Status:** Accepted, 2026-06-24. Amended 2026-06-24 — added `votacion` kind (see §3 below). Amended 2026-06-24 — Tabla Semanal CLI ingestor + two new kinds (see §7 below). Amended 2026-07-04 — S3-triggered ingestion replaces the manual DB-tunnel step (see §8 below). Amended 2026-07-04 — orphan boletínes are proactively retrieved and self-heal (see §9 below).
 
 ## Context
 
@@ -239,6 +239,38 @@ revisit if the upload cadence increases.
 expired by other ingestors) rather than inventing an unconfirmed
 `"calendar"` tag with no established frontend contract.
 
+### 9. Orphan boletínes are proactively retrieved and self-heal
+
+§7's "unknown boletínes are orphans, not skips" still holds — the calendar
+event still gets created immediately with `bill_id=None` — but the
+resolution path is no longer "wait for a human to notice the WARNING and
+re-run the CLI." The chamber-votes pipeline (ADR-0013) already solved the
+identical "vote references a bill we don't have yet" problem, so this ports
+that pattern rather than inventing a new one:
+
+- When `run_ingest_tabla_semanal` finds an orphan boletín, it calls the same
+  `_trigger_targeted_bill_ingest` helper the chamber-votes orphan path uses,
+  which dispatches a single-bulletin `ingest_bills` job. Boletínes cited more
+  than once in the same PDF (e.g. a `sesion` header and its own `votacion`
+  row) only trigger one dispatch per run.
+- `CalendarEvent.bulletin_number` persists the boletín even when `bill_id`
+  is null — mirroring `VotingSession.bill_bulletin_number` exactly, down to
+  the partial index shape (`ix_calendar_events_pending_bulletin`, `WHERE
+  bill_id IS NULL AND bulletin_number IS NOT NULL`). It's set unconditionally
+  whenever a boletín is known, resolved or not, matching how
+  `upsert_voting_session` always sets its counterpart column.
+- `upsert_bill` gained `_reconcile_orphan_calendar_events`, run alongside
+  the existing `_reconcile_orphan_voting_sessions` at both of its call
+  sites: once the bill lands, any `CalendarEvent` row with a matching
+  `bulletin_number` and `bill_id IS NULL` gets linked automatically. No
+  re-run of the tabla-semanal CLI is required.
+- `--dry-run` never dispatches — matches every other `if not dry_run:` guard
+  in this ingestor.
+- Not backfilled: `CalendarEvent` rows created as orphans before this column
+  existed keep `bulletin_number = NULL` and will not self-heal; only newly
+  parsed orphans benefit. A manual re-run of the CLI against the original
+  PDF still resolves those, per §7.
+
 ## Alternatives considered
 
 **Reuse `LegislativeSession`.** Push manual entries into the same table
@@ -307,3 +339,9 @@ preserved, which no current source emits.
 - The public endpoint `GET /v1/calendar` is live with a today→+14-day
   default window. Time-of-day precision is tz-aware UTC, displayed in
   `America/Santiago` at the client edge (no server-side tz conversion).
+- (§9) `calendar_events.bulletin_number` + `ix_calendar_events_pending_bulletin`
+  ship via a real additive Alembic migration
+  (`a03b709c50e7_add_calendar_event_bulletin_number`, `down_revision =
+  e03d4c13e902`) — the project is past pre-release, so this is the first
+  schema change shipped as an incremental migration rather than a
+  `recreate_db`-regenerated single initial-schema file.

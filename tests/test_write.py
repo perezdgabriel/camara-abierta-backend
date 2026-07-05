@@ -510,3 +510,49 @@ def test_upsert_calendar_event_rejects_blank_title():
                 "title": "   ",
             },
         )
+
+
+def test_upsert_calendar_event_persists_bulletin_number_for_orphan_relink():
+    """ADR-0017 §9: bulletin_number must survive the upsert even when the
+    bill hasn't arrived yet, so upsert_bill's reconcile step can find it."""
+    db = FakeDB()
+    event = write.upsert_calendar_event(
+        db,
+        {
+            "kind": CalendarEventKind.VOTACION,
+            "starts_at": datetime(2026, 7, 1, 10, 0),
+            "title": "Vota Boletín 100-06",
+            "bulletin_number": "100-06",
+        },
+    )
+    assert event.bulletin_number == "100-06"
+    assert event.bill_id is None
+    assert db.added == [event]
+
+
+# ── _reconcile_orphan_calendar_events (ADR-0017 §9) ──────────────────────
+
+
+class _CapturingDB:
+    """Fake DB that only records executed Core statements for inspection."""
+
+    def __init__(self):
+        self.executed: list[object] = []
+
+    def execute(self, stmt):
+        self.executed.append(stmt)
+        return None
+
+
+def test_reconcile_orphan_calendar_events_targets_matching_bulletin():
+    db = _CapturingDB()
+    bill = SimpleNamespace(id=42, bulletin_number="100-06")
+
+    write._reconcile_orphan_calendar_events(db, bill)
+
+    assert len(db.executed) == 1
+    compiled_sql = str(db.executed[0].compile(compile_kwargs={"literal_binds": True}))
+    assert "calendar_events" in compiled_sql
+    assert "bill_id=42" in compiled_sql
+    assert "bulletin_number = '100-06'" in compiled_sql
+    assert "bill_id IS NULL" in compiled_sql

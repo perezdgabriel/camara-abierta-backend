@@ -644,6 +644,11 @@ class CalendarEvent(SyncableMixin, Base):
             name="uq_calendar_events_source_external_ref",
         ),
         Index("ix_calendar_events_starts_at", "starts_at"),
+        Index(
+            "ix_calendar_events_pending_bulletin",
+            "bulletin_number",
+            postgresql_where="bill_id IS NULL AND bulletin_number IS NOT NULL",
+        ),
     )
 
     kind: Mapped[CalendarEventKind] = mapped_column(
@@ -671,6 +676,11 @@ class CalendarEvent(SyncableMixin, Base):
     bill_id: Mapped[int | None] = mapped_column(
         ForeignKey("bills.id", ondelete="SET NULL")
     )
+    # Persists the upstream boletín even when bill_id is null (orphan), so
+    # upsert_bill's reconcile step can link this row once the bill arrives.
+    # Mirrors VotingSession.bill_bulletin_number (ADR-0013), ported for the
+    # Tabla Semanal orphan case (ADR-0017 §9).
+    bulletin_number: Mapped[str | None] = mapped_column(String(50))
     legislator_id: Mapped[int | None] = mapped_column(
         ForeignKey("legislators.id", ondelete="SET NULL")
     )
