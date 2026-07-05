@@ -43,5 +43,9 @@ def revalidate(tags: list[str]) -> None:
             logger.warning(
                 "revalidate ping non-2xx: %s %s", response.status_code, response.text
             )
+        else:
+            logger.info(
+                "revalidate ping ok: tags=%s status=%s", tags, response.status_code
+            )
     except httpx.HTTPError as exc:  # network error, timeout, etc.
         logger.warning("revalidate ping failed: %s", exc)

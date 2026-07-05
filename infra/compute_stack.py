@@ -249,8 +249,8 @@ class ComputeStack(Stack):
                 "LLM_QUEUE_URL": self.llm_queue.queue_url,
                 "INGESTOR_RESTSIL_API_KEY_PARAM": _RESTSIL_KEY_PARAM,
                 "AI_SUMMARY_ENABLED": "false",
-                # Post-ingest cache revalidation ping to the frontend.
-                "FRONTEND_URL_PARAM": "https://camaraabierta.cl",
+                # Post-ingest cache revalidation ping to the frontend. Not a
+                "FRONTEND_URL": "https://camaraabierta.cl",
                 "FRONTEND_REVALIDATE_TOKEN_PARAM": _FRONTEND_REVALIDATE_TOKEN_PARAM,
             },
             **common,
