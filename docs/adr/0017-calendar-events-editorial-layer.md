@@ -1,6 +1,6 @@
 # Calendar events as an editorial layer
 
-**Status:** Accepted, 2026-06-24. Amended 2026-06-24 — added `votacion` kind (see §3 below). Amended 2026-06-24 — Tabla Semanal CLI ingestor + two new kinds (see §7 below). Amended 2026-07-04 — S3-triggered ingestion replaces the manual DB-tunnel step (see §8 below). Amended 2026-07-04 — orphan boletínes are proactively retrieved and self-heal (see §9 below).
+**Status:** Accepted, 2026-06-24. Amended 2026-06-24 — added `votacion` kind (see §3 below). Amended 2026-06-24 — Tabla Semanal CLI ingestor + two new kinds (see §7 below). Amended 2026-07-04 — S3-triggered ingestion replaces the manual DB-tunnel step (see §8 below). Amended 2026-07-04 — orphan boletínes are proactively retrieved and self-heal (see §9 below). Amended 2026-07-05 — §9's self-heal was silently defeated in serverless mode; fixed by re-resolving `bill_id` at write time (see §10 below).
 
 ## Context
 
@@ -277,6 +277,59 @@ that pattern rather than inventing a new one:
   existed keep `bulletin_number = NULL` and will not self-heal; only newly
   parsed orphans benefit. A manual re-run of the CLI against the original
   PDF still resolves those, per §7.
+
+### 10. §9's self-heal only worked in `celery` mode — fixed by write-time re-resolution
+
+§9 shipped assuming `_trigger_targeted_bill_ingest` *enqueues* the bill ingest
+to run later, so `upsert_bill`'s `_reconcile_orphan_calendar_events` would fire
+after the orphan `CalendarEvent` row was already committed. That assumption holds
+under `celery` dispatch but is **false in serverless (deployed) mode**, where
+`dispatch` runs task bodies **inline** (`task.apply().get()`, ADR-0022). The
+result was a silent bug in production: orphan bills got retrieved, but the
+calendar events stayed `bill_id = NULL` forever.
+
+The inline execution inverts the ordering the reconcile depended on. In
+`run_ingest_tabla_semanal`'s orphan branch, `_trigger_targeted_bill_ingest`
+runs the *entire* bill ingest synchronously — including
+`_reconcile_orphan_calendar_events` — **before** `upsert_calendar_event` writes
+the orphan row. Two independent failures compound:
+
+1. **Ordering:** the reconcile `UPDATE ... WHERE bill_id IS NULL AND
+   bulletin_number = …` runs against a row that does not exist yet, matching
+   zero rows.
+2. **Cross-session isolation:** even reordered, the inline `ingest_bills` runs
+   in its own `task_session`; the outer tabla-semanal session is still open and
+   uncommitted, so under READ COMMITTED the reconcile cannot see the pending
+   calendar row anyway.
+
+And unlike `upsert_voting_session` — which re-resolves `bill_id` from the
+bulletin at write time (ADR-0013) and therefore self-healed all along — the
+calendar path trusted the caller's `bill_ids` map, computed *once before the
+loop* and never refreshed for the bill just ingested inline mid-loop. That
+asymmetry is exactly why Senate/Chamber votes worked but calendar events didn't.
+
+**Fix: `upsert_calendar_event` re-resolves `bill_id` from `bulletin_number` at
+write time** when the caller didn't supply one, mirroring
+`upsert_voting_session`. Because the inline ingest has already *committed* the
+bill by the time the event is written, a fresh `SELECT Bill.id WHERE
+bulletin_number = …` finds it — no dependence on task ordering or cross-session
+visibility. `_reconcile_orphan_calendar_events` stays as the backstop for the
+genuinely-async arrival (a bill that lands on a *later* run, or `celery` mode).
+
+Already-orphaned production rows are backfilled by the idempotent data migration
+`05d02404c207_backfill_orphan_calendar_event_bill_id` (`bill_id IS NULL AND
+bulletin_number = bills.bulletin_number`).
+
+**Durable lesson — resolve FKs at write time, never from a pre-loop map.**
+Because `dispatch` is inline in serverless, any pipeline that (a) inline-triggers
+a dependency ingest mid-loop *and* (b) writes the dependent row from a map built
+before that loop will re-introduce this exact silent orphan. A write-time
+re-resolve is the robust pattern; the pre-loop map was the fragile one. As of
+this amendment, the three relink flows — voting sessions → bill, calendar events
+→ bill, and votes → legislator term — all resolve their FK at write time. (Votes
+were never exposed: their term dependency arrives via a *separately scheduled*
+`ingest_legislators`, never inline-triggered, so their reconcile always fires
+against committed rows.)
 
 ## Alternatives considered
 
