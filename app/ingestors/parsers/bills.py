@@ -1,3 +1,5 @@
+import re
+
 from app.models.enums import BillOrigin, BillStatus, ChamberType, StageType, UrgencyType
 
 STATUS_MAP = {
@@ -86,6 +88,40 @@ RESTSIL_INICIATIVA_MAP = {
     30: BillOrigin.EXECUTIVE,  # Mensaje
     31: BillOrigin.DEPUTIES,  # Moción
 }
+
+
+def _clean_event_title(raw: str) -> str:
+    """Normalize garbled upstream tramitación titles.
+
+    RESTSIL composes some titles from a template plus a committee name and
+    ships them broken, e.g.:
+
+      "Primer informe de comisiónde Trabajo  de Trabajo"      (glued + duplicated)
+      "Primer informe de comisiónMedio Ambiente  Medio Ambiente"
+      "Cuenta de proyecto. Pasa a Comisión. de Seguridad Pública"
+
+    Rules are deliberately narrow so clean titles pass through unchanged.
+    """
+    title = raw.strip()
+    # Committee name glued directly onto "comisión" without a separator.
+    title = re.sub(r"(?i)(comisión)(?=[a-záéíóúñA-ZÁÉÍÓÚÑ])", r"\1 ", title)
+    # Stray period between "Comisión" and its "de <committee>" complement.
+    title = re.sub(r"(?i)(comisión)\.\s+(de\s)", r"\1 \2", title)
+    # Duplicated committee suffix after a run of 2+ spaces:
+    # "<head that already ends with X>  (de )?X" -> keep only the head.
+    split = re.search(r"\s{2,}", title)
+    if split:
+        head = title[: split.start()].rstrip()
+        tail = title[split.end() :].strip()
+
+        def norm(s: str) -> str:
+            return re.sub(r"\s+", " ", s).lower()
+
+        h, t = norm(head), norm(tail)
+        bare_t = t[3:] if t.startswith("de ") else t
+        if bare_t and (h.endswith(t) or h.endswith(f"de {bare_t}") or h.endswith(bare_t)):
+            title = head
+    return re.sub(r"\s+", " ", title).strip()
 
 
 class BillParser:
@@ -271,9 +307,10 @@ class BillParser:
             event_date = BillParser._restsil_date(
                 (row.get("TRAMFECHA") or "").strip() or None
             )
-            title = (row.get("TEXTODESCRIPTIVOTRAMITACION") or "").strip() or (
-                row.get("SUBEDESCRIPCION") or ""
-            ).strip()
+            title = _clean_event_title(
+                (row.get("TEXTODESCRIPTIVOTRAMITACION") or "").strip()
+                or (row.get("SUBEDESCRIPCION") or "").strip()
+            )
             stage_label = (row.get("ETAPDESCRIPCION") or "").strip()
             chamber_label = (row.get("CAMDELTRAMITE") or "").strip()
             chamber_type = CHAMBER_MAP.get(chamber_label)
@@ -398,7 +435,7 @@ class BillParser:
             event_date = tram.get("date")
             raw_description = (tram.get("description") or "").strip()
             raw_stage = (tram.get("stage") or "").strip()
-            title = raw_description or raw_stage
+            title = _clean_event_title(raw_description or raw_stage)
             if not event_date or not title:
                 continue
 

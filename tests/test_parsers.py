@@ -1049,3 +1049,52 @@ def test_legislative_period_parser_handles_non_integer_id():
     # except-tuple syntax should swallow the ValueError, leaving number=None.
     assert parsed["number"] is None
     assert parsed["description"] == "X"
+
+
+def test_clean_event_title_fixes_glued_committee_and_duplicated_suffix():
+    from app.ingestors.parsers.bills import _clean_event_title
+
+    assert (
+        _clean_event_title(
+            "Primer informe de comisiónde Trabajo y Seguridad Social"
+            "  de Trabajo y Seguridad Social"
+        )
+        == "Primer informe de comisión de Trabajo y Seguridad Social"
+    )
+
+
+def test_clean_event_title_fixes_glue_without_de_and_bare_duplicate():
+    from app.ingestors.parsers.bills import _clean_event_title
+
+    assert (
+        _clean_event_title(
+            "Primer informe de comisiónMedio Ambiente y Recursos Naturales"
+            "  Medio Ambiente y Recursos Naturales"
+        )
+        == "Primer informe de comisión Medio Ambiente y Recursos Naturales"
+    )
+
+
+def test_clean_event_title_removes_stray_period_before_committee():
+    from app.ingestors.parsers.bills import _clean_event_title
+
+    assert (
+        _clean_event_title("Cuenta de proyecto. Pasa a Comisión. de Seguridad Pública")
+        == "Cuenta de proyecto. Pasa a Comisión de Seguridad Pública"
+    )
+
+
+def test_clean_event_title_leaves_clean_titles_untouched():
+    from app.ingestors.parsers.bills import _clean_event_title
+
+    assert (
+        _clean_event_title("Cuenta del informe de la Comisión de Hacienda")
+        == "Cuenta del informe de la Comisión de Hacienda"
+    )
+    assert (
+        _clean_event_title(
+            "La Comisión recibió en audiencia al Ministro del Trabajo y Previsión Social"
+        )
+        == "La Comisión recibió en audiencia al Ministro del Trabajo y Previsión Social"
+    )
+    assert _clean_event_title("Ingreso de proyecto") == "Ingreso de proyecto"
