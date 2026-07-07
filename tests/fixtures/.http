@@ -10,9 +10,6 @@ Authorization: Apikey 55d99a70-c1da-4f5c-bbc3-b5f9c2620515
 
 ###
 
-GET https://restsil.senado.cl/v3/proyectos/tramitacionProyecto/
+GET https://restsil.senado.cl/v3/proyectos/tramitacionProyecto/14833
 Accept: application/json, text/plain, */*
 Authorization: Apikey 55d99a70-c1da-4f5c-bbc3-b5f9c2620515
-/*
-
-proyectos/tramitacionProyecto
