@@ -816,6 +816,44 @@ def test_bill_parser_restsil_detail_authors_text_handles_empty_and_whitespace():
     assert payload["authors"] == [{"name": "Doe, John"}]
 
 
+def test_bill_parser_restsil_detail_link_fields_accept_string_or_list():
+    # LINK_* fields come back as a plain URL string, or a list of
+    # {id, tomo, link} dicts when a trámite has multiple attached docs.
+    raw = {
+        "infoProyecto": {
+            "Suma": "x",
+            "Iniciativa": "Moción",
+            "Origen": "Senado",
+            "Urgencia": "",
+            "EstadoProyecto": "Primer trámite constitucional",
+            "leynro": None,
+            "DiarioOficial": None,
+        },
+        "etapasProyecto": [],
+        "tramitacionProyecto": [
+            {
+                "TRAMFECHA": "01/01/2024",
+                "TEXTODESCRIPTIVOTRAMITACION": "Some trámite",
+                "ETAPDESCRIPCION": "Primer trámite",
+                "LINK_INFORME": "https://example.com/report.pdf",
+                "LINK_COMPARADO": [
+                    {"id": "1", "tomo": "", "link": "https://example.com/c1.pdf"},
+                    {"id": "2", "tomo": "", "link": "https://example.com/c2.pdf"},
+                ],
+            }
+        ],
+    }
+    payload = BillParser.parse_restsil_detail(raw, bulletin="0-99")
+
+    comparados = [d for d in payload["documents"] if d["document_type"] == "comparison"]
+    reports = [d for d in payload["documents"] if d["document_type"] == "report"]
+    assert {d["document_url"] for d in comparados} == {
+        "https://example.com/c1.pdf",
+        "https://example.com/c2.pdf",
+    }
+    assert [d["document_url"] for d in reports] == ["https://example.com/report.pdf"]
+
+
 def test_bill_parser_restsil_summary_handles_unknown_codes_gracefully():
     payload = BillParser.parse_restsil_summary(
         {

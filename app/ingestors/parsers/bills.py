@@ -164,6 +164,15 @@ class BillParser:
         return None
 
     @staticmethod
+    def _link_urls(value) -> list[str]:
+        """RESTSIL LINK_* fields are either a URL string or a list of
+        ``{"id","tomo","link"}`` dicts (one per attached document).
+        Normalize to a list of clean URLs."""
+        if isinstance(value, list):
+            return [u for item in value if (u := (item.get("link") or "").strip())]
+        return [u] if (u := (value or "").strip()) else []
+
+    @staticmethod
     def parse_bill(raw: dict) -> dict:
         origin_type = ORIGIN_MAP.get(raw.get("initiative", ""), BillOrigin.DEPUTIES)
         origin_chamber_type = CHAMBER_MAP.get(
@@ -266,9 +275,9 @@ class BillParser:
 
         message_url = ""
         for etapa in etapas:
-            link = (etapa.get("link_mensaje") or "").strip()
-            if link:
-                message_url = link
+            urls = BillParser._link_urls(etapa.get("link_mensaje"))
+            if urls:
+                message_url = urls[0]
                 break
 
         # First etapa's fechaInicio is the bill's entry date in slash form.
@@ -327,38 +336,35 @@ class BillParser:
                     }
                 )
 
-            link_informe = (row.get("LINK_INFORME") or "").strip()
-            link_comparado = (row.get("LINK_COMPARADO") or "").strip()
-            link_oficio = (row.get("LINK_OFICIO") or "").strip()
             row_subdesc = (row.get("SUBEDESCRIPCION") or "").strip()
             row_tramdesc = (row.get("TRAMDESCRIPCION") or "").strip()
 
-            if link_informe:
+            for url in BillParser._link_urls(row.get("LINK_INFORME")):
                 documents.append(
                     {
                         "document_type": "report",
                         "title": row_subdesc,
-                        "document_url": link_informe,
+                        "document_url": url,
                         "document_date": event_date,
                         "_stage_ref": stage_label,
                     }
                 )
-            if link_comparado:
+            for url in BillParser._link_urls(row.get("LINK_COMPARADO")):
                 documents.append(
                     {
                         "document_type": "comparison",
                         "title": row_tramdesc or row_subdesc,
-                        "document_url": link_comparado,
+                        "document_url": url,
                         "document_date": event_date,
                         "_stage_ref": stage_label,
                     }
                 )
-            if link_oficio:
+            for url in BillParser._link_urls(row.get("LINK_OFICIO")):
                 documents.append(
                     {
                         "document_type": "official_communication",
                         "title": row_tramdesc or row_subdesc,
-                        "document_url": link_oficio,
+                        "document_url": url,
                         "document_date": event_date,
                         "_stage_ref": stage_label,
                     }
