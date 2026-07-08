@@ -212,7 +212,7 @@ class ComputeStack(Stack):
                 **base_env,
                 "DISPATCH_BACKEND": "serverless",
                 "ANTHROPIC_API_KEY_PARAM": _ANTHROPIC_KEY_PARAM,
-                "AI_SUMMARY_ENABLED": "false",
+                "AI_SUMMARY_ENABLED": "true",
             },
             **common,
         )
@@ -248,7 +248,7 @@ class ComputeStack(Stack):
                 "DISPATCH_BACKEND": "serverless",
                 "LLM_QUEUE_URL": self.llm_queue.queue_url,
                 "INGESTOR_RESTSIL_API_KEY_PARAM": _RESTSIL_KEY_PARAM,
-                "AI_SUMMARY_ENABLED": "false",
+                "AI_SUMMARY_ENABLED": "true",
                 # Post-ingest cache revalidation ping to the frontend. Not a
                 "FRONTEND_URL": "https://camaraabierta.cl",
                 "FRONTEND_REVALIDATE_TOKEN_PARAM": _FRONTEND_REVALIDATE_TOKEN_PARAM,
