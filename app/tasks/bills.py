@@ -102,8 +102,6 @@ def _decide_summary_triggers(
         proposal_stale
         or change_info.get("is_new")
         or change_info.get("full_text_url_changed")
-        or change_info.get("status_changed")
-        or change_info.get("stage_changed")
     ):
         kinds.append(BillSummaryKind.PROPOSAL)
 
