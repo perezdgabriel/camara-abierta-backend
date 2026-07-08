@@ -19,16 +19,24 @@ def _pdfplumber():
     return pdfplumber
 
 
-def download_pdf_bytes(url: str) -> bytes | None:
+def download_pdf_bytes(url: str, *, attempts: int = 3) -> bytes | None:
     httpx = _httpx()
-    try:
-        with httpx.Client(timeout=HTTP_TIMEOUT, follow_redirects=True) as client:
-            response = client.get(url)
-            response.raise_for_status()
-            return response.content
-    except Exception as exc:
-        logger.warning("Failed to download PDF from %s: %s", url, exc)
-        return None
+    import time
+
+    # The senado document microservice drops TLS connections under concurrent
+    # load (UNEXPECTED_EOF_WHILE_READING); retry the transient case with backoff.
+    for i in range(attempts):
+        try:
+            with httpx.Client(timeout=HTTP_TIMEOUT, follow_redirects=True) as client:
+                response = client.get(url)
+                response.raise_for_status()
+                return response.content
+        except (httpx.TransportError, httpx.HTTPStatusError) as exc:
+            if i == attempts - 1:
+                logger.warning("Failed to download PDF from %s: %s", url, exc)
+                return None
+            time.sleep(0.5 * 2**i)  # 0.5s, 1s
+    return None
 
 
 def extract_text_from_bytes(pdf_bytes: bytes) -> str | None:
