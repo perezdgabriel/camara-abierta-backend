@@ -20,7 +20,8 @@ recreate-db:
     uv run python scripts/recreate_db.py -y
 
 worker:
-    uv run celery -A app.core.celery_app worker -Q default --loglevel=info
+    mkdir -p logs
+    uv run celery -A app.core.celery_app worker -Q default --loglevel=info --concurrency=6 2>&1 | tee -a logs/worker.log
 
 geography:
     uv run python -m app.cli geography

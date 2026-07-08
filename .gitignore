@@ -8,6 +8,9 @@ dump.rdb
 .pytest_cache/
 .ruff_cache/
 cdk.out/
+# Local dev logs (prod uses CloudWatch)
+logs/
+
 # Deploy artifacts (local RDS bootstrap / tooling)
 coldstart.dump
 *.pem
