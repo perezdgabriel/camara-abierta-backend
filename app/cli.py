@@ -211,6 +211,9 @@ def _run_ai_bills_regenerate(args: argparse.Namespace) -> dict[str, Any]:
             bulletin=args.bulletin,
             kind=args.kind,
             stale_only=args.stale_only,
+            statuses=[s.strip() for s in args.status.split(",")]
+            if args.status
+            else None,
         )
     )
     return {"job": "ai-bills-regenerate", **payload}
@@ -580,6 +583,15 @@ def _build_parser() -> argparse.ArgumentParser:
         help=(
             "Only enqueue bills whose stored prompt_version or model_name "
             "differs from current settings."
+        ),
+    )
+    regenerate_parser.add_argument(
+        "--status",
+        help=(
+            "Comma-separated summary statuses to restrict to (e.g. "
+            "'skipped,failed'). Only bills with an existing row in one of "
+            "these statuses are re-enqueued, for exactly that kind. Default: "
+            "all bills."
         ),
     )
     regenerate_parser.set_defaults(runner=_run_ai_bills_regenerate)
