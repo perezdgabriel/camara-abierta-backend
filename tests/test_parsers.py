@@ -854,6 +854,39 @@ def test_bill_parser_restsil_detail_link_fields_accept_string_or_list():
     assert [d["document_url"] for d in reports] == ["https://example.com/report.pdf"]
 
 
+def test_bill_parser_restsil_detail_drops_corrupted_link_values():
+    # Upstream sometimes returns garbage in LINK_* instead of a URL, e.g.
+    # "2683%DOCUMENTO DE ESTUDIO". Those must not become document_url values.
+    raw = {
+        "infoProyecto": {
+            "Suma": "x",
+            "Iniciativa": "Moción",
+            "Origen": "Senado",
+            "Urgencia": "",
+            "EstadoProyecto": "Primer trámite constitucional",
+            "leynro": None,
+            "DiarioOficial": None,
+        },
+        "etapasProyecto": [],
+        "tramitacionProyecto": [
+            {
+                "TRAMFECHA": "19/10/2018",
+                "TEXTODESCRIPTIVOTRAMITACION": "Segundo informe de comisión",
+                "ETAPDESCRIPCION": "Segundo trámite constitucional",
+                "LINK_COMPARADO": "2683%DOCUMENTO DE ESTUDIO",
+                "LINK_INFORME": [
+                    {"id": "1", "tomo": "", "link": "https://example.com/ok.pdf"},
+                    {"id": "2", "tomo": "", "link": "garbage%X"},
+                ],
+            }
+        ],
+    }
+    payload = BillParser.parse_restsil_detail(raw, bulletin="0-99")
+
+    urls = {d["document_url"] for d in payload["documents"]}
+    assert urls == {"https://example.com/ok.pdf"}
+
+
 def test_bill_parser_restsil_summary_handles_unknown_codes_gracefully():
     payload = BillParser.parse_restsil_summary(
         {

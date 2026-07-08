@@ -119,7 +119,9 @@ def _clean_event_title(raw: str) -> str:
 
         h, t = norm(head), norm(tail)
         bare_t = t[3:] if t.startswith("de ") else t
-        if bare_t and (h.endswith(t) or h.endswith(f"de {bare_t}") or h.endswith(bare_t)):
+        if bare_t and (
+            h.endswith(t) or h.endswith(f"de {bare_t}") or h.endswith(bare_t)
+        ):
             title = head
     return re.sub(r"\s+", " ", title).strip()
 
@@ -167,10 +169,17 @@ class BillParser:
     def _link_urls(value) -> list[str]:
         """RESTSIL LINK_* fields are either a URL string or a list of
         ``{"id","tomo","link"}`` dicts (one per attached document).
-        Normalize to a list of clean URLs."""
+        Normalize to a list of clean URLs, dropping upstream garbage — some
+        LINK_* fields come back as e.g. "2683%DOCUMENTO DE ESTUDIO" instead
+        of a real URL."""
+
+        def _clean(v) -> str | None:
+            u = (v or "").strip()
+            return u if u.startswith(("http://", "https://")) else None
+
         if isinstance(value, list):
-            return [u for item in value if (u := (item.get("link") or "").strip())]
-        return [u] if (u := (value or "").strip()) else []
+            return [u for item in value if (u := _clean(item.get("link")))]
+        return [u] if (u := _clean(value)) else []
 
     @staticmethod
     def parse_bill(raw: dict) -> dict:
