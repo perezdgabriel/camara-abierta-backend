@@ -197,7 +197,10 @@ class ComputeStack(Stack):
             self,
             "LlmFn",
             code=image("app.lambdas.llm.handler"),
-            memory_size=1024,
+            # 2048: multi-hundred-page PDF extraction pinned 1024 at its
+            # ceiling (Max Memory Used: 1024/1024 on every hung invocation),
+            # stalling the process in kernel reclaim; also doubles CPU share.
+            memory_size=2048,
             timeout=Duration.seconds(300),
             # NOTE: reserved concurrency (to cap parallel Anthropic calls) is
             # omitted because new accounts have a total Lambda concurrency quota

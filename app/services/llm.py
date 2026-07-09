@@ -323,7 +323,12 @@ def _claude_client():
         raise RuntimeError("ANTHROPIC_API_KEY is not configured")
     import anthropic
 
-    return anthropic.Anthropic(api_key=settings.anthropic_api_key, timeout=120.0)
+    # max_retries=0: SQS redelivery (max_receive_count=3) owns retries; the
+    # SDK's in-process retries (3 x 120s) can only blow the Lambda's 300s
+    # budget without ever surfacing an exception.
+    return anthropic.Anthropic(
+        api_key=settings.anthropic_api_key, timeout=120.0, max_retries=0
+    )
 
 
 def _claude_tool_call(

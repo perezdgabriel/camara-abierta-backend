@@ -101,6 +101,11 @@ def extract_text_from_bytes(pdf_bytes: bytes) -> str | None:
                         PAGE_DEADLINE_SECONDS,
                     )
                     continue
+                finally:
+                    # pdfplumber caches every parsed page for the life of the
+                    # document; on multi-hundred-page PDFs that pins the Lambda
+                    # at its memory ceiling and stalls it in kernel reclaim.
+                    page.close()
                 if text:
                     pages.append(text)
                 if (i + 1) % 20 == 0:
@@ -196,6 +201,10 @@ def extract_comparado_text_from_bytes(pdf_bytes: bytes) -> str | None:
                         PAGE_DEADLINE_SECONDS,
                     )
                     continue
+                finally:
+                    # See extract_text_from_bytes: release the page cache or
+                    # long comparados pin the Lambda at its memory ceiling.
+                    page.close()
                 cells.extend(page_cells)
                 logger.info(
                     "  page %d/%d: processed in %.1fs (%d tables), total %.1fs",
