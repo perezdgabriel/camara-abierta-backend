@@ -78,11 +78,50 @@ def _debug_network_check() -> None:
         logger.warning("HTTPS GET FAILED after %.2fs: %s", time.monotonic() - t0, exc)
 
 
+def _debug_anthropic_call() -> None:
+    """Temporary diagnostic: a minimal real call through the actual SDK client.
+
+    Raw DNS/TCP/HTTPS to the domain all work fine (see _debug_network_check),
+    so this isolates whether the hang is specific to messages.create() itself
+    (auth, endpoint, SDK client setup) using the exact same client
+    construction as production (_claude_client), with a trivial prompt to
+    keep cost negligible.
+    """
+    from app.services.llm import _claude_client
+    from app.core.config import settings
+
+    t0 = time.monotonic()
+    try:
+        client = _claude_client()
+        logger.info("Anthropic client constructed in %.2fs", time.monotonic() - t0)
+        t0 = time.monotonic()
+        response = client.messages.create(
+            model=settings.anthropic_model,
+            max_tokens=10,
+            messages=[{"role": "user", "content": "Say hi in one word."}],
+        )
+        logger.info(
+            "messages.create() succeeded in %.2fs: %s",
+            time.monotonic() - t0,
+            response.content,
+        )
+    except Exception as exc:
+        logger.warning(
+            "messages.create() FAILED after %.2fs: %s: %s",
+            time.monotonic() - t0,
+            type(exc).__name__,
+            exc,
+        )
+
+
 def handler(event: dict[str, Any], context: Any) -> None:
     for record in event.get("Records", []):
         body = json.loads(record["body"])
         if body.get("task") == "__debug_network_check__":
             _debug_network_check()
+            continue
+        if body.get("task") == "__debug_anthropic_call__":
+            _debug_anthropic_call()
             continue
         task = celery_app.tasks[body["task"]]
         task.apply(args=body.get("args", []), kwargs=body.get("kwargs", {})).get()
