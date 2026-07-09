@@ -41,6 +41,20 @@ class NetworkStack(Stack):
                 name="fck-nat-al2023-*-x86_64-ebs",
                 owners=["568608671756"],
             ),
+            # Clamp TCP MSS to the path MTU on forwarded traffic. Diagnosed
+            # 2026-07-09: large POST bodies (e.g. Anthropic API calls with big
+            # prompts) hung indefinitely with zero error on either end, while
+            # identical small requests succeeded in seconds — the textbook
+            # signature of a Path MTU Discovery blackhole (a large upload needs
+            # segment resizing partway through the connection; if the ICMP
+            # "fragmentation needed" reply gets lost anywhere upstream, the
+            # sender never finds out and just stalls forever). MSS clamping
+            # negotiates a safe segment size upfront so the connection never
+            # depends on PMTUD working end-to-end.
+            user_data=[
+                "iptables -t mangle -A FORWARD -p tcp --tcp-flags SYN,RST SYN "
+                "-j TCPMSS --clamp-mss-to-pmtu",
+            ],
         )
 
         self.vpc = ec2.Vpc(
