@@ -1,11 +1,39 @@
 import io
 import logging
 import re
+import signal
 import time
+from contextlib import contextmanager
 
 logger = logging.getLogger(__name__)
 
 HTTP_TIMEOUT = 60
+
+# pdfplumber's table/line detection can pathologically hang on a single
+# malformed page (seen: a 412-page comparado where pages 1-188 took ~0.3s
+# each, then page 189 hung the whole Lambda invocation to its 300s hard
+# kill). Bound each page individually, and cap total extraction time so a
+# PDF with several merely-slow pages can't add up past the budget either.
+PAGE_DEADLINE_SECONDS = 15
+EXTRACTION_BUDGET_SECONDS = 180
+
+
+class _PageTimeout(Exception):
+    pass
+
+
+@contextmanager
+def _page_deadline(seconds: int = PAGE_DEADLINE_SECONDS):
+    def _handler(signum, frame):
+        raise _PageTimeout()
+
+    previous = signal.signal(signal.SIGALRM, _handler)
+    signal.alarm(seconds)
+    try:
+        yield
+    finally:
+        signal.alarm(0)
+        signal.signal(signal.SIGALRM, previous)
 
 
 def _httpx():
@@ -55,7 +83,24 @@ def extract_text_from_bytes(pdf_bytes: bytes) -> str | None:
             logger.info("Extracting text from %d-page PDF", len(pdf.pages))
             pages: list[str] = []
             for i, page in enumerate(pdf.pages):
-                text = page.extract_text()
+                if time.monotonic() - t0 > EXTRACTION_BUDGET_SECONDS:
+                    logger.warning(
+                        "Text extraction budget exceeded after page %d/%d, stopping early",
+                        i,
+                        len(pdf.pages),
+                    )
+                    break
+                try:
+                    with _page_deadline():
+                        text = page.extract_text()
+                except _PageTimeout:
+                    logger.warning(
+                        "  page %d/%d: extract_text exceeded %ds, skipping page",
+                        i + 1,
+                        len(pdf.pages),
+                        PAGE_DEADLINE_SECONDS,
+                    )
+                    continue
                 if text:
                     pages.append(text)
                 if (i + 1) % 20 == 0:
@@ -106,9 +151,26 @@ def extract_comparado_text_from_bytes(pdf_bytes: bytes) -> str | None:
         with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
             logger.info("Extracting comparado from %d-page PDF", len(pdf.pages))
             for i, page in enumerate(pdf.pages):
+                if time.monotonic() - t0 > EXTRACTION_BUDGET_SECONDS:
+                    logger.warning(
+                        "Comparado extraction budget exceeded after page %d/%d, stopping early",
+                        i,
+                        len(pdf.pages),
+                    )
+                    break
                 page_t0 = time.monotonic()
                 page_mid_x = page.width / 2
-                tables = page.find_tables()
+                try:
+                    with _page_deadline():
+                        tables = page.find_tables()
+                except _PageTimeout:
+                    logger.warning(
+                        "  page %d/%d: find_tables exceeded %ds, skipping page",
+                        i + 1,
+                        len(pdf.pages),
+                        PAGE_DEADLINE_SECONDS,
+                    )
+                    continue
                 logger.info(
                     "  page %d/%d: find_tables in %.1fs (%d tables), total %.1fs",
                     i + 1,
