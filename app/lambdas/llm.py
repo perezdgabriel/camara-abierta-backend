@@ -78,18 +78,20 @@ def _debug_network_check() -> None:
         logger.warning("HTTPS GET FAILED after %.2fs: %s", time.monotonic() - t0, exc)
 
 
-def _debug_anthropic_call() -> None:
-    """Temporary diagnostic: a minimal real call through the actual SDK client.
+def _debug_anthropic_call(chars: int = 20) -> None:
+    """Temporary diagnostic: a real call through the actual SDK client with a
+    configurable-size synthetic prompt, to bisect whether the bill 214 hang
+    (150K chars) is a genuine size threshold or specific to that content.
 
     Raw DNS/TCP/HTTPS to the domain all work fine (see _debug_network_check),
-    so this isolates whether the hang is specific to messages.create() itself
-    (auth, endpoint, SDK client setup) using the exact same client
-    construction as production (_claude_client), with a trivial prompt to
-    keep cost negligible.
+    and MSS clamping on the NAT (deployed 2026-07-09) did NOT fix the bill 214
+    hang, so this isolates size as a variable directly, using the exact same
+    client construction as production (_claude_client).
     """
-    from app.services.llm import _claude_client
     from app.core.config import settings
+    from app.services.llm import _claude_client
 
+    content = "Cuenta hasta diez. " + ("x" * chars)
     t0 = time.monotonic()
     try:
         client = _claude_client()
@@ -98,16 +100,18 @@ def _debug_anthropic_call() -> None:
         response = client.messages.create(
             model=settings.anthropic_model,
             max_tokens=10,
-            messages=[{"role": "user", "content": "Say hi in one word."}],
+            messages=[{"role": "user", "content": content}],
         )
         logger.info(
-            "messages.create() succeeded in %.2fs: %s",
+            "messages.create() (chars=%d) succeeded in %.2fs: %s",
+            chars,
             time.monotonic() - t0,
             response.content,
         )
     except Exception as exc:
         logger.warning(
-            "messages.create() FAILED after %.2fs: %s: %s",
+            "messages.create() (chars=%d) FAILED after %.2fs: %s: %s",
+            chars,
             time.monotonic() - t0,
             type(exc).__name__,
             exc,
@@ -121,7 +125,7 @@ def handler(event: dict[str, Any], context: Any) -> None:
             _debug_network_check()
             continue
         if body.get("task") == "__debug_anthropic_call__":
-            _debug_anthropic_call()
+            _debug_anthropic_call(**body.get("kwargs", {}))
             continue
         task = celery_app.tasks[body["task"]]
         task.apply(args=body.get("args", []), kwargs=body.get("kwargs", {})).get()
