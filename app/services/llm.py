@@ -252,7 +252,7 @@ def can_generate_bill_summary() -> bool:
 
 
 def generate_proposal_summary(
-    full_text: str, existing_topics: list[str]
+    full_text: str, existing_topics: list[str], *, truncated: bool = False
 ) -> dict[str, Any]:
     """Generate the proposal-layer structured summary from the bill's PDF text.
 
@@ -260,14 +260,24 @@ def generate_proposal_summary(
     ``existing_topics`` is the current curated topic vocabulary; it's given to
     the model so it prefers reusing an existing label over coining a new one
     (see ADR-0021). Raises on any LLM or schema validation error; callers
-    persist ``status=FAILED`` with the exception message.
+    persist ``status=FAILED`` with the exception message. When ``truncated=True``
+    the user message is prefixed with a Spanish note instructing the model that
+    the input is a partial excerpt.
     """
     text = (full_text or "").strip()
     if not text:
         raise ValueError("full_text is empty")
     topics_list = ", ".join(existing_topics) if existing_topics else "(ninguno aún)"
+    prefix = (
+        "Nota: el siguiente texto es un EXTRACTO PARCIAL del proyecto de ley "
+        "(truncado por tamaño). Resume únicamente lo presente en este "
+        "extracto; no afirmes que la lista es exhaustiva.\n\n"
+        if truncated
+        else ""
+    )
     user_text = (
-        "Temas existentes (reutilizar cuando aplique): "
+        prefix
+        + "Temas existentes (reutilizar cuando aplique): "
         + topics_list
         + "\n\nTexto fundacional del proyecto de ley:\n\n"
         + text
@@ -313,7 +323,7 @@ def _claude_client():
         raise RuntimeError("ANTHROPIC_API_KEY is not configured")
     import anthropic
 
-    return anthropic.Anthropic(api_key=settings.anthropic_api_key)
+    return anthropic.Anthropic(api_key=settings.anthropic_api_key, timeout=120.0)
 
 
 def _claude_tool_call(

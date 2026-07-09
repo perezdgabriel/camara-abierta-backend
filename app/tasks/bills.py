@@ -284,8 +284,14 @@ def _generate_proposal_layer(bill_id: int) -> dict:
     with task_session() as db:
         existing_topics = [name for (name,) in db.query(Topic.name).all()]
 
+    texts = [full_text]
+    truncated = _truncate_to_budget(texts, settings.ai_summary_max_input_chars)
+    full_text = texts[0]
+
     try:
-        content = generate_proposal_summary(full_text, existing_topics)
+        content = generate_proposal_summary(
+            full_text, existing_topics, truncated=truncated
+        )
     except Exception as exc:
         logger.warning("Claude proposal summary failed for bill %s: %s", bill_id, exc)
         status = _persist_layer(
@@ -309,6 +315,7 @@ def _generate_proposal_layer(bill_id: int) -> dict:
         content=content,
         source_url=full_text_url,
         error_reason=None,
+        truncated=truncated,
     )
 
     # Claude's strict tool-use schema can't express minItems/maxItems on

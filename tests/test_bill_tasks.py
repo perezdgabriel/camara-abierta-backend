@@ -68,7 +68,7 @@ def test_generate_proposal_layer_persists_success(monkeypatch):
         assert url == "https://example.com/bill.pdf"
         return "texto completo"
 
-    def fake_generate_proposal(text, existing_topics):
+    def fake_generate_proposal(text, existing_topics, *, truncated=False):
         assert text == "texto completo"
         assert existing_topics == ["Trabajo", "Salud"]
         return {
@@ -146,7 +146,7 @@ def test_generate_proposal_layer_persists_failed_when_llm_raises(monkeypatch):
     )
     monkeypatch.setattr(bill_tasks, "extract_text_from_url", lambda _url: "texto")
 
-    def raise_(_text, _existing_topics):
+    def raise_(_text, _existing_topics, *, truncated=False):
         raise RuntimeError("boom")
 
     monkeypatch.setattr(bill_tasks, "generate_proposal_summary", raise_)
