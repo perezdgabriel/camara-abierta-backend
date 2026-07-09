@@ -120,17 +120,16 @@ def _debug_anthropic_call(chars: int = 20) -> None:
 
 def _debug_tool_call(chars: int = 20) -> None:
     """Temporary diagnostic: the exact production tool-call shape (forced
-    tool_choice + max_tokens=2048), but with a small/configurable prompt.
+    tool_choice + max_tokens=2048), but with a small/configurable synthetic
+    prompt.
 
     Bisection ruled out prompt size entirely: a synthetic 150K-char prompt
     with a bare messages.create() (max_tokens=10) succeeds in <1s, but bill
     214's real 150K-char prompt through the production _claude_tool_call path
-    hangs. The one thing not yet isolated is the tools/tool_choice/max_tokens
-    shape itself — a forced structured-JSON generation may take Claude
-    genuinely much longer to produce than a bare 10-token completion, and if
-    that longer in-flight duration is what the NAT can't sustain (rather than
-    payload size), a small prompt through the *real* call shape should
-    reproduce the hang.
+    hangs. This also ruled out the tools/tool_choice/max_tokens=2048 shape
+    itself, alone and combined with the 150K size — both succeed in seconds
+    with synthetic filler content. See _debug_real_proposal for the next
+    isolation: real bill content instead of synthetic filler.
     """
     from app.core.config import settings
     from app.services.llm import PROPOSAL_TOOL, _claude_client
@@ -165,6 +164,71 @@ def _debug_tool_call(chars: int = 20) -> None:
         )
 
 
+def _debug_real_proposal(bill_id: int, max_chars: int = 150_000) -> None:
+    """Temporary diagnostic: the real production call, bypassing DB writes,
+    with a configurable truncation size to bisect within real bill content.
+
+    Synthetic content of the same size and shape (see _debug_tool_call) never
+    reproduces the bill 214 hang — only the real extracted PDF text does.
+    This fetches bill 214's real text and truncates it to `max_chars` before
+    calling the exact production function (generate_proposal_summary), so we
+    can bisect: does a smaller *real* slice still hang, or is it specific to
+    something further into the document (only present once truncation lands
+    near/at the full 150K default)?
+    """
+    from app.core.session import task_session
+    from app.models.core import Topic
+    from app.services.llm import generate_proposal_summary
+    from app.services.pdf import extract_text_from_url
+    from app.services.proyectos import get_bill
+    from app.tasks.bills import _truncate_to_budget
+
+    with task_session() as db:
+        bill = get_bill(db, bill_id)
+        full_text_url = bill.full_text_url if bill else None
+    if not full_text_url:
+        logger.warning("bill %s: no full_text_url", bill_id)
+        return
+
+    full_text = extract_text_from_url(full_text_url)
+    if not full_text:
+        logger.warning("bill %s: pdf extraction failed", bill_id)
+        return
+
+    texts = [full_text]
+    truncated = _truncate_to_budget(texts, max_chars)
+    full_text = texts[0]
+    logger.info(
+        "bill %s: real text ready, chars=%d truncated=%s",
+        bill_id,
+        len(full_text),
+        truncated,
+    )
+
+    with task_session() as db:
+        existing_topics = [name for (name,) in db.query(Topic.name).all()]
+
+    t0 = time.monotonic()
+    try:
+        content = generate_proposal_summary(
+            full_text, existing_topics, truncated=truncated
+        )
+        logger.info(
+            "bill %s: real call succeeded in %.2fs: %s",
+            bill_id,
+            time.monotonic() - t0,
+            content,
+        )
+    except Exception as exc:
+        logger.warning(
+            "bill %s: real call FAILED after %.2fs: %s: %s",
+            bill_id,
+            time.monotonic() - t0,
+            type(exc).__name__,
+            exc,
+        )
+
+
 def handler(event: dict[str, Any], context: Any) -> None:
     for record in event.get("Records", []):
         body = json.loads(record["body"])
@@ -176,6 +240,9 @@ def handler(event: dict[str, Any], context: Any) -> None:
             continue
         if body.get("task") == "__debug_tool_call__":
             _debug_tool_call(**body.get("kwargs", {}))
+            continue
+        if body.get("task") == "__debug_real_proposal__":
+            _debug_real_proposal(*body.get("args", []), **body.get("kwargs", {}))
             continue
         task = celery_app.tasks[body["task"]]
         task.apply(args=body.get("args", []), kwargs=body.get("kwargs", {})).get()
