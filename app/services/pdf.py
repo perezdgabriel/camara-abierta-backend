@@ -163,45 +163,48 @@ def extract_comparado_text_from_bytes(pdf_bytes: bytes) -> str | None:
                 try:
                     with _page_deadline():
                         tables = page.find_tables()
+                        page_cells: list[str] = []
+                        for table in tables:
+                            extracted = table.extract()
+                            for row_idx, row in enumerate(table.rows):
+                                if row_idx >= len(extracted):
+                                    continue
+                                extracted_row = extracted[row_idx]
+                                for cell_idx, cell_bbox in enumerate(row.cells):
+                                    if cell_bbox is None:
+                                        continue
+                                    x0 = cell_bbox[0]
+                                    if x0 < page_mid_x:
+                                        continue
+                                    if cell_idx >= len(extracted_row):
+                                        continue
+                                    text = (extracted_row[cell_idx] or "").strip()
+                                    if not text:
+                                        continue
+                                    upper = text.upper()
+                                    if (
+                                        upper == "TEXTO LEGAL VIGENTE"
+                                        or upper.startswith("TEXTO APROBADO")
+                                    ):
+                                        continue
+                                    page_cells.append(text)
                 except _PageTimeout:
                     logger.warning(
-                        "  page %d/%d: find_tables exceeded %ds, skipping page",
+                        "  page %d/%d: exceeded %ds, skipping page",
                         i + 1,
                         len(pdf.pages),
                         PAGE_DEADLINE_SECONDS,
                     )
                     continue
+                cells.extend(page_cells)
                 logger.info(
-                    "  page %d/%d: find_tables in %.1fs (%d tables), total %.1fs",
+                    "  page %d/%d: processed in %.1fs (%d tables), total %.1fs",
                     i + 1,
                     len(pdf.pages),
                     time.monotonic() - page_t0,
                     len(tables),
                     time.monotonic() - t0,
                 )
-                for table in tables:
-                    extracted = table.extract()
-                    for row_idx, row in enumerate(table.rows):
-                        if row_idx >= len(extracted):
-                            continue
-                        extracted_row = extracted[row_idx]
-                        for cell_idx, cell_bbox in enumerate(row.cells):
-                            if cell_bbox is None:
-                                continue
-                            x0 = cell_bbox[0]
-                            if x0 < page_mid_x:
-                                continue
-                            if cell_idx >= len(extracted_row):
-                                continue
-                            text = (extracted_row[cell_idx] or "").strip()
-                            if not text:
-                                continue
-                            upper = text.upper()
-                            if upper == "TEXTO LEGAL VIGENTE" or upper.startswith(
-                                "TEXTO APROBADO"
-                            ):
-                                continue
-                            cells.append(text)
     except Exception as exc:
         logger.warning("Failed to parse comparado PDF: %s", exc)
         return None
