@@ -1,5 +1,6 @@
 import hashlib
 import logging
+import time
 from typing import Any
 
 from app.core.celery_app import app
@@ -281,18 +282,42 @@ def _generate_proposal_layer(bill_id: int) -> dict:
             "status": status,
         }
 
+    logger.info("bill %s: querying existing topics", bill_id)
+    t0 = time.monotonic()
     with task_session() as db:
         existing_topics = [name for (name,) in db.query(Topic.name).all()]
+    logger.info(
+        "bill %s: got %d topics in %.1fs",
+        bill_id,
+        len(existing_topics),
+        time.monotonic() - t0,
+    )
 
     texts = [full_text]
     truncated = _truncate_to_budget(texts, settings.ai_summary_max_input_chars)
     full_text = texts[0]
 
+    logger.info(
+        "bill %s: calling Claude (truncated=%s, chars=%d)",
+        bill_id,
+        truncated,
+        len(full_text),
+    )
+    t0 = time.monotonic()
     try:
         content = generate_proposal_summary(
             full_text, existing_topics, truncated=truncated
         )
+        logger.info(
+            "bill %s: Claude call finished in %.1fs", bill_id, time.monotonic() - t0
+        )
     except Exception as exc:
+        logger.warning(
+            "bill %s: Claude call raised after %.1fs: %s",
+            bill_id,
+            time.monotonic() - t0,
+            exc,
+        )
         logger.warning("Claude proposal summary failed for bill %s: %s", bill_id, exc)
         status = _persist_layer(
             bill_id,
