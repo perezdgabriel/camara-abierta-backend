@@ -1,8 +1,10 @@
 # LLM Lambda hang investigation — camara-abierta-backend
 
-**Status:** Partially resolved. Two real bugs found and fixed. One (bill 378) and one (bill 214)
-hang remain **unresolved and unreproduced outside AWS**, despite extensive isolation testing.
-Written for handoff to a second engineer.
+**Status: RESOLVED 2026-07-09 — see §13.** Root cause of both remaining hangs was memory
+exhaustion (pdfplumber's per-document page cache pinning the 1024MB Lambda at its cgroup
+ceiling), found by reading the `Max Memory Used` field of the hung invocations' REPORT lines —
+a field this investigation never checked. Fixed in `16f5a9a`; both bills verified working.
+The narrative below is preserved as written for the record.
 
 **Date range:** 2026-07-08 → 2026-07-09
 **Account:** AWS 697359332290, us-east-1
@@ -406,3 +408,57 @@ print(base64.b64decode(d['LogResult']).decode())
 Swap `bill_id`/`max_chars` freely, or use `__debug_anthropic_call__`/`__debug_tool_call__` with a
 `chars` kwarg for synthetic-content variants — no redeploy needed for any of these, they're all
 already live in the handler.
+
+## 13. Resolution (2026-07-09)
+
+**Root cause: memory exhaustion.** The evidence was already in CloudWatch, in a field the
+investigation never looked at — every single hung invocation's REPORT line reads:
+
+```
+Duration: 300000.00 ms ... Memory Size: 1024 MB  Max Memory Used: 1023–1024 MB  Status: timeout
+```
+
+while every successful invocation used 200–290 MB. pdfplumber caches every parsed page's
+layout for the life of the document, and neither extraction loop in `app/services/pdf.py`
+ever released pages — so memory grows monotonically with page count. Lambda has no swap: at
+the cgroup ceiling the process stalls in kernel direct-reclaim, where it barely gets
+scheduled and effectively stops executing Python.
+
+That one fact answers all four open questions in §8:
+
+1. **Bill 214's "content-dependence" was a confound.** It was never about the text — it was
+   about the *PDF*. Every hanging case extracted a large PDF (203 pages, 2.9MB) in-process
+   before the Claude call, leaving the process at the memory ceiling; the next
+   allocation-heavy step (TLS/serialization inside the SDK call) then stalled. Every
+   succeeding case — synthetic filler (no extraction at all), bill 10752 (small PDF), the
+   local machine (ample RAM + swap) — never approached the limit. The
+   moderation/datacenter-IP theory was wrong.
+2. **The httpx `timeout=120.0` "never fired"** because the process wasn't running — a
+   userspace timer can't fire in a process stalled in kernel memory-reclaim. (Additionally,
+   the SDK's default `max_retries=2` would have swallowed up to two timeout exceptions
+   invisibly; now set to 0 since SQS redelivery owns retries.)
+3. **Bill 378's page-189 hang and the non-firing SIGALRM** — same mechanism, one code path
+   earlier: the 412-page table-heavy comparado hit the ceiling mid-extraction. Signal
+   delivery requires the process to return to userspace, which it effectively never did.
+   Both §5 and §6 were indeed the same underlying issue in two different clothes (§9's last
+   bullet was right).
+4. **No package-version difference was involved** — same versions locally and in the image;
+   the only relevant difference was 1024MB with no swap vs. a developer machine.
+
+**Fix (`16f5a9a`):**
+- `page.close()` after each page in both `extract_text_from_bytes` and
+  `extract_comparado_text_from_bytes` — the root-cause fix; releases pdfplumber's page cache
+  so memory stays flat regardless of page count.
+- `memory_size` 1024 → 2048 on `LlmFn` — headroom plus double the CPU share (extraction of
+  bill 214's PDF dropped 51s → 25s).
+- `max_retries=0` on the Anthropic client (see #2 above).
+
+**Verified on the deployed Lambda, same isolated-invoke recipe as §12:**
+
+| case | before | after |
+|---|---|---|
+| bill 214, real content, 150K chars | hung, 300s kill, 1024/1024 MB | ✅ 39.8s total, Claude call 10.9s, **255 MB** |
+| bill 378, `generate_bill_summary_layer(378, "amendments")` | silent at page 189/412, 300s kill, 1024/1024 MB | ✅ all 412 pages in 65.9s, task success in 86s, **278 MB** |
+
+The temporary `__debug_*__` handlers (§11) were removed from `app/lambdas/llm.py` in the
+cleanup commit. Everything in §10 (truncation fix, deadline guards, MSS clamp) stays.
