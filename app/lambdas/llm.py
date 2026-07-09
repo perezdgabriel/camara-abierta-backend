@@ -13,9 +13,15 @@ CloudWatch alarm watches.
 """
 
 import json
+import logging
 from typing import Any
 
 from app.core.celery_app import app as celery_app
+
+# Lambda's default root logger level is WARNING; the timing breadcrumbs in
+# app/services/pdf.py are logger.info, so raise it here to actually see them
+# in CloudWatch.
+logging.getLogger().setLevel(logging.INFO)
 
 # Populate the task registry (celery_app.conf.imports) so lookups by name work
 # without a running worker. Done once at cold start.

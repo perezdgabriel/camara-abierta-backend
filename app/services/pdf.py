@@ -1,6 +1,7 @@
 import io
 import logging
 import re
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +22,7 @@ def _pdfplumber():
 
 def download_pdf_bytes(url: str, *, attempts: int = 3) -> bytes | None:
     httpx = _httpx()
-    import time
+    t0 = time.monotonic()
 
     # The senado document microservice drops TLS connections under concurrent
     # load (UNEXPECTED_EOF_WHILE_READING); retry the transient case with backoff.
@@ -30,6 +31,13 @@ def download_pdf_bytes(url: str, *, attempts: int = 3) -> bytes | None:
             with httpx.Client(timeout=HTTP_TIMEOUT, follow_redirects=True) as client:
                 response = client.get(url)
                 response.raise_for_status()
+                logger.info(
+                    "Downloaded PDF from %s in %.1fs (%d bytes, attempt %d)",
+                    url,
+                    time.monotonic() - t0,
+                    len(response.content),
+                    i + 1,
+                )
                 return response.content
         except (httpx.TransportError, httpx.HTTPStatusError) as exc:
             if i == attempts - 1:
@@ -41,17 +49,27 @@ def download_pdf_bytes(url: str, *, attempts: int = 3) -> bytes | None:
 
 def extract_text_from_bytes(pdf_bytes: bytes) -> str | None:
     pdfplumber = _pdfplumber()
+    t0 = time.monotonic()
     try:
         with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
+            logger.info("Extracting text from %d-page PDF", len(pdf.pages))
             pages: list[str] = []
-            for page in pdf.pages:
+            for i, page in enumerate(pdf.pages):
                 text = page.extract_text()
                 if text:
                     pages.append(text)
+                if (i + 1) % 20 == 0:
+                    logger.info(
+                        "  ...page %d/%d after %.1fs",
+                        i + 1,
+                        len(pdf.pages),
+                        time.monotonic() - t0,
+                    )
     except Exception as exc:
         logger.warning("Failed to parse PDF bytes: %s", exc)
         return None
 
+    logger.info("Extracted text in %.1fs", time.monotonic() - t0)
     full_text = "\n\n".join(pages)
     full_text = re.sub(r"\n{3,}", "\n\n", full_text)
     full_text = re.sub(r"[ \t]+", " ", full_text).strip()
@@ -82,12 +100,24 @@ def extract_comparado_text_from_bytes(pdf_bytes: bytes) -> str | None:
     and the full-width title banner are filtered separately.
     """
     pdfplumber = _pdfplumber()
+    t0 = time.monotonic()
     cells: list[str] = []
     try:
         with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
-            for page in pdf.pages:
+            logger.info("Extracting comparado from %d-page PDF", len(pdf.pages))
+            for i, page in enumerate(pdf.pages):
+                page_t0 = time.monotonic()
                 page_mid_x = page.width / 2
-                for table in page.find_tables():
+                tables = page.find_tables()
+                logger.info(
+                    "  page %d/%d: find_tables in %.1fs (%d tables), total %.1fs",
+                    i + 1,
+                    len(pdf.pages),
+                    time.monotonic() - page_t0,
+                    len(tables),
+                    time.monotonic() - t0,
+                )
+                for table in tables:
                     extracted = table.extract()
                     for row_idx, row in enumerate(table.rows):
                         if row_idx >= len(extracted):
@@ -113,6 +143,7 @@ def extract_comparado_text_from_bytes(pdf_bytes: bytes) -> str | None:
     except Exception as exc:
         logger.warning("Failed to parse comparado PDF: %s", exc)
         return None
+    logger.info("Extracted comparado in %.1fs", time.monotonic() - t0)
     if not cells:
         return None
     text = "\n\n".join(cells)
