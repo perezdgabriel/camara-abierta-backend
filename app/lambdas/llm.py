@@ -118,6 +118,53 @@ def _debug_anthropic_call(chars: int = 20) -> None:
         )
 
 
+def _debug_tool_call(chars: int = 20) -> None:
+    """Temporary diagnostic: the exact production tool-call shape (forced
+    tool_choice + max_tokens=2048), but with a small/configurable prompt.
+
+    Bisection ruled out prompt size entirely: a synthetic 150K-char prompt
+    with a bare messages.create() (max_tokens=10) succeeds in <1s, but bill
+    214's real 150K-char prompt through the production _claude_tool_call path
+    hangs. The one thing not yet isolated is the tools/tool_choice/max_tokens
+    shape itself — a forced structured-JSON generation may take Claude
+    genuinely much longer to produce than a bare 10-token completion, and if
+    that longer in-flight duration is what the NAT can't sustain (rather than
+    payload size), a small prompt through the *real* call shape should
+    reproduce the hang.
+    """
+    from app.core.config import settings
+    from app.services.llm import PROPOSAL_TOOL, _claude_client
+
+    content = "Resume esto: " + ("x" * chars)
+    t0 = time.monotonic()
+    try:
+        client = _claude_client()
+        logger.info("Anthropic client constructed in %.2fs", time.monotonic() - t0)
+        t0 = time.monotonic()
+        response = client.messages.create(
+            model=settings.anthropic_model,
+            max_tokens=2048,
+            temperature=0.2,
+            tools=[PROPOSAL_TOOL],
+            tool_choice={"type": "tool", "name": PROPOSAL_TOOL["name"]},
+            messages=[{"role": "user", "content": content}],
+        )
+        logger.info(
+            "tool call (chars=%d) succeeded in %.2fs: %s",
+            chars,
+            time.monotonic() - t0,
+            response.content,
+        )
+    except Exception as exc:
+        logger.warning(
+            "tool call (chars=%d) FAILED after %.2fs: %s: %s",
+            chars,
+            time.monotonic() - t0,
+            type(exc).__name__,
+            exc,
+        )
+
+
 def handler(event: dict[str, Any], context: Any) -> None:
     for record in event.get("Records", []):
         body = json.loads(record["body"])
@@ -126,6 +173,9 @@ def handler(event: dict[str, Any], context: Any) -> None:
             continue
         if body.get("task") == "__debug_anthropic_call__":
             _debug_anthropic_call(**body.get("kwargs", {}))
+            continue
+        if body.get("task") == "__debug_tool_call__":
+            _debug_tool_call(**body.get("kwargs", {}))
             continue
         task = celery_app.tasks[body["task"]]
         task.apply(args=body.get("args", []), kwargs=body.get("kwargs", {})).get()
